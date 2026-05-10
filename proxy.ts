@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 
 const PUBLIC_PATHS = [
   "/login",
+  "/privacy",
+  "/terms",
   "/api/auth",
   // Cron endpoint authenticates itself via Bearer CRON_SECRET.
   "/api/enablebanking/sync",

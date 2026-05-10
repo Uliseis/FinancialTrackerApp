@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { signIn, auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,11 @@ export default async function LoginPage({
               Sign-in failed. Only the configured email is allowed.
             </p>
           ) : null}
+          <p className="pt-2 text-xs text-[var(--color-muted-foreground)]">
+            <Link href="/privacy" className="underline">Privacy</Link>
+            <span className="mx-2">·</span>
+            <Link href="/terms" className="underline">Terms</Link>
+          </p>
         </CardContent>
       </Card>
     </main>
