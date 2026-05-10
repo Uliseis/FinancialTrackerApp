@@ -5,7 +5,7 @@ const PUBLIC_PATHS = [
   "/login",
   "/api/auth",
   // Cron endpoint authenticates itself via Bearer CRON_SECRET.
-  "/api/gocardless/sync",
+  "/api/enablebanking/sync",
 ];
 
 export default auth((req) => {

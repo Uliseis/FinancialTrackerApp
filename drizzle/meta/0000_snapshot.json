@@ -1,5 +1,5 @@
 {
-  "id": "0e9b5c94-ca68-4efc-9dda-144c1622f738",
+  "id": "470d47ea-01d7-49ea-8c8e-7cc75449aecf",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -291,8 +291,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "requisition_id": {
-          "name": "requisition_id",
+        "session_id": {
+          "name": "session_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -950,7 +950,7 @@
       "name": "connector",
       "schema": "public",
       "values": [
-        "gocardless",
+        "enablebanking",
         "trading212",
         "revolutx",
         "manual"

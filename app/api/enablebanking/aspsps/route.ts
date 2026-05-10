@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { GoCardlessClient } from "@/lib/gocardless";
+import { EnableBankingClient } from "@/lib/enablebanking";
 
 export const dynamic = "force-dynamic";
 
@@ -11,10 +11,11 @@ export async function GET(req: Request) {
   }
   const { searchParams } = new URL(req.url);
   const country = (searchParams.get("country") ?? "ES").toUpperCase();
+  const psuType = (searchParams.get("psuType") ?? "personal") as "personal" | "business";
   try {
-    const client = new GoCardlessClient();
-    const list = await client.listInstitutions(country);
-    return NextResponse.json({ institutions: list });
+    const client = new EnableBankingClient();
+    const list = await client.listAspsps({ country, psuType });
+    return NextResponse.json({ aspsps: list });
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown";
     return NextResponse.json({ error: message }, { status: 500 });

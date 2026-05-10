@@ -1,0 +1,278 @@
+import { and, eq } from "drizzle-orm";
+import { db } from "@/lib/db";
+import {
+  accounts,
+  connections,
+  syncRuns,
+  transactions,
+  type NewAccount,
+  type NewTransaction,
+} from "@/db/schema";
+import {
+  EnableBankingClient,
+  EnableBankingError,
+  ibanOf,
+  pickBookingDate,
+  pickCounterparty,
+  pickDescription,
+  pickExternalId,
+  pickValueDate,
+  preferredBalance,
+  signedAmount,
+  type EbTransaction,
+} from "@/lib/enablebanking";
+
+export interface SyncResult {
+  connectionId: string;
+  accountsTouched: number;
+  transactionsInserted: number;
+  errors: string[];
+}
+
+const TX_PAGE_LIMIT = 50;
+
+export async function syncEnableBankingConnection(
+  connectionId: string,
+): Promise<SyncResult> {
+  const result: SyncResult = {
+    connectionId,
+    accountsTouched: 0,
+    transactionsInserted: 0,
+    errors: [],
+  };
+
+  const [conn] = await db
+    .select()
+    .from(connections)
+    .where(eq(connections.id, connectionId));
+  if (!conn) throw new Error(`Connection ${connectionId} not found`);
+  if (conn.connector !== "enablebanking") {
+    throw new Error(`Connection ${connectionId} is not an enablebanking connection`);
+  }
+  if (!conn.sessionId) {
+    throw new Error(`Connection ${connectionId} has no session_id`);
+  }
+
+  const [run] = await db
+    .insert(syncRuns)
+    .values({ connector: "enablebanking", connectionId })
+    .returning();
+
+  const client = new EnableBankingClient();
+
+  try {
+    const session = await client.getSession(conn.sessionId);
+    if (session.status !== "AUTHORIZED") {
+      const status = session.status === "REVOKED" || session.status === "INVALID" || session.status === "CLOSED"
+        ? ("expired" as const)
+        : ("error" as const);
+      await db
+        .update(connections)
+        .set({
+          status,
+          lastError: `Session status: ${session.status}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(connections.id, connectionId));
+      await db
+        .update(syncRuns)
+        .set({
+          finishedAt: new Date(),
+          status: "error",
+          error: `session ${session.status}`,
+        })
+        .where(eq(syncRuns.id, run.id));
+      result.errors.push(`session ${session.status}`);
+      return result;
+    }
+
+    const sessionAccounts = session.accounts ?? [];
+    result.accountsTouched = sessionAccounts.length;
+
+    for (const sessionAccount of sessionAccounts) {
+      try {
+        const details = await client.getAccountDetails(sessionAccount.uid);
+        const balancesResp = await client.getAccountBalances(sessionAccount.uid);
+        const interim = preferredBalance(balancesResp.balances);
+        const iban = ibanOf(details) ?? ibanOf(sessionAccount);
+
+        const accountValues: NewAccount = {
+          connectionId,
+          externalId: sessionAccount.uid,
+          type: "bank",
+          institution: conn.institutionName ?? conn.institutionId ?? "Unknown",
+          name:
+            details.name ??
+            sessionAccount.name ??
+            details.product ??
+            sessionAccount.product ??
+            iban ??
+            "Account",
+          currency: details.currency ?? sessionAccount.currency ?? interim?.balance_amount.currency ?? "EUR",
+          iban,
+          balance: interim ? interim.balance_amount.amount : null,
+          balanceUpdatedAt: new Date(),
+          metadata: {
+            session: sessionAccount as unknown as Record<string, unknown>,
+            details: details as unknown as Record<string, unknown>,
+          },
+        };
+
+        const existingByIban = iban
+          ? await db
+              .select()
+              .from(accounts)
+              .where(and(eq(accounts.connectionId, connectionId), eq(accounts.iban, iban)))
+          : [];
+
+        let accountId: string;
+        if (existingByIban.length > 0 && existingByIban[0].externalId !== sessionAccount.uid) {
+          const updated = await db
+            .update(accounts)
+            .set({
+              externalId: sessionAccount.uid,
+              name: accountValues.name,
+              currency: accountValues.currency,
+              balance: accountValues.balance,
+              balanceUpdatedAt: accountValues.balanceUpdatedAt,
+              metadata: accountValues.metadata,
+            })
+            .where(eq(accounts.id, existingByIban[0].id))
+            .returning();
+          accountId = updated[0].id;
+        } else {
+          const upserted = await db
+            .insert(accounts)
+            .values(accountValues)
+            .onConflictDoUpdate({
+              target: [accounts.connectionId, accounts.externalId],
+              set: {
+                name: accountValues.name,
+                currency: accountValues.currency,
+                iban: accountValues.iban,
+                balance: accountValues.balance,
+                balanceUpdatedAt: accountValues.balanceUpdatedAt,
+                metadata: accountValues.metadata,
+              },
+            })
+            .returning();
+          accountId = upserted[0].id;
+        }
+
+        let continuationKey: string | undefined;
+        let pages = 0;
+        do {
+          const resp = await client.getAccountTransactions(sessionAccount.uid, {
+            transactionStatus: "BOOK",
+            continuationKey,
+          });
+          for (const t of resp.transactions) {
+            const externalId = pickExternalId(
+              t,
+              `${sessionAccount.uid}:${t.booking_date ?? t.value_date ?? ""}:${t.transaction_amount.amount}:${t.credit_debit_indicator}`,
+            );
+            const txValues: NewTransaction = {
+              accountId,
+              externalId,
+              bookedAt: pickBookingDate(t),
+              valueAt: pickValueDate(t),
+              amount: signedAmount(t),
+              currency: t.transaction_amount.currency,
+              direction: t.credit_debit_indicator === "CRDT" ? "credit" : "debit",
+              description: pickDescription(t) || null,
+              counterparty: pickCounterparty(t),
+              raw: t as unknown as Record<string, unknown>,
+            };
+            const inserted = await db
+              .insert(transactions)
+              .values(txValues)
+              .onConflictDoNothing({
+                target: [transactions.accountId, transactions.externalId],
+              })
+              .returning({ id: transactions.id });
+            result.transactionsInserted += inserted.length;
+          }
+          continuationKey = resp.continuation_key;
+          pages++;
+        } while (continuationKey && pages < TX_PAGE_LIMIT);
+      } catch (err) {
+        const detail =
+          err instanceof EnableBankingError
+            ? `${err.status} ${typeof err.body === "string" ? err.body : JSON.stringify(err.body)}`
+            : err instanceof Error
+              ? err.message
+              : String(err);
+        result.errors.push(`${sessionAccount.uid}: ${detail}`);
+      }
+    }
+
+    const expiresAt = session.access?.valid_until ? new Date(session.access.valid_until) : null;
+
+    await db
+      .update(connections)
+      .set({
+        status: result.errors.length > 0 ? "error" : "active",
+        lastSyncAt: new Date(),
+        lastError: result.errors.length > 0 ? result.errors.join("; ") : null,
+        expiresAt: expiresAt ?? undefined,
+        updatedAt: new Date(),
+      })
+      .where(eq(connections.id, connectionId));
+
+    await db
+      .update(syncRuns)
+      .set({
+        finishedAt: new Date(),
+        status: result.errors.length > 0 ? "partial" : "ok",
+        insertedTransactions: result.transactionsInserted,
+        error: result.errors.length > 0 ? result.errors.join("; ") : null,
+      })
+      .where(eq(syncRuns.id, run.id));
+
+    return result;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const expired = err instanceof EnableBankingError && (err.status === 401 || err.status === 403);
+    await db
+      .update(connections)
+      .set({
+        status: expired ? "expired" : "error",
+        lastError: message,
+        updatedAt: new Date(),
+      })
+      .where(eq(connections.id, connectionId));
+    await db
+      .update(syncRuns)
+      .set({
+        finishedAt: new Date(),
+        status: "error",
+        error: message,
+      })
+      .where(eq(syncRuns.id, run.id));
+    throw err;
+  }
+}
+
+export async function syncAllEnableBankingConnections(): Promise<SyncResult[]> {
+  const rows = await db
+    .select()
+    .from(connections)
+    .where(eq(connections.connector, "enablebanking"));
+  const out: SyncResult[] = [];
+  for (const row of rows) {
+    if (row.status === "revoked" || row.status === "expired") continue;
+    try {
+      out.push(await syncEnableBankingConnection(row.id));
+    } catch (err) {
+      out.push({
+        connectionId: row.id,
+        accountsTouched: 0,
+        transactionsInserted: 0,
+        errors: [err instanceof Error ? err.message : String(err)],
+      });
+    }
+  }
+  return out;
+}
+
+export type { EbTransaction };

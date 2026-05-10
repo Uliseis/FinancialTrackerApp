@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { GoCardlessClient } from "@/lib/gocardless";
+import { EnableBankingClient, type Aspsp } from "@/lib/enablebanking";
 import { ConnectForm } from "./connect-form";
 
 export const dynamic = "force-dynamic";
@@ -25,11 +25,11 @@ export default async function ConnectPage({
   const { country: rawCountry } = await searchParams;
   const country = (rawCountry ?? "ES").toUpperCase();
 
-  let institutions: { id: string; name: string; logo?: string }[] = [];
+  let aspsps: Aspsp[] = [];
   let error: string | null = null;
   try {
-    const client = new GoCardlessClient();
-    institutions = await client.listInstitutions(country);
+    const client = new EnableBankingClient();
+    aspsps = await client.listAspsps({ country, psuType: "personal" });
   } catch (err) {
     error = err instanceof Error ? err.message : "unknown";
   }
@@ -40,7 +40,7 @@ export default async function ConnectPage({
         <div>
           <h1 className="text-2xl font-semibold">Connect a bank</h1>
           <p className="text-sm text-[var(--color-muted-foreground)]">
-            Pick your bank to authorize read access via GoCardless / PSD2.
+            Pick your bank to authorize read access via Enable Banking / PSD2.
           </p>
         </div>
         <Button asChild variant="outline">
@@ -72,7 +72,7 @@ export default async function ConnectPage({
           <CardHeader>
             <CardTitle>Could not load institutions</CardTitle>
             <CardDescription>
-              Check your GoCardless credentials in env vars.
+              Check your Enable Banking credentials in env vars.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -82,7 +82,7 @@ export default async function ConnectPage({
           </CardContent>
         </Card>
       ) : (
-        <ConnectForm institutions={institutions} />
+        <ConnectForm aspsps={aspsps} country={country} />
       )}
     </main>
   );

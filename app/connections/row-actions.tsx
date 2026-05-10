@@ -7,15 +7,15 @@ import { Button } from "@/components/ui/button";
 export interface ConnectionRowActionsProps {
   id: string;
   institutionId: string | null;
-  institutionName: string | null;
   status: string;
+  country?: string | null;
 }
 
 export function ConnectionRowActions({
   id,
   institutionId,
-  institutionName,
   status,
+  country,
 }: ConnectionRowActionsProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -25,7 +25,7 @@ export function ConnectionRowActions({
     setBusy("sync");
     startTransition(async () => {
       try {
-        await fetch("/api/gocardless/sync", {
+        await fetch("/api/enablebanking/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ connectionId: id }),
@@ -38,16 +38,18 @@ export function ConnectionRowActions({
   }
 
   function reauth() {
-    if (!institutionId) return;
+    if (!institutionId || !country) return;
     setBusy("reauth");
     startTransition(async () => {
       try {
-        const res = await fetch("/api/gocardless/connect", {
+        const res = await fetch("/api/enablebanking/connect", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            institutionId,
-            institutionName: institutionName ?? institutionId,
+            aspspName: institutionId,
+            aspspCountry: country,
+            psuType: "personal",
+            connectionId: id,
           }),
         });
         const data = (await res.json()) as { link?: string };
@@ -62,6 +64,7 @@ export function ConnectionRowActions({
   }
 
   const reauthLabel = status === "active" ? "Re-authorize" : "Authorize";
+  const canReauth = Boolean(institutionId && country);
 
   return (
     <div className="flex justify-end gap-2">
@@ -73,7 +76,7 @@ export function ConnectionRowActions({
       >
         {busy === "sync" ? "Syncing…" : "Sync"}
       </Button>
-      {institutionId ? (
+      {canReauth ? (
         <Button size="sm" onClick={reauth} disabled={pending}>
           {busy === "reauth" ? "Opening…" : reauthLabel}
         </Button>

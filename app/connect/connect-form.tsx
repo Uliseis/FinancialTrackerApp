@@ -4,27 +4,30 @@ import { useState, useTransition } from "react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { Aspsp } from "@/lib/enablebanking";
 
 export interface ConnectFormProps {
-  institutions: { id: string; name: string; logo?: string }[];
+  aspsps: Aspsp[];
+  country: string;
 }
 
-export function ConnectForm({ institutions }: ConnectFormProps) {
+export function ConnectForm({ aspsps, country }: ConnectFormProps) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeName, setActiveName] = useState<string | null>(null);
 
-  function start(institution: { id: string; name: string }) {
+  function start(aspsp: Aspsp) {
     setError(null);
-    setActiveId(institution.id);
+    setActiveName(aspsp.name);
     startTransition(async () => {
       try {
-        const res = await fetch("/api/gocardless/connect", {
+        const res = await fetch("/api/enablebanking/connect", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            institutionId: institution.id,
-            institutionName: institution.name,
+            aspspName: aspsp.name,
+            aspspCountry: aspsp.country,
+            psuType: "personal",
           }),
         });
         const data = (await res.json()) as { link?: string; error?: string };
@@ -34,16 +37,16 @@ export function ConnectForm({ institutions }: ConnectFormProps) {
         window.location.href = data.link;
       } catch (err) {
         setError(err instanceof Error ? err.message : "unknown");
-        setActiveId(null);
+        setActiveName(null);
       }
     });
   }
 
-  if (institutions.length === 0) {
+  if (aspsps.length === 0) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>No institutions for this country</CardTitle>
+          <CardTitle>No institutions for {country}</CardTitle>
         </CardHeader>
       </Card>
     );
@@ -55,8 +58,8 @@ export function ConnectForm({ institutions }: ConnectFormProps) {
         <p className="mb-4 text-sm text-[var(--color-destructive)]">{error}</p>
       ) : null}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-        {institutions.map((inst) => (
-          <Card key={inst.id} className="flex h-full flex-col">
+        {aspsps.map((inst) => (
+          <Card key={`${inst.country}-${inst.name}`} className="flex h-full flex-col">
             <CardContent className="flex flex-1 items-center gap-3 p-4">
               {inst.logo ? (
                 <Image
@@ -72,14 +75,17 @@ export function ConnectForm({ institutions }: ConnectFormProps) {
               )}
               <div className="flex-1">
                 <p className="text-sm font-medium leading-tight">{inst.name}</p>
-                <p className="text-xs text-[var(--color-muted-foreground)]">{inst.id}</p>
+                <p className="text-xs text-[var(--color-muted-foreground)]">
+                  {inst.country}
+                  {inst.beta ? " · beta" : ""}
+                </p>
               </div>
               <Button
                 size="sm"
                 disabled={pending}
                 onClick={() => start(inst)}
               >
-                {pending && activeId === inst.id ? "Opening..." : "Connect"}
+                {pending && activeName === inst.name ? "Opening..." : "Connect"}
               </Button>
             </CardContent>
           </Card>

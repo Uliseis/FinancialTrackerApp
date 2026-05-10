@@ -1,7 +1,7 @@
 {
   "crons": [
     {
-      "path": "/api/gocardless/sync",
+      "path": "/api/enablebanking/sync",
       "schedule": "0 6 * * *"
     }
   ]

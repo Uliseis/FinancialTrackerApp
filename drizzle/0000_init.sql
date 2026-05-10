@@ -1,6 +1,6 @@
 CREATE TYPE "public"."account_type" AS ENUM('bank', 'broker', 'crypto');--> statement-breakpoint
 CREATE TYPE "public"."connection_status" AS ENUM('pending', 'active', 'expired', 'error', 'revoked');--> statement-breakpoint
-CREATE TYPE "public"."connector" AS ENUM('gocardless', 'trading212', 'revolutx', 'manual');--> statement-breakpoint
+CREATE TYPE "public"."connector" AS ENUM('enablebanking', 'trading212', 'revolutx', 'manual');--> statement-breakpoint
 CREATE TYPE "public"."instrument_type" AS ENUM('equity', 'etf', 'crypto', 'fund', 'cash', 'other');--> statement-breakpoint
 CREATE TYPE "public"."tx_direction" AS ENUM('debit', 'credit');--> statement-breakpoint
 CREATE TABLE "accounts" (
@@ -43,7 +43,7 @@ CREATE TABLE "connections" (
 	"connector" "connector" NOT NULL,
 	"institution_id" text,
 	"institution_name" text,
-	"requisition_id" text,
+	"session_id" text,
 	"access_token_enc" text,
 	"refresh_token_enc" text,
 	"metadata" jsonb,

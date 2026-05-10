@@ -22,7 +22,7 @@ export const connectionStatusEnum = pgEnum("connection_status", [
   "revoked",
 ]);
 export const connectorEnum = pgEnum("connector", [
-  "gocardless",
+  "enablebanking",
   "trading212",
   "revolutx",
   "manual",
@@ -44,7 +44,7 @@ export const connections = pgTable(
     connector: connectorEnum("connector").notNull(),
     institutionId: text("institution_id"),
     institutionName: text("institution_name"),
-    requisitionId: text("requisition_id"),
+    sessionId: text("session_id"),
     accessTokenEnc: text("access_token_enc"),
     refreshTokenEnc: text("refresh_token_enc"),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),

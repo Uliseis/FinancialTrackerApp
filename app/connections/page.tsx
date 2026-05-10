@@ -151,8 +151,10 @@ export default async function ConnectionsPage({
                         <ConnectionRowActions
                           id={c.id}
                           institutionId={c.institutionId ?? null}
-                          institutionName={c.institutionName ?? null}
                           status={c.status}
+                          country={
+                            (c.metadata as { country?: string } | null)?.country ?? null
+                          }
                         />
                       </TableCell>
                     </TableRow>
