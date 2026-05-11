@@ -40,6 +40,11 @@ export interface SyncResult {
 }
 
 const TX_PAGE_LIMIT = 50;
+const TX_LOOKBACK_DAYS = 730;
+
+function toIsoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
 
 export async function syncEnableBankingConnection(
   connectionId: string,
@@ -185,11 +190,14 @@ export async function syncEnableBankingConnection(
           accountId = upserted[0].id;
         }
 
+        const dateFrom = toIsoDate(new Date(Date.now() - TX_LOOKBACK_DAYS * 86_400_000));
         let continuationKey: string | undefined;
         let pages = 0;
         do {
           const resp = await client.getAccountTransactions(sessionAccount.uid, {
             transactionStatus: "BOOK",
+            dateFrom,
+            strategy: "longest",
             continuationKey,
           });
           for (const t of resp.transactions) {
