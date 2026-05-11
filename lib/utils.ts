@@ -5,12 +5,30 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatCurrency(amount: number, currency = "EUR") {
-  return new Intl.NumberFormat("en-IE", {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 2,
-  }).format(amount);
+function isValidIsoCurrency(code: string | null | undefined): code is string {
+  return !!code && /^[A-Z]{3}$/.test(code) && code !== "XXX";
+}
+
+export function formatCurrency(amount: number, currency: string | null | undefined = "EUR") {
+  const ccy = isValidIsoCurrency(currency) ? currency : null;
+  if (!ccy) {
+    return new Intl.NumberFormat("en-IE", {
+      maximumFractionDigits: 2,
+      minimumFractionDigits: 2,
+    }).format(amount);
+  }
+  try {
+    return new Intl.NumberFormat("en-IE", {
+      style: "currency",
+      currency: ccy,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return new Intl.NumberFormat("en-IE", {
+      maximumFractionDigits: 2,
+      minimumFractionDigits: 2,
+    }).format(amount);
+  }
 }
 
 export function formatDate(d: Date | string) {

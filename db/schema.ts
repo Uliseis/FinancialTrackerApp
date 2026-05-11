@@ -81,6 +81,16 @@ export const accountGroups = pgTable("account_groups", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const accountSpaces = pgTable("account_spaces", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  color: text("color"),
+  isDefault: boolean("is_default").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const accounts = pgTable(
   "accounts",
   {
@@ -101,7 +111,13 @@ export const accounts = pgTable(
     balanceUpdatedAt: timestamp("balance_updated_at", { withTimezone: true }),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     archived: boolean("archived").notNull().default(false),
+    excluded: boolean("excluded").notNull().default(false),
+    spaceId: uuid("space_id").references(() => accountSpaces.id, {
+      onDelete: "set null",
+    }),
     manualOpeningBalance: numeric("manual_opening_balance", { precision: 20, scale: 4 }),
+    balanceAnchor: numeric("balance_anchor", { precision: 20, scale: 4 }),
+    balanceAnchorAt: timestamp("balance_anchor_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -110,6 +126,7 @@ export const accounts = pgTable(
       t.externalId,
     ),
     groupIdx: index("accounts_group_idx").on(t.groupId),
+    spaceIdx: index("accounts_space_idx").on(t.spaceId),
   }),
 );
 
@@ -347,6 +364,8 @@ export type Account = typeof accounts.$inferSelect;
 export type NewAccount = typeof accounts.$inferInsert;
 export type AccountGroup = typeof accountGroups.$inferSelect;
 export type NewAccountGroup = typeof accountGroups.$inferInsert;
+export type AccountSpace = typeof accountSpaces.$inferSelect;
+export type NewAccountSpace = typeof accountSpaces.$inferInsert;
 export type Transaction = typeof transactions.$inferSelect;
 export type NewTransaction = typeof transactions.$inferInsert;
 export type Instrument = typeof instruments.$inferSelect;

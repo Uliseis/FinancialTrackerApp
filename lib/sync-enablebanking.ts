@@ -140,6 +140,14 @@ export async function syncEnableBankingConnection(
         const interim = preferredBalance(balancesResp.balances);
         const iban = ibanOf(details) ?? ibanOf(sessionAccount);
 
+        const normalizeCurrency = (c: string | null | undefined): string | null =>
+          c && /^[A-Z]{3}$/.test(c) && c !== "XXX" ? c : null;
+        const currency =
+          normalizeCurrency(details.currency) ??
+          normalizeCurrency(sessionAccount.currency) ??
+          normalizeCurrency(interim?.balance_amount.currency) ??
+          "EUR";
+
         const accountValues: NewAccount = {
           connectionId,
           externalId: sessionAccount.uid,
@@ -152,7 +160,7 @@ export async function syncEnableBankingConnection(
             sessionAccount.product ??
             iban ??
             "Account",
-          currency: details.currency ?? sessionAccount.currency ?? interim?.balance_amount.currency ?? "EUR",
+          currency,
           iban,
           balance: interim ? interim.balance_amount.amount : null,
           balanceUpdatedAt: new Date(),
