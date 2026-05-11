@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { connections } from "@/db/schema";
-import { EnableBankingClient, EnableBankingError } from "@/lib/enablebanking";
+import { EnableBankingClient, EnableBankingError, sessionAccountsOf } from "@/lib/enablebanking";
 import { syncEnableBankingConnection } from "@/lib/sync-enablebanking";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +34,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
     const client = new EnableBankingClient();
     const ebSession = await client.getSession(conn.sessionId);
     const newStatus = ebSession.status === "AUTHORIZED" ? "active" : "pending";
+    const ebAccounts = sessionAccountsOf(ebSession);
     await db
       .update(connections)
       .set({
@@ -41,7 +42,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
         metadata: {
           ...(conn.metadata ?? {}),
           sessionStatus: ebSession.status,
-          accountUids: ebSession.accounts.map((a) => a.uid),
+          accountUids: ebAccounts.map((a) => a.uid),
         },
         updatedAt: new Date(),
       })

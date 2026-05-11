@@ -56,7 +56,8 @@ export interface SessionAccount {
 export interface SessionResponse {
   session_id: string;
   status: "AUTHORIZED" | "PENDING_AUTHORIZATION" | "INVALID" | "REVOKED" | "CLOSED" | string;
-  accounts: SessionAccount[];
+  accounts: string[];
+  accounts_data?: SessionAccount[];
   access: {
     valid_until: string;
     balances?: boolean;
@@ -67,6 +68,13 @@ export interface SessionResponse {
   created: string;
   authorized?: string;
   closed?: string;
+}
+
+export function sessionAccountsOf(session: SessionResponse): SessionAccount[] {
+  if (session.accounts_data && session.accounts_data.length > 0) return session.accounts_data;
+  return (session.accounts ?? []).map((uid) =>
+    typeof uid === "string" ? ({ uid } as SessionAccount) : (uid as SessionAccount),
+  );
 }
 
 export interface AccountDetails {

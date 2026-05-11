@@ -18,6 +18,7 @@ import {
   pickExternalId,
   pickValueDate,
   preferredBalance,
+  sessionAccountsOf,
   signedAmount,
   type EbTransaction,
 } from "@/lib/enablebanking";
@@ -96,7 +97,7 @@ export async function syncEnableBankingConnection(
       return result;
     }
 
-    const sessionAccounts = session.accounts ?? [];
+    const sessionAccounts = sessionAccountsOf(session);
     result.accountsTouched = sessionAccounts.length;
 
     for (const sessionAccount of sessionAccounts) {

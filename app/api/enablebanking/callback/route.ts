@@ -3,7 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { connections } from "@/db/schema";
-import { EnableBankingClient } from "@/lib/enablebanking";
+import { EnableBankingClient, sessionAccountsOf } from "@/lib/enablebanking";
 import { syncEnableBankingConnection } from "@/lib/sync-enablebanking";
 
 export const dynamic = "force-dynamic";
@@ -53,6 +53,7 @@ export async function GET(req: Request) {
       ? new Date(ebSession.access.valid_until)
       : conn.expiresAt;
 
+    const ebAccounts = sessionAccountsOf(ebSession);
     await db
       .update(connections)
       .set({
@@ -62,7 +63,7 @@ export async function GET(req: Request) {
         metadata: {
           ...(conn.metadata ?? {}),
           sessionStatus: ebSession.status,
-          accountUids: ebSession.accounts.map((a) => a.uid),
+          accountUids: ebAccounts.map((a) => a.uid),
           aspsp: ebSession.aspsp,
           authorized: ebSession.authorized,
         },
@@ -70,7 +71,7 @@ export async function GET(req: Request) {
       })
       .where(eq(connections.id, conn.id));
 
-    if (ebSession.status === "AUTHORIZED" && ebSession.accounts.length > 0) {
+    if (ebSession.status === "AUTHORIZED" && ebAccounts.length > 0) {
       try {
         await syncEnableBankingConnection(conn.id);
       } catch {
