@@ -26,6 +26,24 @@ export interface CsvImportResult {
   };
 }
 
+export type ImportProgressStage =
+  | "parse"
+  | "prepare"
+  | "insert"
+  | "fx"
+  | "categorize"
+  | "routes"
+  | "transfers"
+  | "done";
+
+export interface ImportProgressEvent {
+  stage: ImportProgressStage;
+  message: string;
+  data?: Record<string, unknown>;
+}
+
+export type ImportProgressCallback = (event: ImportProgressEvent) => void | Promise<void>;
+
 interface RevolutCsvRow {
   Type?: string;
   "Started Date"?: string;
@@ -100,6 +118,7 @@ function normalizeSignedAmount(raw: string | undefined): string | null {
 export async function importRevolutCsv(
   accountId: string,
   csvText: string,
+  onProgress?: ImportProgressCallback,
 ): Promise<CsvImportResult> {
   const result: CsvImportResult = {
     parsed: 0,
@@ -109,6 +128,10 @@ export async function importRevolutCsv(
     errors: [],
   };
 
+  const emit = async (event: ImportProgressEvent) => {
+    if (onProgress) await onProgress(event);
+  };
+
   const [account] = await db.select().from(accounts).where(eq(accounts.id, accountId));
   if (!account) throw new Error(`Account ${accountId} not found`);
   if (account.archived) throw new Error("Account is archived");
@@ -116,6 +139,7 @@ export async function importRevolutCsv(
     throw new Error("CSV import is only allowed on manual accounts (no connection)");
   }
 
+  await emit({ stage: "parse", message: "Parsing CSV" });
   const parsed = Papa.parse<RevolutCsvRow>(csvText, {
     header: true,
     skipEmptyLines: true,
@@ -140,6 +164,7 @@ export async function importRevolutCsv(
 
   const rows = parsed.data;
   result.parsed = rows.length;
+  await emit({ stage: "prepare", message: `Parsed ${rows.length} rows`, data: { parsed: rows.length } });
 
   const [run] = await db
     .insert(syncRuns)
@@ -192,6 +217,11 @@ export async function importRevolutCsv(
 
   const insertedIds: string[] = [];
   if (toInsert.length > 0) {
+    await emit({
+      stage: "insert",
+      message: `Inserting ${toInsert.length} rows`,
+      data: { total: toInsert.length },
+    });
     const CHUNK = 200;
     for (let i = 0; i < toInsert.length; i += CHUNK) {
       const chunk = toInsert.slice(i, i + CHUNK);
@@ -214,24 +244,32 @@ export async function importRevolutCsv(
   let transfersMatched = 0;
 
   if (insertedIds.length > 0) {
+    await emit({
+      stage: "fx",
+      message: "Converting amounts to EUR",
+      data: { inserted: result.inserted },
+    });
     try {
-      const fx = await backfillTransactionEurAmounts({ sinceDays: 730 });
+      const fx = await backfillTransactionEurAmounts({ txIds: insertedIds });
       fxBackfilled = fx.updated;
     } catch (err) {
       result.errors.push(`fx: ${err instanceof Error ? err.message : String(err)}`);
     }
+    await emit({ stage: "categorize", message: "Applying category rules" });
     try {
       const cats = await applyRulesToTransactions(insertedIds);
       categorized = cats.updated;
     } catch (err) {
       result.errors.push(`categorize: ${err instanceof Error ? err.message : String(err)}`);
     }
+    await emit({ stage: "routes", message: "Applying transfer routes" });
     try {
       const routed = await applyTransferRoutes({ txIds: insertedIds });
       routedMirrors = routed.mirroredCreated;
     } catch (err) {
       result.errors.push(`routes: ${err instanceof Error ? err.message : String(err)}`);
     }
+    await emit({ stage: "transfers", message: "Detecting transfers" });
     try {
       const transfers = await detectTransfers({ sinceDays: 30 });
       transfersMatched = transfers.matched;
@@ -257,6 +295,12 @@ export async function importRevolutCsv(
       },
     })
     .where(eq(syncRuns.id, run.id));
+
+  await emit({
+    stage: "done",
+    message: "Import complete",
+    data: { ...result } as unknown as Record<string, unknown>,
+  });
 
   return result;
 }

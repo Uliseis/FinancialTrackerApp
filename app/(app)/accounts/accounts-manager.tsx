@@ -713,6 +713,19 @@ interface ImportResultDisplay {
   };
 }
 
+const STAGE_LABELS: Record<string, string> = {
+  parse: "Parsing CSV",
+  prepare: "Preparing rows",
+  insert: "Inserting transactions",
+  fx: "Converting to EUR",
+  categorize: "Applying category rules",
+  routes: "Applying transfer routes",
+  transfers: "Detecting transfers",
+  done: "Done",
+};
+
+const STAGE_ORDER = ["parse", "prepare", "insert", "fx", "categorize", "routes", "transfers", "done"];
+
 function ImportCsvDialog({
   account,
   onOpenChange,
@@ -725,12 +738,16 @@ function ImportCsvDialog({
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<ImportResultDisplay | null>(null);
+  const [currentStage, setCurrentStage] = useState<string | null>(null);
+  const [streamError, setStreamError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!account) {
       setFile(null);
       setResult(null);
       setSubmitting(false);
+      setCurrentStage(null);
+      setStreamError(null);
     }
   }, [account]);
 
@@ -739,6 +756,9 @@ function ImportCsvDialog({
   async function submit() {
     if (!file || !account) return;
     setSubmitting(true);
+    setResult(null);
+    setStreamError(null);
+    setCurrentStage("parse");
     try {
       const fd = new FormData();
       fd.append("file", file);
@@ -746,19 +766,64 @@ function ImportCsvDialog({
         method: "POST",
         body: fd,
       });
-      const body = (await res.json().catch(() => null)) as
-        | (ImportResultDisplay & { error?: string })
-        | null;
-      if (!res.ok) {
-        toast.error(body?.error ?? "Import failed");
+      if (!res.ok || !res.body) {
+        const text = await res.text().catch(() => "");
+        toast.error(text || "Import failed");
+        setStreamError(text || `HTTP ${res.status}`);
         return;
       }
-      setResult(body);
-      const summary = `Imported ${body?.inserted ?? 0} · skipped ${body?.skippedDuplicate ?? 0} dup, ${body?.skippedTransfer ?? 0} transfer`;
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finalResult: ImportResultDisplay | null = null;
+      let errorMessage: string | null = null;
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const event = JSON.parse(line) as {
+              type: string;
+              stage?: string;
+              message?: string;
+              data?: Record<string, unknown>;
+            };
+            if (event.type === "progress" && event.stage) {
+              setCurrentStage(event.stage);
+              if (event.stage === "done" && event.data) {
+                finalResult = event.data as unknown as ImportResultDisplay;
+              }
+            } else if (event.type === "error") {
+              errorMessage = (event as { message?: string }).message ?? "Import failed";
+            }
+          } catch {
+            // ignore malformed line
+          }
+        }
+      }
+      if (errorMessage) {
+        toast.error(errorMessage);
+        setStreamError(errorMessage);
+        return;
+      }
+      if (!finalResult) {
+        toast.error("Import ended without a result — check sync_runs");
+        setStreamError("Stream closed before completion");
+        return;
+      }
+      setResult(finalResult);
+      const summary = `Imported ${finalResult.inserted} · skipped ${finalResult.skippedDuplicate} dup, ${finalResult.skippedTransfer} transfer`;
       toast.success(summary);
       onImported();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Import failed");
+      const message = err instanceof Error ? err.message : "Import failed";
+      toast.error(message);
+      setStreamError(message);
     } finally {
       setSubmitting(false);
     }
@@ -781,12 +846,43 @@ function ImportCsvDialog({
             <Input
               type="file"
               accept=".csv,text/csv"
+              disabled={submitting}
               onChange={(e) => {
                 setFile(e.target.files?.[0] ?? null);
                 setResult(null);
+                setStreamError(null);
+                setCurrentStage(null);
               }}
             />
           </div>
+          {(submitting || currentStage) && !result ? (
+            <div className="rounded-md border border-border bg-muted/30 p-3 text-xs">
+              <p className="font-medium">Progress</p>
+              <ul className="mt-1 space-y-0.5">
+                {STAGE_ORDER.filter((s) => s !== "done").map((stage) => {
+                  const currentIdx = currentStage ? STAGE_ORDER.indexOf(currentStage) : -1;
+                  const stageIdx = STAGE_ORDER.indexOf(stage);
+                  const isDone = currentIdx > stageIdx || currentStage === "done";
+                  const isActive = currentStage === stage;
+                  return (
+                    <li
+                      key={stage}
+                      className={
+                        isDone
+                          ? "text-foreground"
+                          : isActive
+                            ? "text-foreground"
+                            : "text-muted-foreground/60"
+                      }
+                    >
+                      {isDone ? "✓ " : isActive ? "… " : "  "}
+                      {STAGE_LABELS[stage]}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : null}
           {result ? (
             <div className="rounded-md border border-border bg-muted/30 p-3 text-xs">
               <p className="font-medium">Import summary</p>
@@ -807,6 +903,11 @@ function ImportCsvDialog({
                   <li className="text-destructive">Errors: {result.errors.length}</li>
                 ) : null}
               </ul>
+            </div>
+          ) : null}
+          {streamError ? (
+            <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-xs text-destructive">
+              {streamError}
             </div>
           ) : null}
         </div>

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { importRevolutCsv } from "@/lib/csv-import";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 const MAX_BYTES = 5 * 1024 * 1024;
 
@@ -29,11 +30,31 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   const csvText = await file.text();
-  try {
-    const result = await importRevolutCsv(id, csvText);
-    return NextResponse.json(result);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: message }, { status: 400 });
-  }
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const write = (obj: Record<string, unknown>) => {
+        controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
+      };
+      try {
+        await importRevolutCsv(id, csvText, async (event) => {
+          write({ type: "progress", ...event });
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        write({ type: "error", message });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Accel-Buffering": "no",
+    },
+  });
 }

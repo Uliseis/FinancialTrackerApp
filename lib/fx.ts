@@ -1,4 +1,4 @@
-import { and, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { fxRates, transactions } from "@/db/schema";
 
@@ -101,16 +101,19 @@ export async function toEur(
 export async function backfillTransactionEurAmounts(opts: {
   limit?: number;
   sinceDays?: number;
+  txIds?: string[];
 } = {}): Promise<{ updated: number; skipped: number }> {
-  const where = opts.sinceDays
-    ? and(
-        isNull(transactions.amountEur),
-        gte(
-          transactions.bookedAt,
-          new Date(Date.now() - opts.sinceDays * 86_400_000),
-        ),
-      )
-    : isNull(transactions.amountEur);
+  const where = opts.txIds && opts.txIds.length > 0
+    ? and(isNull(transactions.amountEur), inArray(transactions.id, opts.txIds))
+    : opts.sinceDays
+      ? and(
+          isNull(transactions.amountEur),
+          gte(
+            transactions.bookedAt,
+            new Date(Date.now() - opts.sinceDays * 86_400_000),
+          ),
+        )
+      : isNull(transactions.amountEur);
 
   const rows = await db
     .select({
