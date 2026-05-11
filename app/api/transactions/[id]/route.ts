@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { eq, or } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { transactions } from "@/db/schema";
+import { accounts, transactions } from "@/db/schema";
+import { createMirrorTransaction, removeMirrorTransaction } from "@/lib/transfer-routes";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,7 @@ const patchSchema = z.object({
   categoryId: z.string().uuid().nullable().optional(),
   isTransfer: z.boolean().optional(),
   transferPartnerId: z.string().uuid().nullable().optional(),
+  routeToAccountId: z.string().uuid().nullable().optional(),
 });
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -34,7 +36,38 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     updates.categorySource = "manual";
   }
 
+  if (parsed.data.routeToAccountId) {
+    if (current.routedFromTxId) {
+      return NextResponse.json({ error: "this transaction is itself a mirror" }, { status: 409 });
+    }
+    const targetId = parsed.data.routeToAccountId;
+    if (targetId === current.accountId) {
+      return NextResponse.json({ error: "target must be a different account" }, { status: 400 });
+    }
+    const [target] = await db
+      .select({ id: accounts.id, archived: accounts.archived, connectionId: accounts.connectionId })
+      .from(accounts)
+      .where(eq(accounts.id, targetId));
+    if (!target) return NextResponse.json({ error: "target account not found" }, { status: 404 });
+    if (target.archived) {
+      return NextResponse.json({ error: "target account is archived" }, { status: 400 });
+    }
+    const result = await createMirrorTransaction(current, targetId);
+    if (!result) return NextResponse.json({ error: "could not route" }, { status: 409 });
+    return NextResponse.json({ ok: true, transferGroupId: result.transferGroupId, mirrorId: result.mirrorId });
+  }
+
   if (parsed.data.isTransfer === true && parsed.data.transferPartnerId) {
+    const [existingMirror] = await db
+      .select({ id: transactions.id })
+      .from(transactions)
+      .where(eq(transactions.routedFromTxId, current.id));
+    if (existingMirror || current.routedFromTxId) {
+      return NextResponse.json(
+        { error: "this transaction is already part of a routed transfer" },
+        { status: 409 },
+      );
+    }
     const [partner] = await db
       .select()
       .from(transactions)
@@ -63,7 +96,15 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     updates.isTransfer = true;
     if (!current.transferGroupId) updates.transferGroupId = crypto.randomUUID();
   } else if (parsed.data.isTransfer === false) {
-    if (current.transferGroupId) {
+    const [mirror] = await db
+      .select({ id: transactions.id })
+      .from(transactions)
+      .where(
+        and(eq(transactions.routedFromTxId, current.id)),
+      );
+    if (mirror) {
+      await removeMirrorTransaction(current.id);
+    } else if (current.transferGroupId) {
       await db
         .update(transactions)
         .set({ isTransfer: false, transferGroupId: null })

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { accounts, categories, transactions } from "@/db/schema";
 import { PageHeader } from "@/components/page-header";
@@ -8,6 +8,7 @@ import {
   TransactionsEmpty,
   TransactionsTable,
   type CategoryOption,
+  type ManualAccountOption,
   type SharedExpenseSummary,
   type TransactionsTableRow,
 } from "./transactions-table";
@@ -59,7 +60,7 @@ export default async function TransactionsPage({
   const clampedPage = Math.min(page, totalPages);
   const offset = (clampedPage - 1) * PAGE_SIZE;
 
-  const [rows, cats] = await Promise.all([
+  const [rows, cats, manualAccts] = await Promise.all([
     db
       .select({
         id: transactions.id,
@@ -74,6 +75,7 @@ export default async function TransactionsPage({
         categorySource: transactions.categorySource,
         isTransfer: transactions.isTransfer,
         sharedExpenseGroupId: transactions.sharedExpenseGroupId,
+        routedFromTxId: transactions.routedFromTxId,
         accountId: transactions.accountId,
         accountName: accounts.name,
         institution: accounts.institution,
@@ -85,6 +87,16 @@ export default async function TransactionsPage({
       .limit(PAGE_SIZE)
       .offset(offset),
     db.select().from(categories).orderBy(asc(categories.name)),
+    db
+      .select({
+        id: accounts.id,
+        name: accounts.name,
+        currency: accounts.currency,
+        institution: accounts.institution,
+      })
+      .from(accounts)
+      .where(and(eq(accounts.archived, false), isNull(accounts.connectionId)))
+      .orderBy(asc(accounts.name)),
   ]);
 
   const groupIds = Array.from(
@@ -99,6 +111,12 @@ export default async function TransactionsPage({
     name: c.name,
     color: c.color,
     kind: c.kind as CategoryKind,
+  }));
+  const manualOptions: ManualAccountOption[] = manualAccts.map((a) => ({
+    id: a.id,
+    name: a.name,
+    currency: a.currency,
+    institution: a.institution,
   }));
 
   const hasAnyTransactions = total > 0 || q.length > 0 || showTransfers;
@@ -117,6 +135,7 @@ export default async function TransactionsPage({
             rows={tableRows}
             categories={catOptions}
             sharedGroups={groupSummaries}
+            manualAccounts={manualOptions}
             page={clampedPage}
             totalPages={totalPages}
             total={total}

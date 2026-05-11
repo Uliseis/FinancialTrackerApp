@@ -32,9 +32,16 @@ type GroupKind = "cash" | "savings" | "investment" | "credit" | "other";
 export interface AccountsManagerProps {
   accounts: Account[];
   groups: AccountGroup[];
+  nativeBalances: Record<string, string | null>;
+  eurBalances: Record<string, number>;
 }
 
-export function AccountsManager({ accounts, groups }: AccountsManagerProps) {
+export function AccountsManager({
+  accounts,
+  groups,
+  nativeBalances,
+  eurBalances,
+}: AccountsManagerProps) {
   const router = useRouter();
   const [, startTransition] = useTransition();
 
@@ -152,7 +159,7 @@ export function AccountsManager({ accounts, groups }: AccountsManagerProps) {
   }
 
   function totalForGroup(items: Account[]): number {
-    return items.reduce((sum, a) => sum + (a.balance ? Number(a.balance) : 0), 0);
+    return items.reduce((sum, a) => sum + (eurBalances[a.id] ?? 0), 0);
   }
 
   return (
@@ -346,6 +353,7 @@ export function AccountsManager({ accounts, groups }: AccountsManagerProps) {
                   <AccountList
                     items={items}
                     groups={groups}
+                    nativeBalances={nativeBalances}
                     onAssign={assignGroup}
                     onDelete={deleteAccount}
                   />
@@ -363,6 +371,7 @@ export function AccountsManager({ accounts, groups }: AccountsManagerProps) {
               <AccountList
                 items={accountsByGroup.get(null) ?? []}
                 groups={groups}
+                nativeBalances={nativeBalances}
                 onAssign={assignGroup}
                 onDelete={deleteAccount}
               />
@@ -377,11 +386,13 @@ export function AccountsManager({ accounts, groups }: AccountsManagerProps) {
 function AccountList({
   items,
   groups,
+  nativeBalances,
   onAssign,
   onDelete,
 }: {
   items: Account[];
   groups: AccountGroup[];
+  nativeBalances: Record<string, string | null>;
   onAssign: (accountId: string, groupId: string) => void;
   onDelete: (id: string) => void;
 }) {
@@ -408,7 +419,9 @@ function AccountList({
             </p>
           </div>
           <p className="tabular text-sm">
-            {a.balance ? formatCurrency(Number(a.balance), a.currency) : "—"}
+            {nativeBalances[a.id]
+              ? formatCurrency(Number(nativeBalances[a.id]), a.currency)
+              : "—"}
           </p>
           <Select value={a.groupId ?? UNGROUPED} onValueChange={(v) => onAssign(a.id, v)}>
             <SelectTrigger className="w-[140px]">

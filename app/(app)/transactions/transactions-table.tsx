@@ -13,6 +13,7 @@ import {
   Link2Off,
   MoreHorizontal,
   Search,
+  Send,
   Tag,
   TrendingUp,
   Wand2,
@@ -42,6 +43,9 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -77,6 +81,7 @@ export interface TransactionsTableRow {
   categorySource: "bank" | "rule" | "manual" | null;
   isTransfer: boolean;
   sharedExpenseGroupId: string | null;
+  routedFromTxId: string | null;
   accountId: string;
   accountName: string | null;
   institution: string | null;
@@ -89,12 +94,20 @@ export interface CategoryOption {
   kind: CategoryKind;
 }
 
+export interface ManualAccountOption {
+  id: string;
+  name: string;
+  currency: string;
+  institution: string;
+}
+
 const UNCATEGORIZED = "__none__";
 
 export function TransactionsTable({
   rows,
   categories,
   sharedGroups,
+  manualAccounts,
   page,
   totalPages,
   total,
@@ -105,6 +118,7 @@ export function TransactionsTable({
   rows: TransactionsTableRow[];
   categories: CategoryOption[];
   sharedGroups: SharedExpenseSummary[];
+  manualAccounts: ManualAccountOption[];
   page: number;
   totalPages: number;
   total: number;
@@ -189,6 +203,27 @@ export function TransactionsTable({
       startTransition(() => router.refresh());
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Update failed");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function routeTo(row: TransactionsTableRow, accountId: string) {
+    setBusyId(row.id);
+    try {
+      const res = await fetch(`/api/transactions/${row.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ routeToAccountId: accountId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error ?? "Failed");
+      }
+      toast.success("Routed to account");
+      startTransition(() => router.refresh());
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed");
     } finally {
       setBusyId(null);
     }
@@ -390,6 +425,12 @@ export function TransactionsTable({
                             transfer
                           </Badge>
                         ) : null}
+                        {r.routedFromTxId ? (
+                          <Badge variant="outline" className="text-[10px]">
+                            <Send className="mr-1 h-3 w-3" />
+                            routed
+                          </Badge>
+                        ) : null}
                         {group ? (
                           <Badge variant="outline" className="text-[10px]">
                             <Link2 className="mr-1 h-3 w-3" />
@@ -512,6 +553,29 @@ export function TransactionsTable({
                             <ArrowLeftRight className="h-4 w-4" />
                             {r.isTransfer ? "Unmark transfer" : "Mark as transfer"}
                           </DropdownMenuItem>
+                          {manualAccounts.length > 0 && !r.routedFromTxId ? (
+                            <DropdownMenuSub>
+                              <DropdownMenuSubTrigger>
+                                <Send className="h-4 w-4" />
+                                Send to account…
+                              </DropdownMenuSubTrigger>
+                              <DropdownMenuSubContent>
+                                {manualAccounts
+                                  .filter((a) => a.id !== r.accountId)
+                                  .map((a) => (
+                                    <DropdownMenuItem
+                                      key={a.id}
+                                      onClick={() => routeTo(r, a.id)}
+                                    >
+                                      {a.name}
+                                      <span className="ml-2 text-xs text-muted-foreground">
+                                        {a.currency}
+                                      </span>
+                                    </DropdownMenuItem>
+                                  ))}
+                              </DropdownMenuSubContent>
+                            </DropdownMenuSub>
+                          ) : null}
                           {r.direction === "debit" && !r.isTransfer && !group ? (
                             <DropdownMenuItem onClick={() => setLinkTarget(r)}>
                               <Link2 className="h-4 w-4" />

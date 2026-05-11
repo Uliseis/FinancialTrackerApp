@@ -157,6 +157,35 @@ export const categoryRules = pgTable("category_rules", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const transferRoutes = pgTable(
+  "transfer_routes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    pattern: text("pattern").notNull(),
+    field: text("field").notNull().default("description"),
+    matchType: text("match_type").notNull().default("contains"),
+    sourceAccountId: uuid("source_account_id").references(() => accounts.id, {
+      onDelete: "cascade",
+    }),
+    targetAccountId: uuid("target_account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    direction: txDirectionEnum("direction"),
+    priority: integer("priority").notNull().default(0),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    enabledPriorityIdx: index("transfer_routes_enabled_priority_idx").on(
+      t.enabled,
+      t.priority,
+    ),
+    targetIdx: index("transfer_routes_target_idx").on(t.targetAccountId),
+    sourceIdx: index("transfer_routes_source_idx").on(t.sourceAccountId),
+  }),
+);
+
 export const budgets = pgTable("budgets", {
   id: uuid("id").primaryKey().defaultRandom(),
   categoryId: uuid("category_id")
@@ -207,6 +236,10 @@ export const transactions = pgTable(
     categorySource: categorySourceEnum("category_source"),
     isTransfer: boolean("is_transfer").notNull().default(false),
     transferGroupId: uuid("transfer_group_id"),
+    routedFromTxId: uuid("routed_from_tx_id").references(
+      (): AnyPgColumn => transactions.id,
+      { onDelete: "cascade" },
+    ),
     sharedExpenseGroupId: uuid("shared_expense_group_id").references(
       (): AnyPgColumn => sharedExpenseGroups.id,
       { onDelete: "set null" },
@@ -222,6 +255,7 @@ export const transactions = pgTable(
     bookedIdx: index("transactions_booked_idx").on(t.bookedAt),
     transferIdx: index("transactions_transfer_idx").on(t.isTransfer),
     transferGroupIdx: index("transactions_transfer_group_idx").on(t.transferGroupId),
+    routedFromIdx: index("transactions_routed_from_idx").on(t.routedFromTxId),
     sharedExpenseIdx: index("transactions_shared_expense_idx").on(t.sharedExpenseGroupId),
     categoryIdx: index("transactions_category_idx").on(t.categoryId),
   }),
@@ -321,6 +355,8 @@ export type Category = typeof categories.$inferSelect;
 export type NewCategory = typeof categories.$inferInsert;
 export type CategoryRule = typeof categoryRules.$inferSelect;
 export type NewCategoryRule = typeof categoryRules.$inferInsert;
+export type TransferRoute = typeof transferRoutes.$inferSelect;
+export type NewTransferRoute = typeof transferRoutes.$inferInsert;
 export type Budget = typeof budgets.$inferSelect;
 export type NewBudget = typeof budgets.$inferInsert;
 export type FxRate = typeof fxRates.$inferSelect;

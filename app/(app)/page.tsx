@@ -31,6 +31,7 @@ import {
   transactions,
 } from "@/db/schema";
 import { activeBudgetsProgress } from "@/lib/budgets";
+import { computeAccountBalancesEur } from "@/lib/accounts";
 import { getRate } from "@/lib/fx";
 import { formatCurrency, formatDate, monthStart } from "@/lib/utils";
 
@@ -68,10 +69,10 @@ async function netWorthByGroup() {
   }
   groupMap.set(null, { name: "Ungrouped", color: null, eur: 0, count: 0 });
 
-  for (const a of acctRows) {
-    if (a.archived) continue;
-    const rate = await rateFor(a.currency);
-    const balanceEur = a.balance ? Number(a.balance) / rate : 0;
+  const activeRows = acctRows.filter((a) => !a.archived);
+  const balanceMap = await computeAccountBalancesEur(activeRows, { rateFor });
+  for (const a of activeRows) {
+    const balanceEur = balanceMap.get(a.id) ?? 0;
     const key = a.groupId ?? null;
     const bucket = groupMap.get(key);
     if (!bucket) continue;

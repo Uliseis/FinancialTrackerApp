@@ -25,6 +25,7 @@ import {
 import { applyRulesToTransactions } from "@/lib/categorize";
 import { detectTransfers } from "@/lib/transfers";
 import { backfillTransactionEurAmounts } from "@/lib/fx";
+import { applyTransferRoutes } from "@/lib/transfer-routes";
 
 export interface SyncResult {
   connectionId: string;
@@ -35,6 +36,7 @@ export interface SyncResult {
     fxBackfilled: number;
     fxSkipped: number;
     categorized: number;
+    routedMirrors: number;
     transfersMatched: number;
   };
 }
@@ -262,6 +264,7 @@ export async function syncEnableBankingConnection(
     let fxBackfilled = 0;
     let fxSkipped = 0;
     let categorized = 0;
+    let routedMirrors = 0;
     let transfersMatched = 0;
 
     if (insertedIds.length > 0) {
@@ -279,13 +282,19 @@ export async function syncEnableBankingConnection(
         result.errors.push(`categorize: ${err instanceof Error ? err.message : String(err)}`);
       }
       try {
+        const routed = await applyTransferRoutes({ txIds: insertedIds });
+        routedMirrors = routed.mirroredCreated;
+      } catch (err) {
+        result.errors.push(`routes: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      try {
         const transfers = await detectTransfers({ sinceDays: 30 });
         transfersMatched = transfers.matched;
       } catch (err) {
         result.errors.push(`transfers: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
-    result.postProcess = { fxBackfilled, fxSkipped, categorized, transfersMatched };
+    result.postProcess = { fxBackfilled, fxSkipped, categorized, routedMirrors, transfersMatched };
 
     await db
       .update(connections)
