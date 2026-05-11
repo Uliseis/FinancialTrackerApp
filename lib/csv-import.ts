@@ -8,7 +8,6 @@ import {
   type NewTransaction,
 } from "@/db/schema";
 import { applyRulesToTransactions } from "@/lib/categorize";
-import { detectTransfers } from "@/lib/transfers";
 import { backfillTransactionEurAmounts } from "@/lib/fx";
 import { applyTransferRoutes } from "@/lib/transfer-routes";
 
@@ -113,9 +112,21 @@ function parseMadridLocal(raw: string | undefined): Date | null {
 function normalizeSignedAmount(raw: string | undefined): string | null {
   if (raw == null) return null;
   let s = raw.trim();
+  if (s === "") return null;
   const hasComma = s.includes(",");
   const hasDot = s.includes(".");
-  if (hasComma && !hasDot) {
+  if (hasComma && hasDot) {
+    const lastDot = s.lastIndexOf(".");
+    const lastComma = s.lastIndexOf(",");
+    if (lastDot > lastComma) {
+      // US: "1,234.56" — comma is thousands, dot is decimal
+      if (!/^-?\d{1,3}(,\d{3})+\.\d+$/.test(s)) return null;
+      s = s.replace(/,/g, "");
+    } else {
+      // EU: "1.234,56" — dot is thousands, comma is decimal — reject (Revolut English uses US)
+      return null;
+    }
+  } else if (hasComma) {
     if (/^-?\d{1,3}(,\d{3})+$/.test(s)) {
       s = s.replace(/,/g, "");
     } else if (/^-?\d+,\d{1,2}$/.test(s)) {
@@ -123,8 +134,6 @@ function normalizeSignedAmount(raw: string | undefined): string | null {
     } else {
       return null;
     }
-  } else {
-    s = s.replace(/,/g, "");
   }
   if (!/^-?\d+(\.\d+)?$/.test(s)) return null;
   if (!Number.isFinite(Number(s))) return null;
@@ -190,7 +199,6 @@ export async function importRevolutCsv(
   try {
   const dupCounts = new Map<string, number>();
   const toInsert: NewTransaction[] = [];
-  let minBookedAt: Date | null = null;
 
   for (let idx = 0; idx < rows.length; idx++) {
     const row = rows[idx];
@@ -218,8 +226,6 @@ export async function importRevolutCsv(
     const externalId = `revolutcsv:v1:${dayKey}:${amount}:${descSlug}:${dupIdx}`;
     const numericAmount = Number(amount);
     const direction: "debit" | "credit" = numericAmount < 0 ? "debit" : "credit";
-
-    if (!minBookedAt || started < minBookedAt) minBookedAt = started;
 
     toInsert.push({
       accountId,
@@ -289,17 +295,11 @@ export async function importRevolutCsv(
     } catch (err) {
       result.errors.push(`routes: ${err instanceof Error ? err.message : String(err)}`);
     }
-    await emit({ stage: "transfers", message: "Detecting transfers" });
-    try {
-      const ageDays = minBookedAt
-        ? Math.ceil((Date.now() - minBookedAt.getTime()) / 86_400_000) + 3
-        : 30;
-      const sinceDays = Math.min(Math.max(ageDays, 30), 730);
-      const transfers = await detectTransfers({ sinceDays });
-      transfersMatched = transfers.matched;
-    } catch (err) {
-      result.errors.push(`transfers: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    // Skip detectTransfers: CSV-imported rows are CARD_PAYMENT (TRANSFER is dropped
+    // at parse). Card payments are merchant outflows, never inter-account transfers,
+    // and running the matcher risks spurious pairings with unrelated same-amount
+    // credits on other accounts.
+    await emit({ stage: "transfers", message: "Skipped (CSV rows can't be transfers)" });
   }
   result.postProcess = { fxBackfilled, categorized, routedMirrors, transfersMatched };
 
