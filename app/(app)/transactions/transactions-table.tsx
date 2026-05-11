@@ -793,7 +793,7 @@ function LinkReimbursementsDialog({
 
   return (
     <Dialog open={!!primary} onOpenChange={(o) => (!o ? onClose() : undefined)}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>Link reimbursements</DialogTitle>
           <DialogDescription>
@@ -805,8 +805,8 @@ function LinkReimbursementsDialog({
         {primary ? (
           <div className="space-y-3">
             <div className="rounded-md border border-border p-3">
-              <div className="flex items-center justify-between text-sm">
-                <span>
+              <div className="flex items-center gap-3 text-sm">
+                <span className="min-w-0 flex-1 truncate">
                   <strong>{primary.description ?? "Expense"}</strong>
                   {primary.counterparty ? (
                     <span className="ml-2 text-muted-foreground">
@@ -814,7 +814,7 @@ function LinkReimbursementsDialog({
                     </span>
                   ) : null}
                 </span>
-                <span className="tabular font-medium">
+                <span className="tabular shrink-0 font-medium">
                   {formatCurrency(parseFloat(primary.amount), primary.currency)}
                 </span>
               </div>
@@ -856,20 +856,20 @@ function LinkReimbursementsDialog({
                       >
                         <input
                           type="checkbox"
-                          className="h-4 w-4 accent-current"
+                          className="h-4 w-4 shrink-0 accent-current"
                           checked={selected.has(c.id)}
                           onChange={() => toggle(c.id)}
                         />
-                        <div className="flex-1 text-sm">
+                        <div className="min-w-0 flex-1 text-sm">
                           <p className="truncate">
                             {c.description ?? c.counterparty ?? "—"}
                           </p>
-                          <p className="text-xs text-muted-foreground">
+                          <p className="truncate text-xs text-muted-foreground">
                             {formatDate(new Date(c.bookedAt))}
                             {c.counterparty ? ` · ${c.counterparty}` : ""}
                           </p>
                         </div>
-                        <span className="tabular text-sm font-medium">
+                        <span className="tabular shrink-0 text-sm font-medium">
                           {formatCurrency(eur, "EUR")}
                         </span>
                       </li>
@@ -1001,7 +1001,7 @@ function MarkAsRefundDialog({
 
   return (
     <Dialog open={!!credit} onOpenChange={(o) => (!o ? onClose() : undefined)}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>Mark as refund of…</DialogTitle>
           <DialogDescription>
@@ -1013,8 +1013,8 @@ function MarkAsRefundDialog({
         {credit ? (
           <div className="space-y-3">
             <div className="rounded-md border border-border p-3">
-              <div className="flex items-center justify-between text-sm">
-                <span>
+              <div className="flex items-center gap-3 text-sm">
+                <span className="min-w-0 flex-1 truncate">
                   <strong>{credit.description ?? credit.counterparty ?? "Credit"}</strong>
                   {credit.counterparty ? (
                     <span className="ml-2 text-muted-foreground">
@@ -1022,7 +1022,7 @@ function MarkAsRefundDialog({
                     </span>
                   ) : null}
                 </span>
-                <span className="tabular font-medium">
+                <span className="tabular shrink-0 font-medium">
                   +{formatCurrency(parseFloat(credit.amount), credit.currency)}
                 </span>
               </div>
@@ -1065,20 +1065,20 @@ function MarkAsRefundDialog({
                         <input
                           type="radio"
                           name="refund-target"
-                          className="h-4 w-4 accent-current"
+                          className="h-4 w-4 shrink-0 accent-current"
                           checked={selectedId === c.id}
                           onChange={() => setSelectedId(c.id)}
                         />
-                        <div className="flex-1 text-sm">
+                        <div className="min-w-0 flex-1 text-sm">
                           <p className="truncate">
                             {c.description ?? c.counterparty ?? "—"}
                           </p>
-                          <p className="text-xs text-muted-foreground">
+                          <p className="truncate text-xs text-muted-foreground">
                             {formatDate(new Date(c.bookedAt))}
                             {c.counterparty ? ` · ${c.counterparty}` : ""}
                           </p>
                         </div>
-                        <span className="tabular text-sm font-medium">
+                        <span className="tabular shrink-0 text-sm font-medium">
                           {formatCurrency(eur, "EUR")}
                         </span>
                       </li>
@@ -1246,7 +1246,7 @@ function ClassifyLikeThisDialog({
 
   return (
     <Dialog open={!!target} onOpenChange={(o) => (!o ? onClose() : undefined)}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>Classify all like this</DialogTitle>
           <DialogDescription>
