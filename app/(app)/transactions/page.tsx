@@ -1,4 +1,4 @@
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { accounts, categories, transactions } from "@/db/schema";
 import { PageHeader } from "@/components/page-header";
@@ -14,9 +14,51 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const PAGE_SIZE = 200;
+const PAGE_SIZE = 100;
 
-export default async function TransactionsPage() {
+function parsePage(raw: string | string[] | undefined): number {
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  const n = Number.parseInt(v ?? "1", 10);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
+function firstParam(raw: string | string[] | undefined): string {
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return v ?? "";
+}
+
+export default async function TransactionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const sp = await searchParams;
+  const page = parsePage(sp.page);
+  const q = firstParam(sp.q).trim();
+  const showTransfers = firstParam(sp.transfers) === "show";
+
+  const filters: SQL[] = [];
+  if (!showTransfers) filters.push(eq(transactions.isTransfer, false));
+  if (q) {
+    const needle = `%${q}%`;
+    filters.push(
+      or(
+        ilike(transactions.description, needle),
+        ilike(transactions.counterparty, needle),
+      )!,
+    );
+  }
+  const whereClause = filters.length > 0 ? and(...filters) : undefined;
+
+  const [totalRow] = await db
+    .select({ count: sql<string>`count(*)` })
+    .from(transactions)
+    .where(whereClause);
+  const total = Number(totalRow?.count ?? 0);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const clampedPage = Math.min(page, totalPages);
+  const offset = (clampedPage - 1) * PAGE_SIZE;
+
   const [rows, cats] = await Promise.all([
     db
       .select({
@@ -38,8 +80,10 @@ export default async function TransactionsPage() {
       })
       .from(transactions)
       .leftJoin(accounts, eq(transactions.accountId, accounts.id))
+      .where(whereClause)
       .orderBy(desc(transactions.bookedAt))
-      .limit(PAGE_SIZE),
+      .limit(PAGE_SIZE)
+      .offset(offset),
     db.select().from(categories).orderBy(asc(categories.name)),
   ]);
 
@@ -57,20 +101,28 @@ export default async function TransactionsPage() {
     kind: c.kind as CategoryKind,
   }));
 
+  const hasAnyTransactions = total > 0 || q.length > 0 || showTransfers;
+
   return (
     <>
       <PageHeader
         title="Transactions"
-        description={`Most recent ${PAGE_SIZE} synced rows. Internal transfers are hidden by default.`}
+        description={`${total.toLocaleString()} matching · page ${clampedPage} of ${totalPages}`}
       />
       <div className="p-6">
-        {tableRows.length === 0 ? (
+        {!hasAnyTransactions ? (
           <TransactionsEmpty />
         ) : (
           <TransactionsTable
             rows={tableRows}
             categories={catOptions}
             sharedGroups={groupSummaries}
+            page={clampedPage}
+            totalPages={totalPages}
+            total={total}
+            pageSize={PAGE_SIZE}
+            query={q}
+            showTransfers={showTransfers}
           />
         )}
       </div>

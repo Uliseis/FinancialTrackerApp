@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   ArrowDownLeft,
   ArrowUpRight,
   ArrowLeftRight,
+  ChevronLeft,
+  ChevronRight,
   Link2,
   Link2Off,
   MoreHorizontal,
@@ -93,19 +95,34 @@ export function TransactionsTable({
   rows,
   categories,
   sharedGroups,
+  page,
+  totalPages,
+  total,
+  pageSize,
+  query: initialQuery,
+  showTransfers: initialShowTransfers,
 }: {
   rows: TransactionsTableRow[];
   categories: CategoryOption[];
   sharedGroups: SharedExpenseSummary[];
+  page: number;
+  totalPages: number;
+  total: number;
+  pageSize: number;
+  query: string;
+  showTransfers: boolean;
 }) {
   const router = useRouter();
-  const [, startTransition] = useTransition();
-  const [query, setQuery] = useState("");
-  const [hideTransfers, setHideTransfers] = useState(true);
+  const [isPending, startTransition] = useTransition();
+  const [query, setQuery] = useState(initialQuery);
+  const [showTransfers, setShowTransfers] = useState(initialShowTransfers);
   const [showSharedAs, setShowSharedAs] = useState<"net" | "gross">("net");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [linkTarget, setLinkTarget] = useState<TransactionsTableRow | null>(null);
   const [classifyTarget, setClassifyTarget] = useState<TransactionsTableRow | null>(null);
+
+  useEffect(() => setQuery(initialQuery), [initialQuery]);
+  useEffect(() => setShowTransfers(initialShowTransfers), [initialShowTransfers]);
 
   const catById = useMemo(
     () => new Map(categories.map((c) => [c.id, c])),
@@ -130,18 +147,33 @@ export function TransactionsTable({
     [sharedGroups],
   );
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return rows.filter((r) => {
-      if (hideTransfers && r.isTransfer) return false;
-      if (!q) return true;
-      const haystack = [r.description, r.counterparty, r.accountName, r.institution]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(q);
-    });
-  }, [rows, query, hideTransfers]);
+  const firstRender = useRef(true);
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    const t = window.setTimeout(() => {
+      const params = new URLSearchParams();
+      if (query.trim()) params.set("q", query.trim());
+      if (showTransfers) params.set("transfers", "show");
+      const qs = params.toString();
+      startTransition(() => router.replace(qs ? `/transactions?${qs}` : "/transactions"));
+    }, 250);
+    return () => window.clearTimeout(t);
+  }, [query, showTransfers, router]);
+
+  function goToPage(target: number) {
+    const params = new URLSearchParams();
+    if (query.trim()) params.set("q", query.trim());
+    if (showTransfers) params.set("transfers", "show");
+    if (target > 1) params.set("page", String(target));
+    const qs = params.toString();
+    startTransition(() => router.replace(qs ? `/transactions?${qs}` : "/transactions"));
+  }
+
+  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const rangeEnd = Math.min(total, page * pageSize);
 
   async function setCategory(id: string, value: string) {
     setBusyId(id);
@@ -248,15 +280,15 @@ export function TransactionsTable({
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search description, counterparty, account…"
+            placeholder="Search description or counterparty…"
             className="pl-8"
           />
         </div>
         <label className="flex cursor-pointer select-none items-center gap-2 text-sm">
           <input
             type="checkbox"
-            checked={hideTransfers}
-            onChange={(e) => setHideTransfers(e.target.checked)}
+            checked={!showTransfers}
+            onChange={(e) => setShowTransfers(!e.target.checked)}
             className="h-4 w-4 accent-current"
           />
           Hide transfers
@@ -283,7 +315,9 @@ export function TransactionsTable({
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          {filtered.length} of {rows.length}
+          {total === 0
+            ? "0 results"
+            : `${rangeStart.toLocaleString()}–${rangeEnd.toLocaleString()} of ${total.toLocaleString()}`}
         </p>
       </div>
 
@@ -300,7 +334,7 @@ export function TransactionsTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.length === 0 ? (
+            {rows.length === 0 ? (
               <TableRow className="hover:bg-transparent">
                 <TableCell
                   colSpan={6}
@@ -310,7 +344,7 @@ export function TransactionsTable({
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((r) => {
+              rows.map((r) => {
                 const positive = r.direction === "credit";
                 const Icon = positive ? ArrowDownLeft : ArrowUpRight;
                 const cat = r.categoryId ? catById.get(r.categoryId) : undefined;
@@ -504,6 +538,33 @@ export function TransactionsTable({
             )}
           </TableBody>
         </Table>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs text-muted-foreground">
+          Page {page} of {totalPages}
+          {isPending ? " · loading…" : ""}
+        </p>
+        <div className="flex items-center gap-1">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => goToPage(page - 1)}
+            disabled={page <= 1 || isPending}
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Previous
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => goToPage(page + 1)}
+            disabled={page >= totalPages || isPending}
+          >
+            Next
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       <LinkReimbursementsDialog
