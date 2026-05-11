@@ -6,7 +6,7 @@ import {
 } from "@/lib/sync-enablebanking";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 async function authorize(req: Request): Promise<boolean> {
   const session = await auth();

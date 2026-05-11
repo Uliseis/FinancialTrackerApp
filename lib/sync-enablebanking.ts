@@ -41,9 +41,20 @@ export interface SyncResult {
 
 const TX_PAGE_LIMIT = 50;
 const TX_LOOKBACK_DAYS = 730;
+const TX_INCREMENTAL_OVERLAP_DAYS = 7;
 
 function toIsoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
+}
+
+function computeDateFrom(lastSyncAt: Date | null): string {
+  const maxLookback = new Date(Date.now() - TX_LOOKBACK_DAYS * 86_400_000);
+  if (!lastSyncAt) return toIsoDate(maxLookback);
+  const incremental = new Date(
+    lastSyncAt.getTime() - TX_INCREMENTAL_OVERLAP_DAYS * 86_400_000,
+  );
+  const effective = incremental < maxLookback ? maxLookback : incremental;
+  return toIsoDate(effective);
 }
 
 export async function syncEnableBankingConnection(
@@ -190,7 +201,7 @@ export async function syncEnableBankingConnection(
           accountId = upserted[0].id;
         }
 
-        const dateFrom = toIsoDate(new Date(Date.now() - TX_LOOKBACK_DAYS * 86_400_000));
+        const dateFrom = computeDateFrom(conn.lastSyncAt);
         let continuationKey: string | undefined;
         let pages = 0;
         do {
