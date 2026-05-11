@@ -1,4 +1,5 @@
-import { and, eq, gte, or, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
 import { accounts, transactions } from "@/db/schema";
 
@@ -109,4 +110,161 @@ export async function detectTransfers(
   }
 
   return { scanned: candidates.length, matched };
+}
+
+export interface RepairResult {
+  groupsBroken: number;
+  txsUnflagged: number;
+  mirrorsDeleted: number;
+}
+
+function isInvalid(
+  a: { spaceId: string | null; excluded: boolean; archived: boolean } | undefined,
+): boolean {
+  return !a || a.excluded || a.archived;
+}
+
+export async function repairTransferGroups(
+  opts: { accountId?: string } = {},
+): Promise<RepairResult> {
+  const result: RepairResult = { groupsBroken: 0, txsUnflagged: 0, mirrorsDeleted: 0 };
+
+  const groupIdsRows = opts.accountId
+    ? await db
+        .selectDistinct({ id: transactions.transferGroupId })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.accountId, opts.accountId),
+            isNotNull(transactions.transferGroupId),
+          ),
+        )
+    : await db
+        .selectDistinct({ id: transactions.transferGroupId })
+        .from(transactions)
+        .where(isNotNull(transactions.transferGroupId));
+
+  const groupIds = groupIdsRows
+    .map((r) => r.id)
+    .filter((v): v is string => v != null);
+
+  if (groupIds.length > 0) {
+    const members = await db
+      .select({
+        id: transactions.id,
+        groupId: transactions.transferGroupId,
+        accountId: transactions.accountId,
+        spaceId: accounts.spaceId,
+        excluded: accounts.excluded,
+        archived: accounts.archived,
+      })
+      .from(transactions)
+      .leftJoin(accounts, eq(transactions.accountId, accounts.id))
+      .where(inArray(transactions.transferGroupId, groupIds));
+
+    const byGroup = new Map<
+      string,
+      Array<{
+        id: string;
+        accountId: string;
+        spaceId: string | null;
+        excluded: boolean;
+        archived: boolean;
+      }>
+    >();
+    for (const m of members) {
+      if (!m.groupId) continue;
+      if (!byGroup.has(m.groupId)) byGroup.set(m.groupId, []);
+      byGroup.get(m.groupId)!.push({
+        id: m.id,
+        accountId: m.accountId,
+        spaceId: m.spaceId,
+        excluded: m.excluded ?? false,
+        archived: m.archived ?? false,
+      });
+    }
+
+    const txsToUnflag: string[] = [];
+    for (const [, group] of byGroup) {
+      const spaces = new Set(group.map((g) => g.spaceId));
+      const anyBad = group.some((g) => g.excluded || g.archived);
+      if (spaces.size > 1 || anyBad) {
+        for (const m of group) txsToUnflag.push(m.id);
+        result.groupsBroken += 1;
+      }
+    }
+
+    if (txsToUnflag.length > 0) {
+      const unflagged = await db
+        .update(transactions)
+        .set({ isTransfer: false, transferGroupId: null })
+        .where(inArray(transactions.id, txsToUnflag))
+        .returning({ id: transactions.id });
+      result.txsUnflagged += unflagged.length;
+    }
+  }
+
+  const sourceTx = alias(transactions, "source_tx");
+  const sourceAcc = alias(accounts, "source_acc");
+  const mirrorConditions = [isNotNull(transactions.routedFromTxId)];
+  if (opts.accountId) {
+    mirrorConditions.push(
+      or(
+        eq(transactions.accountId, opts.accountId),
+        eq(sourceTx.accountId, opts.accountId),
+      )!,
+    );
+  }
+
+  const mirrors = await db
+    .select({
+      mirrorId: transactions.id,
+      sourceId: sourceTx.id,
+      mirrorSpace: accounts.spaceId,
+      mirrorExcluded: accounts.excluded,
+      mirrorArchived: accounts.archived,
+      sourceSpace: sourceAcc.spaceId,
+      sourceExcluded: sourceAcc.excluded,
+      sourceArchived: sourceAcc.archived,
+    })
+    .from(transactions)
+    .leftJoin(accounts, eq(transactions.accountId, accounts.id))
+    .leftJoin(sourceTx, eq(sourceTx.id, transactions.routedFromTxId))
+    .leftJoin(sourceAcc, eq(sourceAcc.id, sourceTx.accountId))
+    .where(and(...mirrorConditions));
+
+  const mirrorIdsToDelete: string[] = [];
+  const sourceIdsToReset: string[] = [];
+  for (const m of mirrors) {
+    if (!m.sourceId) continue;
+    const mirrorAcc = {
+      spaceId: m.mirrorSpace,
+      excluded: m.mirrorExcluded ?? false,
+      archived: m.mirrorArchived ?? false,
+    };
+    const srcAcc = {
+      spaceId: m.sourceSpace,
+      excluded: m.sourceExcluded ?? false,
+      archived: m.sourceArchived ?? false,
+    };
+    const crossSpace = mirrorAcc.spaceId !== srcAcc.spaceId;
+    if (crossSpace || isInvalid(mirrorAcc) || isInvalid(srcAcc)) {
+      mirrorIdsToDelete.push(m.mirrorId);
+      sourceIdsToReset.push(m.sourceId);
+    }
+  }
+
+  if (mirrorIdsToDelete.length > 0) {
+    const deleted = await db
+      .delete(transactions)
+      .where(inArray(transactions.id, mirrorIdsToDelete))
+      .returning({ id: transactions.id });
+    result.mirrorsDeleted += deleted.length;
+    await db
+      .update(transactions)
+      .set({ isTransfer: false, transferGroupId: null })
+      .where(inArray(transactions.id, sourceIdsToReset));
+  }
+
+  return result;
 }

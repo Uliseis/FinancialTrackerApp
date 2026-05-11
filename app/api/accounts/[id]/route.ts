@@ -4,6 +4,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { accounts } from "@/db/schema";
+import { repairTransferGroups } from "@/lib/transfers";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +50,17 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     updates.balanceAnchorAt = new Date(parsed.data.balanceAnchorAt);
   }
   await db.update(accounts).set(updates).where(eq(accounts.id, id));
-  return NextResponse.json({ ok: true });
+
+  const triggersRepair =
+    "spaceId" in parsed.data ||
+    "excluded" in parsed.data ||
+    "archived" in parsed.data;
+  let repair: Awaited<ReturnType<typeof repairTransferGroups>> | null = null;
+  if (triggersRepair) {
+    repair = await repairTransferGroups({ accountId: id });
+  }
+
+  return NextResponse.json({ ok: true, repair });
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
