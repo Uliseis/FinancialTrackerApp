@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, Trash2, TrendingUp, Wand2 } from "lucide-react";
+import { Check, Pencil, Plus, Trash2, TrendingUp, Wand2, X } from "lucide-react";
 import type { Category, CategoryRule } from "@/db/schema";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -57,6 +57,53 @@ export function CategoriesManager({ categories, rules }: CategoriesManagerProps)
   const [ruleCategoryId, setRuleCategoryId] = useState<string>(categories[0]?.id ?? "");
   const [rulePriority, setRulePriority] = useState(0);
   const [creatingRule, setCreatingRule] = useState(false);
+
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [editPattern, setEditPattern] = useState("");
+  const [editField, setEditField] = useState<RuleField>("description");
+  const [editMatch, setEditMatch] = useState<RuleMatch>("contains");
+  const [editCategoryId, setEditCategoryId] = useState<string>("");
+  const [editPriority, setEditPriority] = useState(0);
+  const [savingRule, setSavingRule] = useState(false);
+
+  function startEditRule(r: CategoryRule) {
+    setEditingRuleId(r.id);
+    setEditPattern(r.pattern);
+    setEditField((r.field as RuleField) ?? "description");
+    setEditMatch((r.matchType as RuleMatch) ?? "contains");
+    setEditCategoryId(r.categoryId);
+    setEditPriority(r.priority);
+  }
+
+  function cancelEditRule() {
+    setEditingRuleId(null);
+  }
+
+  async function saveEditRule(id: string) {
+    if (!editPattern.trim() || !editCategoryId) return;
+    setSavingRule(true);
+    try {
+      const res = await fetch(`/api/category-rules/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pattern: editPattern.trim(),
+          field: editField,
+          matchType: editMatch,
+          categoryId: editCategoryId,
+          priority: editPriority,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setEditingRuleId(null);
+      toast.success("Rule updated");
+      startTransition(() => router.refresh());
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save rule");
+    } finally {
+      setSavingRule(false);
+    }
+  }
 
   async function createCategory() {
     if (!newName.trim()) return;
@@ -392,7 +439,7 @@ export function CategoriesManager({ categories, rules }: CategoriesManagerProps)
                   <TableHead>Match</TableHead>
                   <TableHead>Category</TableHead>
                   <TableHead className="text-right">Priority</TableHead>
-                  <TableHead className="w-12" />
+                  <TableHead className="w-24" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -408,6 +455,102 @@ export function CategoriesManager({ categories, rules }: CategoriesManagerProps)
                 ) : (
                   activeRules.map((r) => {
                     const cat = categoryById.get(r.categoryId);
+                    const isEditing = editingRuleId === r.id;
+                    if (isEditing) {
+                      return (
+                        <TableRow key={r.id}>
+                          <TableCell>
+                            <Input
+                              value={editPattern}
+                              onChange={(e) => setEditPattern(e.target.value)}
+                              className="h-8"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Select
+                              value={editField}
+                              onValueChange={(v) => setEditField(v as RuleField)}
+                            >
+                              <SelectTrigger className="h-8 w-full">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {RULE_FIELDS.map((f) => (
+                                  <SelectItem key={f} value={f} className="capitalize">
+                                    {f}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell>
+                            <Select
+                              value={editMatch}
+                              onValueChange={(v) => setEditMatch(v as RuleMatch)}
+                            >
+                              <SelectTrigger className="h-8 w-full">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {RULE_MATCH_TYPES.map((m) => (
+                                  <SelectItem key={m} value={m} className="capitalize">
+                                    {m}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell>
+                            <Select value={editCategoryId} onValueChange={setEditCategoryId}>
+                              <SelectTrigger className="h-8 w-full">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {activeCategories.map((c) => (
+                                  <SelectItem key={c.id} value={c.id}>
+                                    {c.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Input
+                              type="number"
+                              value={editPriority}
+                              onChange={(e) =>
+                                setEditPriority(Number(e.target.value || 0))
+                              }
+                              className="h-8 w-20 ml-auto tabular text-right"
+                            />
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label="Save"
+                                onClick={() => saveEditRule(r.id)}
+                                disabled={
+                                  savingRule || !editPattern.trim() || !editCategoryId
+                                }
+                              >
+                                <Check className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label="Cancel"
+                                onClick={cancelEditRule}
+                                disabled={savingRule}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    }
                     return (
                       <TableRow key={r.id}>
                         <TableCell className="text-sm font-medium">{r.pattern}</TableCell>
@@ -420,14 +563,24 @@ export function CategoriesManager({ categories, rules }: CategoriesManagerProps)
                         </TableCell>
                         <TableCell className="tabular text-right text-sm">{r.priority}</TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label="Delete rule"
-                            onClick={() => deleteRule(r.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label="Edit rule"
+                              onClick={() => startEditRule(r)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label="Delete rule"
+                              onClick={() => deleteRule(r.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
