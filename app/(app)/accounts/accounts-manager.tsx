@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, Trash2, Wallet } from "lucide-react";
-import type { Account, AccountGroup } from "@/db/schema";
+import { Anchor, Plus, Trash2, Wallet } from "lucide-react";
+import type { Account, AccountGroup, AccountSpace } from "@/db/schema";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -13,6 +13,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { formatCurrency } from "@/lib/utils";
 
 const UNGROUPED = "__none__";
@@ -32,6 +41,8 @@ type GroupKind = "cash" | "savings" | "investment" | "credit" | "other";
 export interface AccountsManagerProps {
   accounts: Account[];
   groups: AccountGroup[];
+  spaces: AccountSpace[];
+  defaultSpaceId: string;
   nativeBalances: Record<string, string | null>;
   eurBalances: Record<string, number>;
 }
@@ -39,6 +50,8 @@ export interface AccountsManagerProps {
 export function AccountsManager({
   accounts,
   groups,
+  spaces,
+  defaultSpaceId,
   nativeBalances,
   eurBalances,
 }: AccountsManagerProps) {
@@ -57,6 +70,7 @@ export function AccountsManager({
   const [manualGroupId, setManualGroupId] = useState<string>(UNGROUPED);
   const [manualBalance, setManualBalance] = useState("");
   const [creatingAccount, setCreatingAccount] = useState(false);
+  const [anchorAccount, setAnchorAccount] = useState<Account | null>(null);
 
   const accountsByGroup = useMemo(() => {
     const map = new Map<string | null, Account[]>();
@@ -115,6 +129,33 @@ export function AccountsManager({
       toast.error("Failed");
       return;
     }
+    startTransition(() => router.refresh());
+  }
+
+  async function assignSpace(accountId: string, value: string) {
+    const res = await fetch(`/api/accounts/${accountId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ spaceId: value }),
+    });
+    if (!res.ok) {
+      toast.error("Failed");
+      return;
+    }
+    startTransition(() => router.refresh());
+  }
+
+  async function toggleExcluded(accountId: string, excluded: boolean) {
+    const res = await fetch(`/api/accounts/${accountId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ excluded }),
+    });
+    if (!res.ok) {
+      toast.error("Failed");
+      return;
+    }
+    toast.success(excluded ? "Excluded" : "Included");
     startTransition(() => router.refresh());
   }
 
@@ -353,9 +394,14 @@ export function AccountsManager({
                   <AccountList
                     items={items}
                     groups={groups}
+                    spaces={spaces}
+                    defaultSpaceId={defaultSpaceId}
                     nativeBalances={nativeBalances}
                     onAssign={assignGroup}
+                    onAssignSpace={assignSpace}
+                    onToggleExcluded={toggleExcluded}
                     onDelete={deleteAccount}
+                    onSetAnchor={setAnchorAccount}
                   />
                 </CardContent>
               </Card>
@@ -371,14 +417,26 @@ export function AccountsManager({
               <AccountList
                 items={accountsByGroup.get(null) ?? []}
                 groups={groups}
+                spaces={spaces}
+                defaultSpaceId={defaultSpaceId}
                 nativeBalances={nativeBalances}
                 onAssign={assignGroup}
+                onAssignSpace={assignSpace}
+                onToggleExcluded={toggleExcluded}
                 onDelete={deleteAccount}
+                onSetAnchor={setAnchorAccount}
               />
             </CardContent>
           </Card>
         </div>
       )}
+      <AnchorDialog
+        account={anchorAccount}
+        onOpenChange={(open) => {
+          if (!open) setAnchorAccount(null);
+        }}
+        onSaved={() => startTransition(() => router.refresh())}
+      />
     </div>
   );
 }
@@ -386,15 +444,25 @@ export function AccountsManager({
 function AccountList({
   items,
   groups,
+  spaces,
+  defaultSpaceId,
   nativeBalances,
   onAssign,
+  onAssignSpace,
+  onToggleExcluded,
   onDelete,
+  onSetAnchor,
 }: {
   items: Account[];
   groups: AccountGroup[];
+  spaces: AccountSpace[];
+  defaultSpaceId: string;
   nativeBalances: Record<string, string | null>;
   onAssign: (accountId: string, groupId: string) => void;
+  onAssignSpace: (accountId: string, spaceId: string) => void;
+  onToggleExcluded: (accountId: string, excluded: boolean) => void;
   onDelete: (id: string) => void;
+  onSetAnchor: (a: Account) => void;
 }) {
   if (items.length === 0) {
     return <p className="text-sm text-muted-foreground">No accounts in this group.</p>;
@@ -416,6 +484,16 @@ function AccountList({
                   manual
                 </Badge>
               )}
+              {a.balanceAnchor && a.balanceAnchorAt ? (
+                <Badge variant="outline" className="ml-2 text-[10px]">
+                  anchored {new Date(a.balanceAnchorAt).toISOString().slice(0, 10)}
+                </Badge>
+              ) : null}
+              {a.excluded ? (
+                <Badge variant="secondary" className="ml-2 text-[10px]">
+                  excluded
+                </Badge>
+              ) : null}
             </p>
           </div>
           <p className="tabular text-sm">
@@ -423,8 +501,32 @@ function AccountList({
               ? formatCurrency(Number(nativeBalances[a.id]), a.currency)
               : "—"}
           </p>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Set current balance"
+            onClick={() => onSetAnchor(a)}
+            title="Set current balance (anchor)"
+          >
+            <Anchor className="h-4 w-4" />
+          </Button>
+          <Select
+            value={a.spaceId ?? defaultSpaceId}
+            onValueChange={(v) => onAssignSpace(a.id, v)}
+          >
+            <SelectTrigger className="w-[130px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {spaces.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select value={a.groupId ?? UNGROUPED} onValueChange={(v) => onAssign(a.id, v)}>
-            <SelectTrigger className="w-[140px]">
+            <SelectTrigger className="w-[130px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -436,6 +538,13 @@ function AccountList({
               ))}
             </SelectContent>
           </Select>
+          <div className="flex items-center gap-1" title="Exclude from all totals">
+            <Switch
+              checked={!a.excluded}
+              onCheckedChange={(v) => onToggleExcluded(a.id, !v)}
+              aria-label="Toggle inclusion"
+            />
+          </div>
           {a.connectionId ? null : (
             <Button
               variant="ghost"
@@ -449,5 +558,120 @@ function AccountList({
         </li>
       ))}
     </ul>
+  );
+}
+
+function AnchorDialog({
+  account,
+  onOpenChange,
+  onSaved,
+}: {
+  account: Account | null;
+  onOpenChange: (open: boolean) => void;
+  onSaved: () => void;
+}) {
+  const [amount, setAmount] = useState("");
+  const [dateStr, setDateStr] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!account) return;
+    setAmount(
+      account.balanceAnchor != null
+        ? String(account.balanceAnchor)
+        : account.balance ?? "",
+    );
+    const d = account.balanceAnchorAt ? new Date(account.balanceAnchorAt) : new Date();
+    const off = d.getTimezoneOffset();
+    const local = new Date(d.getTime() - off * 60_000);
+    setDateStr(local.toISOString().slice(0, 16));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account?.id]);
+
+  if (!account) return null;
+
+  async function submit(clear = false) {
+    if (!account) return;
+    setSaving(true);
+    try {
+      const body: Record<string, unknown> = {};
+      if (clear) {
+        body.balanceAnchor = null;
+        body.balanceAnchorAt = null;
+      } else {
+        const n = Number(amount);
+        if (!Number.isFinite(n)) {
+          toast.error("Invalid amount");
+          setSaving(false);
+          return;
+        }
+        body.balanceAnchor = n.toFixed(4);
+        body.balanceAnchorAt = new Date(dateStr).toISOString();
+      }
+      const res = await fetch(`/api/accounts/${account.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error("Failed");
+      toast.success(clear ? "Anchor cleared" : "Balance anchored");
+      onSaved();
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const hasAnchor = account.balanceAnchor != null && account.balanceAnchorAt != null;
+
+  return (
+    <Dialog open={!!account} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Set current balance — {account.name}</DialogTitle>
+          <DialogDescription>
+            Anchor the real balance at a specific moment. Going forward, the displayed
+            balance will be anchor + sum of transactions after this date. Older
+            transactions stay in the DB but stop affecting the balance.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Amount ({account.currency})</Label>
+            <Input
+              type="number"
+              step="0.01"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="0.00"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">As of</Label>
+            <Input
+              type="datetime-local"
+              value={dateStr}
+              onChange={(e) => setDateStr(e.target.value)}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          {hasAnchor ? (
+            <Button
+              variant="outline"
+              onClick={() => submit(true)}
+              disabled={saving}
+            >
+              Clear anchor
+            </Button>
+          ) : null}
+          <Button onClick={() => submit(false)} disabled={saving || !amount || !dateStr}>
+            {saving ? "Saving…" : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -71,10 +71,21 @@ export async function createMirrorTransaction(
   if (source.routedFromTxId) return null;
 
   const [target] = await db
-    .select({ id: accounts.id, archived: accounts.archived })
+    .select({
+      id: accounts.id,
+      archived: accounts.archived,
+      spaceId: accounts.spaceId,
+    })
     .from(accounts)
     .where(eq(accounts.id, targetAccountId));
   if (!target || target.archived) return null;
+
+  const [sourceAccount] = await db
+    .select({ spaceId: accounts.spaceId })
+    .from(accounts)
+    .where(eq(accounts.id, source.accountId));
+  if (!sourceAccount) return null;
+  if (sourceAccount.spaceId !== target.spaceId) return null;
 
   const externalId = mirrorExternalId(source.id);
 

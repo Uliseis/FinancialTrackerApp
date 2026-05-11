@@ -26,6 +26,7 @@ import { applyRulesToTransactions } from "@/lib/categorize";
 import { detectTransfers } from "@/lib/transfers";
 import { backfillTransactionEurAmounts } from "@/lib/fx";
 import { applyTransferRoutes } from "@/lib/transfer-routes";
+import { getDefaultSpaceId } from "@/lib/spaces";
 
 export interface SyncResult {
   connectionId: string;
@@ -88,6 +89,7 @@ export async function syncEnableBankingConnection(
 
   const client = new EnableBankingClient();
   const insertedIds: string[] = [];
+  const defaultSpaceId = await getDefaultSpaceId();
 
   try {
     const session = await client.getSession(conn.sessionId);
@@ -164,6 +166,7 @@ export async function syncEnableBankingConnection(
           iban,
           balance: interim ? interim.balance_amount.amount : null,
           balanceUpdatedAt: new Date(),
+          spaceId: defaultSpaceId,
           metadata: {
             session: sessionAccount as unknown as Record<string, unknown>,
             details: details as unknown as Record<string, unknown>,

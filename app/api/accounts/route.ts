@@ -4,6 +4,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { accounts } from "@/db/schema";
+import { getDefaultSpaceId } from "@/lib/spaces";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,7 @@ const createManualSchema = z.object({
   institution: z.string().min(1).max(120),
   currency: z.string().min(3).max(3).default("EUR"),
   groupId: z.string().uuid().nullable().optional(),
+  spaceId: z.string().uuid().nullable().optional(),
   balance: z.string().optional(),
 });
 
@@ -26,6 +28,7 @@ export async function POST(req: Request) {
   }
   const externalId = `manual:${randomUUID()}`;
   const balance = parsed.data.balance ?? null;
+  const defaultSpaceId = await getDefaultSpaceId();
   const [row] = await db
     .insert(accounts)
     .values({
@@ -35,6 +38,7 @@ export async function POST(req: Request) {
       name: parsed.data.name,
       currency: parsed.data.currency.toUpperCase(),
       groupId: parsed.data.groupId ?? null,
+      spaceId: parsed.data.spaceId ?? defaultSpaceId,
       balance,
       manualOpeningBalance: balance,
       balanceUpdatedAt: balance ? new Date() : null,

@@ -8,7 +8,7 @@ import {
   TrendingUp,
   Wallet,
 } from "lucide-react";
-import { and, asc, desc, eq, gte, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,7 +33,14 @@ import {
 import { activeBudgetsProgress } from "@/lib/budgets";
 import { computeAccountBalancesEur } from "@/lib/accounts";
 import { getRate } from "@/lib/fx";
+import {
+  accountInSpaceClause,
+  getDefaultSpaceId,
+  listSpaces,
+  resolveSpaceId,
+} from "@/lib/spaces";
 import { formatCurrency, formatDate, monthStart } from "@/lib/utils";
+import { SpaceTabs } from "./space-tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -45,14 +52,20 @@ function monthLabel(d: Date): string {
   }).format(d);
 }
 
-async function netWorthByGroup() {
-  const acctRows = await db
-    .select()
-    .from(accounts);
+async function netWorthByGroup(accountIds: string[]) {
   const groupRows = await db
     .select()
     .from(accountGroups)
     .orderBy(asc(accountGroups.sortOrder));
+
+  if (accountIds.length === 0) {
+    return { groups: [] as Array<{ id: string; name: string; color: string | null; eur: number; count: number }>, total: 0 };
+  }
+
+  const acctRows = await db
+    .select()
+    .from(accounts)
+    .where(inArray(accounts.id, accountIds));
 
   const rateCache = new Map<string, number>();
   async function rateFor(ccy: string): Promise<number> {
@@ -69,9 +82,8 @@ async function netWorthByGroup() {
   }
   groupMap.set(null, { name: "Ungrouped", color: null, eur: 0, count: 0 });
 
-  const activeRows = acctRows.filter((a) => !a.archived);
-  const balanceMap = await computeAccountBalancesEur(activeRows, { rateFor });
-  for (const a of activeRows) {
+  const balanceMap = await computeAccountBalancesEur(acctRows, { rateFor });
+  for (const a of acctRows) {
     const balanceEur = balanceMap.get(a.id) ?? 0;
     const key = a.groupId ?? null;
     const bucket = groupMap.get(key);
@@ -89,8 +101,15 @@ async function netWorthByGroup() {
   return { groups, total };
 }
 
-async function monthlyCashFlow(months: number) {
+async function monthlyCashFlow(months: number, accountIds: string[]) {
   const now = new Date();
+  if (accountIds.length === 0) {
+    return Array.from({ length: months }, (_, idx) => months - 1 - idx).map((i) => ({
+      label: monthLabel(monthStart(now, -i)),
+      income: 0,
+      expense: 0,
+    }));
+  }
   return Promise.all(
     Array.from({ length: months }, (_, idx) => months - 1 - idx).map(async (i) => {
       const start = monthStart(now, -i);
@@ -110,6 +129,7 @@ async function monthlyCashFlow(months: number) {
           .leftJoin(categories, eq(transactions.categoryId, categories.id))
           .where(
             and(
+              inArray(transactions.accountId, accountIds),
               eq(transactions.isTransfer, false),
               sql`${transactions.sharedExpenseGroupId} is null`,
               gte(transactions.bookedAt, start),
@@ -125,7 +145,12 @@ async function monthlyCashFlow(months: number) {
           })
           .from(sharedExpenseGroups)
           .leftJoin(transactions, eq(transactions.sharedExpenseGroupId, sharedExpenseGroups.id))
-          .where(eq(sharedExpenseGroups.attributionMonth, startDate)),
+          .where(
+            and(
+              eq(sharedExpenseGroups.attributionMonth, startDate),
+              inArray(transactions.accountId, accountIds),
+            ),
+          ),
       ]);
 
       return {
@@ -137,11 +162,16 @@ async function monthlyCashFlow(months: number) {
   );
 }
 
-async function topCategoriesThisMonth(catById: Map<string, { name: string; color: string | null }>) {
+async function topCategoriesThisMonth(
+  catById: Map<string, { name: string; color: string | null }>,
+  accountIds: string[],
+) {
   const now = new Date();
   const start = monthStart(now);
   const end = monthStart(now, 1);
   const startDate = start.toISOString().slice(0, 10);
+
+  if (accountIds.length === 0) return [];
 
   const primaryTx = alias(transactions, "primary_tx");
   const [rows, groupNetRows] = await Promise.all([
@@ -153,6 +183,7 @@ async function topCategoriesThisMonth(catById: Map<string, { name: string; color
       .from(transactions)
       .where(
         and(
+          inArray(transactions.accountId, accountIds),
           eq(transactions.isTransfer, false),
           sql`${transactions.sharedExpenseGroupId} is null`,
           eq(transactions.direction, "debit"),
@@ -172,7 +203,12 @@ async function topCategoriesThisMonth(catById: Map<string, { name: string; color
       .from(sharedExpenseGroups)
       .leftJoin(transactions, eq(transactions.sharedExpenseGroupId, sharedExpenseGroups.id))
       .leftJoin(primaryTx, eq(primaryTx.id, sharedExpenseGroups.primaryTxId))
-      .where(eq(sharedExpenseGroups.attributionMonth, startDate))
+      .where(
+        and(
+          eq(sharedExpenseGroups.attributionMonth, startDate),
+          inArray(transactions.accountId, accountIds),
+        ),
+      )
       .groupBy(sharedExpenseGroups.id, primaryTx.categoryId),
   ]);
 
@@ -200,15 +236,17 @@ async function topCategoriesThisMonth(catById: Map<string, { name: string; color
   return enriched.slice(0, 5);
 }
 
-async function unclassifiedCreditsThisMonth(): Promise<number> {
+async function unclassifiedCreditsThisMonth(accountIds: string[]): Promise<number> {
   const now = new Date();
   const start = monthStart(now);
   const end = monthStart(now, 1);
+  if (accountIds.length === 0) return 0;
   const [{ count }] = await db
     .select({ count: sql<string>`count(*)` })
     .from(transactions)
     .where(
       and(
+        inArray(transactions.accountId, accountIds),
         eq(transactions.direction, "credit"),
         eq(transactions.isTransfer, false),
         sql`${transactions.sharedExpenseGroupId} is null`,
@@ -220,7 +258,30 @@ async function unclassifiedCreditsThisMonth(): Promise<number> {
   return Number(count);
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const sp = await searchParams;
+  const [spaces, defaultSpaceId, currentSpaceId] = await Promise.all([
+    listSpaces(),
+    getDefaultSpaceId(),
+    resolveSpaceId(sp.space),
+  ]);
+
+  const spaceAccountRows = await db
+    .select({ id: accounts.id })
+    .from(accounts)
+    .where(
+      and(
+        accountInSpaceClause(currentSpaceId, defaultSpaceId),
+        eq(accounts.archived, false),
+        eq(accounts.excluded, false),
+      ),
+    );
+  const accountIds = spaceAccountRows.map((r) => r.id);
+
   const cats = await db.select().from(categories);
   const catById = new Map(cats.map((c) => [c.id, c]));
   const catNameById = new Map(cats.map((c) => [c.id, c.name]));
@@ -242,35 +303,62 @@ export default async function DashboardPage() {
       .select({ total: sql<number>`count(*)` })
       .from(connections)
       .where(eq(connections.status, "active")),
-    db.select({ total: sql<number>`count(*)` }).from(accounts),
-    netWorthByGroup(),
-    monthlyCashFlow(4),
-    topCategoriesThisMonth(catById),
-    activeBudgetsProgress(),
     db
-      .select({
-        id: transactions.id,
-        bookedAt: transactions.bookedAt,
-        amount: transactions.amount,
-        currency: transactions.currency,
-        amountEur: transactions.amountEur,
-        direction: transactions.direction,
-        description: transactions.description,
-        counterparty: transactions.counterparty,
-        accountName: accounts.name,
-        isTransfer: transactions.isTransfer,
-      })
-      .from(transactions)
-      .leftJoin(accounts, eq(transactions.accountId, accounts.id))
-      .where(eq(transactions.isTransfer, false))
-      .orderBy(desc(transactions.bookedAt))
-      .limit(6),
+      .select({ total: sql<number>`count(*)` })
+      .from(accounts)
+      .where(
+        and(
+          accountInSpaceClause(currentSpaceId, defaultSpaceId),
+          eq(accounts.archived, false),
+          eq(accounts.excluded, false),
+        ),
+      ),
+    netWorthByGroup(accountIds),
+    monthlyCashFlow(4, accountIds),
+    topCategoriesThisMonth(catById, accountIds),
+    activeBudgetsProgress(),
+    accountIds.length === 0
+      ? Promise.resolve([] as Array<{
+          id: string;
+          bookedAt: Date;
+          amount: string;
+          currency: string;
+          amountEur: string | null;
+          direction: "debit" | "credit";
+          description: string | null;
+          counterparty: string | null;
+          accountName: string | null;
+          isTransfer: boolean;
+        }>)
+      : db
+          .select({
+            id: transactions.id,
+            bookedAt: transactions.bookedAt,
+            amount: transactions.amount,
+            currency: transactions.currency,
+            amountEur: transactions.amountEur,
+            direction: transactions.direction,
+            description: transactions.description,
+            counterparty: transactions.counterparty,
+            accountName: accounts.name,
+            isTransfer: transactions.isTransfer,
+          })
+          .from(transactions)
+          .leftJoin(accounts, eq(transactions.accountId, accounts.id))
+          .where(
+            and(
+              inArray(transactions.accountId, accountIds),
+              eq(transactions.isTransfer, false),
+            ),
+          )
+          .orderBy(desc(transactions.bookedAt))
+          .limit(6),
     db
       .select()
       .from(connections)
       .orderBy(desc(connections.createdAt))
       .limit(5),
-    unclassifiedCreditsThisMonth(),
+    unclassifiedCreditsThisMonth(accountIds),
   ]);
 
   const empty = Number(connStats.total) === 0 && Number(accountStats.total) === 0;
@@ -295,6 +383,11 @@ export default async function DashboardPage() {
       />
 
       <div className="space-y-6 p-6">
+        <SpaceTabs
+          spaces={spaces}
+          currentSpaceId={currentSpaceId}
+          defaultSpaceId={defaultSpaceId}
+        />
         {empty ? (
           <Card className="border-dashed">
             <CardHeader>

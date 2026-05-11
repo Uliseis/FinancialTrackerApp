@@ -1,10 +1,17 @@
-import { and, asc, desc, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
 import { accounts, categories, transactions } from "@/db/schema";
 import { PageHeader } from "@/components/page-header";
 import type { CategoryKind } from "@/lib/income";
 import { netForGroups } from "@/lib/shared-expenses";
+import {
+  accountInSpaceClause,
+  getDefaultSpaceId,
+  listSpaces,
+  resolveSpaceId,
+} from "@/lib/spaces";
+import { SpaceTabs } from "../space-tabs";
 import {
   TransactionsEmpty,
   TransactionsTable,
@@ -39,7 +46,30 @@ export default async function TransactionsPage({
   const q = firstParam(sp.q).trim();
   const showTransfers = firstParam(sp.transfers) === "show";
 
+  const [spaces, defaultSpaceId, currentSpaceId] = await Promise.all([
+    listSpaces(),
+    getDefaultSpaceId(),
+    resolveSpaceId(sp.space),
+  ]);
+
+  const spaceAccountRows = await db
+    .select({ id: accounts.id })
+    .from(accounts)
+    .where(
+      and(
+        accountInSpaceClause(currentSpaceId, defaultSpaceId),
+        eq(accounts.archived, false),
+        eq(accounts.excluded, false),
+      ),
+    );
+  const spaceAccountIds = spaceAccountRows.map((r) => r.id);
+
   const filters: SQL[] = [isNull(transactions.routedFromTxId)];
+  if (spaceAccountIds.length === 0) {
+    filters.push(sql`false`);
+  } else {
+    filters.push(inArray(transactions.accountId, spaceAccountIds));
+  }
   if (!showTransfers) filters.push(eq(transactions.isTransfer, false));
   if (q) {
     const needle = `%${q}%`;
@@ -135,7 +165,12 @@ export default async function TransactionsPage({
         title="Transactions"
         description={`${total.toLocaleString()} matching · page ${clampedPage} of ${totalPages}`}
       />
-      <div className="p-6">
+      <div className="space-y-4 p-6">
+        <SpaceTabs
+          spaces={spaces}
+          currentSpaceId={currentSpaceId}
+          defaultSpaceId={defaultSpaceId}
+        />
         {!hasAnyTransactions ? (
           <TransactionsEmpty />
         ) : (

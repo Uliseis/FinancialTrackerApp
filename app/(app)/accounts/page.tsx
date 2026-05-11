@@ -4,18 +4,21 @@ import { accountGroups, accounts } from "@/db/schema";
 import { PageHeader } from "@/components/page-header";
 import {
   computeAccountBalancesEur,
-  computeManualAccountNativeBalances,
-  isManualAccount,
+  computeAccountNativeBalances,
 } from "@/lib/accounts";
 import { getRate } from "@/lib/fx";
+import { getDefaultSpaceId, listSpaces } from "@/lib/spaces";
 import { AccountsManager } from "./accounts-manager";
+import { SpacesManager } from "./spaces-manager";
 
 export const dynamic = "force-dynamic";
 
 export default async function AccountsPage() {
-  const [acctRows, groupRows] = await Promise.all([
+  const [acctRows, groupRows, spaceRows, defaultSpaceId] = await Promise.all([
     db.select().from(accounts).orderBy(asc(accounts.name)),
     db.select().from(accountGroups).orderBy(asc(accountGroups.sortOrder)),
+    listSpaces(),
+    getDefaultSpaceId(),
   ]);
 
   const rateCache = new Map<string, number>();
@@ -28,19 +31,15 @@ export default async function AccountsPage() {
   }
 
   const activeRows = acctRows.filter((a) => !a.archived);
-  const [eurMap, manualNativeMap] = await Promise.all([
+  const [eurMap, nativeMap] = await Promise.all([
     computeAccountBalancesEur(activeRows, { rateFor }),
-    computeManualAccountNativeBalances(activeRows),
+    computeAccountNativeBalances(activeRows),
   ]);
 
   const nativeBalances: Record<string, string | null> = {};
   for (const a of acctRows) {
-    if (isManualAccount(a)) {
-      const v = manualNativeMap.get(a.id);
-      nativeBalances[a.id] = v != null ? v.toFixed(2) : a.balance;
-    } else {
-      nativeBalances[a.id] = a.balance;
-    }
+    const v = nativeMap.get(a.id);
+    nativeBalances[a.id] = v != null ? v.toFixed(2) : a.balance;
   }
   const eurBalances: Record<string, number> = {};
   for (const [id, v] of eurMap) eurBalances[id] = v;
@@ -51,10 +50,13 @@ export default async function AccountsPage() {
         title="Accounts"
         description="Group accounts to roll up balances on the dashboard."
       />
-      <div className="p-6">
+      <div className="space-y-6 p-6">
+        <SpacesManager spaces={spaceRows} />
         <AccountsManager
           accounts={acctRows}
           groups={groupRows}
+          spaces={spaceRows}
+          defaultSpaceId={defaultSpaceId}
           nativeBalances={nativeBalances}
           eurBalances={eurBalances}
         />

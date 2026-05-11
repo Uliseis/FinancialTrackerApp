@@ -1,6 +1,6 @@
 import { and, eq, gte, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { transactions } from "@/db/schema";
+import { accounts, transactions } from "@/db/schema";
 
 const DEFAULT_LOOKBACK_DAYS = 30;
 const PAIR_WINDOW_DAYS = 3;
@@ -9,6 +9,7 @@ const EUR_TOLERANCE = 0.01;
 interface Candidate {
   id: string;
   accountId: string;
+  spaceId: string | null;
   direction: "debit" | "credit";
   amountEur: number;
   bookedAt: Date;
@@ -39,6 +40,7 @@ export async function detectTransfers(
     .select({
       id: transactions.id,
       accountId: transactions.accountId,
+      spaceId: accounts.spaceId,
       direction: transactions.direction,
       amountEur: transactions.amountEur,
       bookedAt: transactions.bookedAt,
@@ -47,6 +49,7 @@ export async function detectTransfers(
       categorySource: transactions.categorySource,
     })
     .from(transactions)
+    .leftJoin(accounts, eq(transactions.accountId, accounts.id))
     .where(baseWhere);
 
   const candidates: Candidate[] = rows
@@ -54,6 +57,7 @@ export async function detectTransfers(
     .map((r) => ({
       id: r.id,
       accountId: r.accountId,
+      spaceId: r.spaceId,
       direction: r.direction,
       amountEur: Math.abs(Number(r.amountEur)),
       bookedAt: r.bookedAt,
@@ -77,6 +81,7 @@ export async function detectTransfers(
     const partners = credits.filter((c) => {
       if (claimed.has(c.id)) return false;
       if (c.accountId === debit.accountId) return false;
+      if (c.spaceId !== debit.spaceId) return false;
       if (c.categorySource === "manual") return false;
       if (Math.abs(c.amountEur - debit.amountEur) > EUR_TOLERANCE) return false;
       const diffDays =
