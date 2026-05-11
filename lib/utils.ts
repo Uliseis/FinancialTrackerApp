@@ -21,3 +21,7 @@ export function formatDate(d: Date | string) {
     day: "2-digit",
   }).format(date);
 }
+
+export function monthStart(d: Date, offset = 0): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + offset, 1));
+}

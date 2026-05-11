@@ -9,6 +9,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { and, asc, desc, eq, gte, lt, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -31,14 +32,9 @@ import {
 } from "@/db/schema";
 import { activeBudgetsProgress } from "@/lib/budgets";
 import { getRate } from "@/lib/fx";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, monthStart } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
-
-function monthStart(d: Date, offset = 0): Date {
-  const out = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + offset, 1));
-  return out;
-}
 
 function monthLabel(d: Date): string {
   return new Intl.DateTimeFormat("en-GB", {
@@ -94,106 +90,100 @@ async function netWorthByGroup() {
 
 async function monthlyCashFlow(months: number) {
   const now = new Date();
-  const results: Array<{ label: string; income: number; expense: number }> = [];
-  for (let i = months - 1; i >= 0; i--) {
-    const start = monthStart(now, -i);
-    const end = monthStart(now, -i + 1);
+  return Promise.all(
+    Array.from({ length: months }, (_, idx) => months - 1 - idx).map(async (i) => {
+      const start = monthStart(now, -i);
+      const end = monthStart(now, -i + 1);
+      const startDate = start.toISOString().slice(0, 10);
 
-    const [{ income, expense }] = await db
+      const [rawFlow, groupNetRow] = await Promise.all([
+        db
+          .select({
+            income: sql<string>`coalesce(sum(case
+              when ${transactions.direction} = 'credit'
+                and (${transactions.categoryId} is null or ${categories.kind} = 'income')
+              then ${transactions.amountEur} else 0 end), 0)`,
+            expense: sql<string>`coalesce(sum(case when ${transactions.direction} = 'debit' then ${transactions.amountEur} else 0 end), 0)`,
+          })
+          .from(transactions)
+          .leftJoin(categories, eq(transactions.categoryId, categories.id))
+          .where(
+            and(
+              eq(transactions.isTransfer, false),
+              sql`${transactions.sharedExpenseGroupId} is null`,
+              gte(transactions.bookedAt, start),
+              lt(transactions.bookedAt, end),
+            ),
+          ),
+        db
+          .select({
+            groupNet: sql<string>`coalesce(sum(case
+              when ${transactions.id} = ${sharedExpenseGroups.primaryTxId}
+                then ${transactions.amountEur}
+              else -${transactions.amountEur} end), 0)`,
+          })
+          .from(sharedExpenseGroups)
+          .leftJoin(transactions, eq(transactions.sharedExpenseGroupId, sharedExpenseGroups.id))
+          .where(eq(sharedExpenseGroups.attributionMonth, startDate)),
+      ]);
+
+      return {
+        label: monthLabel(start),
+        income: Number(rawFlow[0].income),
+        expense: Math.abs(Number(rawFlow[0].expense)) + Number(groupNetRow[0].groupNet),
+      };
+    }),
+  );
+}
+
+async function topCategoriesThisMonth(catById: Map<string, { name: string; color: string | null }>) {
+  const now = new Date();
+  const start = monthStart(now);
+  const end = monthStart(now, 1);
+  const startDate = start.toISOString().slice(0, 10);
+
+  const primaryTx = alias(transactions, "primary_tx");
+  const [rows, groupNetRows] = await Promise.all([
+    db
       .select({
-        income: sql<string>`coalesce(sum(case
-          when ${transactions.direction} = 'credit'
-            and (${transactions.categoryId} is null or ${categories.kind} = 'income')
-          then ${transactions.amountEur} else 0 end), 0)`,
-        expense: sql<string>`coalesce(sum(case when ${transactions.direction} = 'debit' then ${transactions.amountEur} else 0 end), 0)`,
+        categoryId: transactions.categoryId,
+        total: sql<string>`coalesce(sum(${transactions.amountEur}), 0)`,
       })
       .from(transactions)
-      .leftJoin(categories, eq(transactions.categoryId, categories.id))
       .where(
         and(
           eq(transactions.isTransfer, false),
           sql`${transactions.sharedExpenseGroupId} is null`,
+          eq(transactions.direction, "debit"),
           gte(transactions.bookedAt, start),
           lt(transactions.bookedAt, end),
         ),
-      );
-
-    const startDate = start.toISOString().slice(0, 10);
-    const [{ groupNet }] = await db
+      )
+      .groupBy(transactions.categoryId),
+    db
       .select({
-        groupNet: sql<string>`coalesce(sum(case
+        primaryCategoryId: primaryTx.categoryId,
+        net: sql<string>`coalesce(sum(case
           when ${transactions.id} = ${sharedExpenseGroups.primaryTxId}
             then ${transactions.amountEur}
           else -${transactions.amountEur} end), 0)`,
       })
       .from(sharedExpenseGroups)
       .leftJoin(transactions, eq(transactions.sharedExpenseGroupId, sharedExpenseGroups.id))
-      .where(eq(sharedExpenseGroups.attributionMonth, startDate));
-
-    results.push({
-      label: monthLabel(start),
-      income: Number(income),
-      expense: Math.abs(Number(expense)) + Number(groupNet),
-    });
-  }
-  return results;
-}
-
-async function topCategoriesThisMonth() {
-  const now = new Date();
-  const start = monthStart(now);
-  const end = monthStart(now, 1);
-  const rows = await db
-    .select({
-      categoryId: transactions.categoryId,
-      total: sql<string>`coalesce(sum(${transactions.amountEur}), 0)`,
-    })
-    .from(transactions)
-    .where(
-      and(
-        eq(transactions.isTransfer, false),
-        sql`${transactions.sharedExpenseGroupId} is null`,
-        eq(transactions.direction, "debit"),
-        gte(transactions.bookedAt, start),
-        lt(transactions.bookedAt, end),
-      ),
-    )
-    .groupBy(transactions.categoryId);
-
-  const startDate = start.toISOString().slice(0, 10);
-  const groupNetRows = await db
-    .select({
-      groupId: sharedExpenseGroups.id,
-      primaryTxId: sharedExpenseGroups.primaryTxId,
-      net: sql<string>`coalesce(sum(case
-        when ${transactions.id} = ${sharedExpenseGroups.primaryTxId}
-          then ${transactions.amountEur}
-        else -${transactions.amountEur} end), 0)`,
-    })
-    .from(sharedExpenseGroups)
-    .leftJoin(transactions, eq(transactions.sharedExpenseGroupId, sharedExpenseGroups.id))
-    .where(eq(sharedExpenseGroups.attributionMonth, startDate))
-    .groupBy(sharedExpenseGroups.id, sharedExpenseGroups.primaryTxId);
-
-  const primaryIds = groupNetRows.map((g) => g.primaryTxId);
-  const primaryCatRows = primaryIds.length
-    ? await db
-        .select({ id: transactions.id, categoryId: transactions.categoryId })
-        .from(transactions)
-        .where(sql`${transactions.id} in (${sql.join(primaryIds.map((id) => sql`${id}`), sql`, `)})`)
-    : [];
-  const catByPrimary = new Map(primaryCatRows.map((r) => [r.id, r.categoryId]));
-
-  const cats = await db.select().from(categories);
-  const catById = new Map(cats.map((c) => [c.id, c]));
+      .leftJoin(primaryTx, eq(primaryTx.id, sharedExpenseGroups.primaryTxId))
+      .where(eq(sharedExpenseGroups.attributionMonth, startDate))
+      .groupBy(sharedExpenseGroups.id, primaryTx.categoryId),
+  ]);
 
   const totals = new Map<string | null, number>();
   for (const r of rows) {
     totals.set(r.categoryId, (totals.get(r.categoryId) ?? 0) + Math.abs(Number(r.total)));
   }
   for (const r of groupNetRows) {
-    const catId = catByPrimary.get(r.primaryTxId) ?? null;
-    totals.set(catId, (totals.get(catId) ?? 0) + Number(r.net));
+    totals.set(
+      r.primaryCategoryId,
+      (totals.get(r.primaryCategoryId) ?? 0) + Number(r.net),
+    );
   }
 
   const enriched = Array.from(totals.entries()).map(([categoryId, total]) => {
@@ -230,6 +220,10 @@ async function unclassifiedCreditsThisMonth(): Promise<number> {
 }
 
 export default async function DashboardPage() {
+  const cats = await db.select().from(categories);
+  const catById = new Map(cats.map((c) => [c.id, c]));
+  const catNameById = new Map(cats.map((c) => [c.id, c.name]));
+
   const [
     [connStats],
     [activeConn],
@@ -250,7 +244,7 @@ export default async function DashboardPage() {
     db.select({ total: sql<number>`count(*)` }).from(accounts),
     netWorthByGroup(),
     monthlyCashFlow(4),
-    topCategoriesThisMonth(),
+    topCategoriesThisMonth(catById),
     activeBudgetsProgress(),
     db
       .select({
@@ -283,8 +277,6 @@ export default async function DashboardPage() {
   const prev = cashFlow[cashFlow.length - 2];
   const incomeDelta = current && prev ? current.income - prev.income : 0;
   const expenseDelta = current && prev ? current.expense - prev.expense : 0;
-  const cats = await db.select().from(categories);
-  const catNameById = new Map(cats.map((c) => [c.id, c.name]));
 
   return (
     <>

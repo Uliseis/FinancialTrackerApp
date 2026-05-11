@@ -4,14 +4,15 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { categoryRules } from "@/db/schema";
+import { RULE_FIELDS, RULE_MATCH_TYPES } from "@/lib/categorize";
 
 export const dynamic = "force-dynamic";
 
 const createSchema = z.object({
   pattern: z.string().min(1).max(500),
   categoryId: z.string().uuid(),
-  field: z.enum(["description", "counterparty"]).default("description"),
-  matchType: z.enum(["contains", "equals", "startsWith", "endsWith", "regex"]).default("contains"),
+  field: z.enum(RULE_FIELDS).default("description"),
+  matchType: z.enum(RULE_MATCH_TYPES).default("contains"),
   priority: z.number().int().default(0),
 });
 

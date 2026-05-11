@@ -27,6 +27,12 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CATEGORY_KINDS, type CategoryKind } from "@/lib/income";
+import {
+  RULE_FIELDS,
+  RULE_MATCH_TYPES,
+  type RuleField,
+  type RuleMatch,
+} from "@/lib/categorize";
 
 type CategoryWithUsage = Category & { usage: number };
 
@@ -46,10 +52,8 @@ export function CategoriesManager({ categories, rules }: CategoriesManagerProps)
 
   const [activeTab, setActiveTab] = useState<"expense" | "income">("expense");
   const [rulePattern, setRulePattern] = useState("");
-  const [ruleField, setRuleField] = useState<"description" | "counterparty">("description");
-  const [ruleMatch, setRuleMatch] = useState<
-    "contains" | "equals" | "startsWith" | "endsWith" | "regex"
-  >("contains");
+  const [ruleField, setRuleField] = useState<RuleField>("description");
+  const [ruleMatch, setRuleMatch] = useState<RuleMatch>("contains");
   const [ruleCategoryId, setRuleCategoryId] = useState<string>(categories[0]?.id ?? "");
   const [rulePriority, setRulePriority] = useState(0);
   const [creatingRule, setCreatingRule] = useState(false);
@@ -135,9 +139,7 @@ export function CategoriesManager({ categories, rules }: CategoriesManagerProps)
     try {
       await p;
       startTransition(() => router.refresh());
-    } catch {
-      // toast already surfaced
-    }
+    } catch {}
   }
 
   const categoryById = new Map(categories.map((c) => [c.id, c]));
@@ -328,16 +330,17 @@ export function CategoriesManager({ categories, rules }: CategoriesManagerProps)
                 <Label className="text-xs">Field</Label>
                 <Select
                   value={ruleField}
-                  onValueChange={(v) =>
-                    setRuleField(v as "description" | "counterparty")
-                  }
+                  onValueChange={(v) => setRuleField(v as RuleField)}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="description">Description</SelectItem>
-                    <SelectItem value="counterparty">Counterparty</SelectItem>
+                    {RULE_FIELDS.map((f) => (
+                      <SelectItem key={f} value={f} className="capitalize">
+                        {f}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -345,26 +348,17 @@ export function CategoriesManager({ categories, rules }: CategoriesManagerProps)
                 <Label className="text-xs">Match</Label>
                 <Select
                   value={ruleMatch}
-                  onValueChange={(v) =>
-                    setRuleMatch(
-                      v as
-                        | "contains"
-                        | "equals"
-                        | "startsWith"
-                        | "endsWith"
-                        | "regex",
-                    )
-                  }
+                  onValueChange={(v) => setRuleMatch(v as RuleMatch)}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="contains">Contains</SelectItem>
-                    <SelectItem value="equals">Equals</SelectItem>
-                    <SelectItem value="startsWith">Starts with</SelectItem>
-                    <SelectItem value="endsWith">Ends with</SelectItem>
-                    <SelectItem value="regex">Regex</SelectItem>
+                    {RULE_MATCH_TYPES.map((m) => (
+                      <SelectItem key={m} value={m} className="capitalize">
+                        {m}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

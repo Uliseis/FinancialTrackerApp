@@ -1,13 +1,9 @@
-import { asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import {
-  accounts,
-  categories,
-  sharedExpenseGroups,
-  transactions,
-} from "@/db/schema";
+import { accounts, categories, transactions } from "@/db/schema";
 import { PageHeader } from "@/components/page-header";
 import type { CategoryKind } from "@/lib/income";
+import { netForGroups } from "@/lib/shared-expenses";
 import {
   TransactionsEmpty,
   TransactionsTable,
@@ -50,38 +46,8 @@ export default async function TransactionsPage() {
   const groupIds = Array.from(
     new Set(rows.map((r) => r.sharedExpenseGroupId).filter((v): v is string => Boolean(v))),
   );
-  const groupSummaries: SharedExpenseSummary[] =
-    groupIds.length === 0
-      ? []
-      : await (async () => {
-          const groups = await db
-            .select()
-            .from(sharedExpenseGroups)
-            .where(inArray(sharedExpenseGroups.id, groupIds));
-          const sums = await db
-            .select({
-              groupId: transactions.sharedExpenseGroupId,
-              primaryEur: sql<string>`coalesce(sum(case when ${transactions.direction} = 'debit' then ${transactions.amountEur} else 0 end), 0)`,
-              creditEur: sql<string>`coalesce(sum(case when ${transactions.direction} = 'credit' then ${transactions.amountEur} else 0 end), 0)`,
-            })
-            .from(transactions)
-            .where(inArray(transactions.sharedExpenseGroupId, groupIds))
-            .groupBy(transactions.sharedExpenseGroupId);
-          const sumById = new Map(sums.map((s) => [s.groupId!, s]));
-          return groups.map((g) => {
-            const s = sumById.get(g.id);
-            const gross = s ? Math.abs(Number(s.primaryEur)) : 0;
-            const reimbursed = s ? Math.abs(Number(s.creditEur)) : 0;
-            return {
-              id: g.id,
-              label: g.label,
-              primaryTxId: g.primaryTxId,
-              gross,
-              reimbursed,
-              net: gross - reimbursed,
-            };
-          });
-        })();
+  const groupSummaryMap = await netForGroups(groupIds);
+  const groupSummaries: SharedExpenseSummary[] = Array.from(groupSummaryMap.values());
 
   const tableRows = rows as TransactionsTableRow[];
   const catOptions: CategoryOption[] = cats.map((c) => ({

@@ -7,8 +7,17 @@ import {
   type Transaction,
 } from "@/db/schema";
 
-type RuleField = "description" | "counterparty";
-type RuleMatch = "contains" | "equals" | "startsWith" | "endsWith" | "regex";
+export const RULE_FIELDS = ["description", "counterparty"] as const;
+export const RULE_MATCH_TYPES = [
+  "contains",
+  "equals",
+  "startsWith",
+  "endsWith",
+  "regex",
+] as const;
+
+export type RuleField = (typeof RULE_FIELDS)[number];
+export type RuleMatch = (typeof RULE_MATCH_TYPES)[number];
 
 function matches(rule: CategoryRule, tx: Pick<Transaction, "description" | "counterparty">): boolean {
   const field = (rule.field as RuleField) ?? "description";

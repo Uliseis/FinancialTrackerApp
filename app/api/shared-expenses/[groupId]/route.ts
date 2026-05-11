@@ -1,14 +1,10 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { sharedExpenseGroups } from "@/db/schema";
-import {
-  SharedExpenseError,
-  deleteSharedExpenseGroup,
-  netForGroup,
-} from "@/lib/shared-expenses";
+import { deleteSharedExpenseGroup, netForGroup } from "@/lib/shared-expenses";
+import { errorResponse, requireUser } from "@/lib/api-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -17,8 +13,8 @@ const patchSchema = z.object({
 });
 
 export async function GET(_req: Request, ctx: { params: Promise<{ groupId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const unauthorized = await requireUser();
+  if (unauthorized) return unauthorized;
   const { groupId } = await ctx.params;
   const [group] = await db
     .select()
@@ -30,8 +26,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ groupId: strin
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ groupId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const unauthorized = await requireUser();
+  if (unauthorized) return unauthorized;
   const { groupId } = await ctx.params;
   const body = await req.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
@@ -49,17 +45,13 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ groupId: stri
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ groupId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const unauthorized = await requireUser();
+  if (unauthorized) return unauthorized;
   const { groupId } = await ctx.params;
   try {
     await deleteSharedExpenseGroup(groupId);
     return NextResponse.json({ ok: true });
   } catch (e) {
-    if (e instanceof SharedExpenseError) {
-      return NextResponse.json({ error: e.message }, { status: e.status });
-    }
-    const msg = e instanceof Error ? e.message : "error";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return errorResponse(e);
   }
 }

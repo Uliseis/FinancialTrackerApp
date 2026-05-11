@@ -52,6 +52,15 @@ import {
 } from "@/components/ui/dialog";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import type { CategoryKind } from "@/lib/income";
+import {
+  RULE_FIELDS,
+  RULE_MATCH_TYPES,
+  type RuleField,
+  type RuleMatch,
+} from "@/lib/categorize";
+import type { GroupSummary } from "@/lib/shared-expenses";
+
+export type SharedExpenseSummary = GroupSummary;
 
 export interface TransactionsTableRow {
   id: string;
@@ -76,15 +85,6 @@ export interface CategoryOption {
   name: string;
   color: string | null;
   kind: CategoryKind;
-}
-
-export interface SharedExpenseSummary {
-  id: string;
-  label: string;
-  primaryTxId: string;
-  gross: number;
-  reimbursed: number;
-  net: number;
 }
 
 const UNCATEGORIZED = "__none__";
@@ -220,9 +220,7 @@ export function TransactionsTable({
     try {
       await p;
       startTransition(() => router.refresh());
-    } catch {
-      // toast handled
-    }
+    } catch {}
   }
 
   async function runRules() {
@@ -239,9 +237,7 @@ export function TransactionsTable({
     try {
       await p;
       startTransition(() => router.refresh());
-    } catch {
-      // toast handled
-    }
+    } catch {}
   }
 
   return (
@@ -763,9 +759,6 @@ function LinkReimbursementsDialog({
   );
 }
 
-type RuleField = "description" | "counterparty";
-type RuleMatch = "contains" | "equals" | "startsWith" | "endsWith" | "regex";
-
 interface PreviewSample {
   id: string;
   bookedAt: string;
@@ -925,8 +918,11 @@ function ClassifyLikeThisDialog({
                   value={field}
                   onChange={(e) => setField(e.target.value as RuleField)}
                 >
-                  <option value="counterparty">Counterparty</option>
-                  <option value="description">Description</option>
+                  {RULE_FIELDS.map((f) => (
+                    <option key={f} value={f} className="capitalize">
+                      {f}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="space-y-1">
@@ -936,11 +932,11 @@ function ClassifyLikeThisDialog({
                   value={matchType}
                   onChange={(e) => setMatchType(e.target.value as RuleMatch)}
                 >
-                  <option value="contains">Contains</option>
-                  <option value="equals">Equals</option>
-                  <option value="startsWith">Starts with</option>
-                  <option value="endsWith">Ends with</option>
-                  <option value="regex">Regex</option>
+                  {RULE_MATCH_TYPES.map((m) => (
+                    <option key={m} value={m} className="capitalize">
+                      {m}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="space-y-1">

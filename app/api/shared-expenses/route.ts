@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
-import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { sharedExpenseGroups, transactions } from "@/db/schema";
 import {
-  SharedExpenseError,
   createSharedExpenseGroup,
   findCandidateReimbursements,
   netForGroup,
 } from "@/lib/shared-expenses";
+import { errorResponse, requireUser } from "@/lib/api-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -20,8 +19,8 @@ const createSchema = z.object({
 });
 
 export async function GET(req: Request) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const unauthorized = await requireUser();
+  if (unauthorized) return unauthorized;
 
   const url = new URL(req.url);
   const txId = url.searchParams.get("txId");
@@ -33,9 +32,7 @@ export async function GET(req: Request) {
       const rows = await findCandidateReimbursements(candidatesFor, q);
       return NextResponse.json({ candidates: rows });
     } catch (e) {
-      const status = e instanceof SharedExpenseError ? e.status : 500;
-      const msg = e instanceof Error ? e.message : "error";
-      return NextResponse.json({ error: msg }, { status });
+      return errorResponse(e);
     }
   }
 
@@ -63,8 +60,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const unauthorized = await requireUser();
+  if (unauthorized) return unauthorized;
 
   const body = await req.json().catch(() => null);
   const parsed = createSchema.safeParse(body);
@@ -77,10 +74,6 @@ export async function POST(req: Request) {
     const net = await netForGroup(group.id);
     return NextResponse.json({ group, net });
   } catch (e) {
-    if (e instanceof SharedExpenseError) {
-      return NextResponse.json({ error: e.message }, { status: e.status });
-    }
-    const msg = e instanceof Error ? e.message : "error";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return errorResponse(e);
   }
 }
