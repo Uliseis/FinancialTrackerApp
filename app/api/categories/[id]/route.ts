@@ -4,12 +4,13 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { categories } from "@/db/schema";
+import { CATEGORY_KINDS } from "@/lib/income";
 
 export const dynamic = "force-dynamic";
 
 const patchSchema = z.object({
   name: z.string().min(1).max(120).optional(),
-  kind: z.enum(["expense", "income"]).optional(),
+  kind: z.enum(CATEGORY_KINDS).optional(),
   parentId: z.string().uuid().nullable().optional(),
   color: z.string().max(20).nullable().optional(),
 });

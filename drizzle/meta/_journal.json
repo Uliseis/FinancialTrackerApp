@@ -15,6 +15,13 @@
       "when": 1778492779235,
       "tag": "0001_moaning_thunderbird",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778497453110,
+      "tag": "0002_reflective_shatterstar",
+      "breakpoints": true
     }
   ]
 }

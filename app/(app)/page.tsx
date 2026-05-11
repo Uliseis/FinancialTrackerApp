@@ -26,6 +26,7 @@ import {
   accounts,
   categories,
   connections,
+  sharedExpenseGroups,
   transactions,
 } from "@/db/schema";
 import { activeBudgetsProgress } from "@/lib/budgets";
@@ -97,23 +98,42 @@ async function monthlyCashFlow(months: number) {
   for (let i = months - 1; i >= 0; i--) {
     const start = monthStart(now, -i);
     const end = monthStart(now, -i + 1);
+
     const [{ income, expense }] = await db
       .select({
-        income: sql<string>`coalesce(sum(case when ${transactions.direction} = 'credit' then ${transactions.amountEur} else 0 end), 0)`,
+        income: sql<string>`coalesce(sum(case
+          when ${transactions.direction} = 'credit'
+            and (${transactions.categoryId} is null or ${categories.kind} = 'income')
+          then ${transactions.amountEur} else 0 end), 0)`,
         expense: sql<string>`coalesce(sum(case when ${transactions.direction} = 'debit' then ${transactions.amountEur} else 0 end), 0)`,
       })
       .from(transactions)
+      .leftJoin(categories, eq(transactions.categoryId, categories.id))
       .where(
         and(
           eq(transactions.isTransfer, false),
+          sql`${transactions.sharedExpenseGroupId} is null`,
           gte(transactions.bookedAt, start),
           lt(transactions.bookedAt, end),
         ),
       );
+
+    const startDate = start.toISOString().slice(0, 10);
+    const [{ groupNet }] = await db
+      .select({
+        groupNet: sql<string>`coalesce(sum(case
+          when ${transactions.id} = ${sharedExpenseGroups.primaryTxId}
+            then ${transactions.amountEur}
+          else -${transactions.amountEur} end), 0)`,
+      })
+      .from(sharedExpenseGroups)
+      .leftJoin(transactions, eq(transactions.sharedExpenseGroupId, sharedExpenseGroups.id))
+      .where(eq(sharedExpenseGroups.attributionMonth, startDate));
+
     results.push({
       label: monthLabel(start),
       income: Number(income),
-      expense: Math.abs(Number(expense)),
+      expense: Math.abs(Number(expense)) + Number(groupNet),
     });
   }
   return results;
@@ -132,6 +152,7 @@ async function topCategoriesThisMonth() {
     .where(
       and(
         eq(transactions.isTransfer, false),
+        sql`${transactions.sharedExpenseGroupId} is null`,
         eq(transactions.direction, "debit"),
         gte(transactions.bookedAt, start),
         lt(transactions.bookedAt, end),
@@ -139,20 +160,73 @@ async function topCategoriesThisMonth() {
     )
     .groupBy(transactions.categoryId);
 
+  const startDate = start.toISOString().slice(0, 10);
+  const groupNetRows = await db
+    .select({
+      groupId: sharedExpenseGroups.id,
+      primaryTxId: sharedExpenseGroups.primaryTxId,
+      net: sql<string>`coalesce(sum(case
+        when ${transactions.id} = ${sharedExpenseGroups.primaryTxId}
+          then ${transactions.amountEur}
+        else -${transactions.amountEur} end), 0)`,
+    })
+    .from(sharedExpenseGroups)
+    .leftJoin(transactions, eq(transactions.sharedExpenseGroupId, sharedExpenseGroups.id))
+    .where(eq(sharedExpenseGroups.attributionMonth, startDate))
+    .groupBy(sharedExpenseGroups.id, sharedExpenseGroups.primaryTxId);
+
+  const primaryIds = groupNetRows.map((g) => g.primaryTxId);
+  const primaryCatRows = primaryIds.length
+    ? await db
+        .select({ id: transactions.id, categoryId: transactions.categoryId })
+        .from(transactions)
+        .where(sql`${transactions.id} in (${sql.join(primaryIds.map((id) => sql`${id}`), sql`, `)})`)
+    : [];
+  const catByPrimary = new Map(primaryCatRows.map((r) => [r.id, r.categoryId]));
+
   const cats = await db.select().from(categories);
   const catById = new Map(cats.map((c) => [c.id, c]));
 
-  const enriched = rows.map((r) => {
-    const cat = r.categoryId ? catById.get(r.categoryId) : null;
+  const totals = new Map<string | null, number>();
+  for (const r of rows) {
+    totals.set(r.categoryId, (totals.get(r.categoryId) ?? 0) + Math.abs(Number(r.total)));
+  }
+  for (const r of groupNetRows) {
+    const catId = catByPrimary.get(r.primaryTxId) ?? null;
+    totals.set(catId, (totals.get(catId) ?? 0) + Number(r.net));
+  }
+
+  const enriched = Array.from(totals.entries()).map(([categoryId, total]) => {
+    const cat = categoryId ? catById.get(categoryId) : null;
     return {
-      categoryId: r.categoryId,
+      categoryId,
       name: cat?.name ?? "Uncategorized",
       color: cat?.color ?? "#64748b",
-      total: Math.abs(Number(r.total)),
+      total,
     };
   });
   enriched.sort((a, b) => b.total - a.total);
   return enriched.slice(0, 5);
+}
+
+async function unclassifiedCreditsThisMonth(): Promise<number> {
+  const now = new Date();
+  const start = monthStart(now);
+  const end = monthStart(now, 1);
+  const [{ count }] = await db
+    .select({ count: sql<string>`count(*)` })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.direction, "credit"),
+        eq(transactions.isTransfer, false),
+        sql`${transactions.sharedExpenseGroupId} is null`,
+        sql`${transactions.categoryId} is null`,
+        gte(transactions.bookedAt, start),
+        lt(transactions.bookedAt, end),
+      ),
+    );
+  return Number(count);
 }
 
 export default async function DashboardPage() {
@@ -166,6 +240,7 @@ export default async function DashboardPage() {
     budgetProgress,
     recentTx,
     recentConnections,
+    unclassifiedCredits,
   ] = await Promise.all([
     db.select({ total: sql<number>`count(*)` }).from(connections),
     db
@@ -200,6 +275,7 @@ export default async function DashboardPage() {
       .from(connections)
       .orderBy(desc(connections.createdAt))
       .limit(5),
+    unclassifiedCreditsThisMonth(),
   ]);
 
   const empty = Number(connStats.total) === 0 && Number(accountStats.total) === 0;
@@ -259,7 +335,9 @@ export default async function DashboardPage() {
             label="This month income"
             value={current ? formatCurrency(current.income, "EUR") : "—"}
             hint={
-              prev
+              unclassifiedCredits > 0
+                ? `${unclassifiedCredits} unclassified credit${unclassifiedCredits === 1 ? "" : "s"}`
+                : prev
                 ? `${incomeDelta >= 0 ? "+" : ""}${formatCurrency(incomeDelta, "EUR")} vs prev`
                 : undefined
             }

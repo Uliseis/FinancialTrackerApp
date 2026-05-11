@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, Trash2, Wand2 } from "lucide-react";
+import { Plus, Trash2, TrendingUp, Wand2 } from "lucide-react";
 import type { Category, CategoryRule } from "@/db/schema";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,6 +25,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CATEGORY_KINDS, type CategoryKind } from "@/lib/income";
 
 type CategoryWithUsage = Category & { usage: number };
 
@@ -38,10 +40,11 @@ export function CategoriesManager({ categories, rules }: CategoriesManagerProps)
   const [, startTransition] = useTransition();
 
   const [newName, setNewName] = useState("");
-  const [newKind, setNewKind] = useState<"expense" | "income">("expense");
+  const [newKind, setNewKind] = useState<CategoryKind>("expense");
   const [newColor, setNewColor] = useState("#64748b");
   const [creating, setCreating] = useState(false);
 
+  const [activeTab, setActiveTab] = useState<"expense" | "income">("expense");
   const [rulePattern, setRulePattern] = useState("");
   const [ruleField, setRuleField] = useState<"description" | "counterparty">("description");
   const [ruleMatch, setRuleMatch] = useState<
@@ -139,6 +142,33 @@ export function CategoriesManager({ categories, rules }: CategoriesManagerProps)
 
   const categoryById = new Map(categories.map((c) => [c.id, c]));
 
+  const incomeCategories = useMemo(
+    () => categories.filter((c) => c.kind === "income"),
+    [categories],
+  );
+  const expenseCategories = useMemo(
+    () => categories.filter((c) => c.kind !== "income"),
+    [categories],
+  );
+  const activeCategories = activeTab === "income" ? incomeCategories : expenseCategories;
+  const activeRules = useMemo(
+    () =>
+      rules.filter((r) => {
+        const c = categoryById.get(r.categoryId);
+        if (!c) return activeTab === "expense";
+        return activeTab === "income" ? c.kind === "income" : c.kind !== "income";
+      }),
+    [rules, activeTab, categoryById],
+  );
+
+  function selectTab(next: "expense" | "income") {
+    setActiveTab(next);
+    const list = next === "income" ? incomeCategories : expenseCategories;
+    if (!list.find((c) => c.id === ruleCategoryId)) {
+      setRuleCategoryId(list[0]?.id ?? "");
+    }
+  }
+
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <Card>
@@ -155,14 +185,17 @@ export function CategoriesManager({ categories, rules }: CategoriesManagerProps)
             />
             <Select
               value={newKind}
-              onValueChange={(v) => setNewKind(v as "expense" | "income")}
+              onValueChange={(v) => setNewKind(v as CategoryKind)}
             >
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="expense">Expense</SelectItem>
-                <SelectItem value="income">Income</SelectItem>
+                {CATEGORY_KINDS.map((k) => (
+                  <SelectItem key={k} value={k} className="capitalize">
+                    {k}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Input
@@ -245,6 +278,15 @@ export function CategoriesManager({ categories, rules }: CategoriesManagerProps)
           </Button>
         </CardHeader>
         <CardContent className="space-y-4">
+          <Tabs value={activeTab} onValueChange={(v) => selectTab(v as "expense" | "income")}>
+            <TabsList>
+              <TabsTrigger value="expense">Expense rules</TabsTrigger>
+              <TabsTrigger value="income">
+                <TrendingUp className="mr-1 h-3.5 w-3.5" />
+                Income sources
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value={activeTab} className="space-y-4">
           <div className="space-y-2 rounded-lg border border-[var(--color-border)] p-3">
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <div className="space-y-1">
@@ -252,21 +294,33 @@ export function CategoriesManager({ categories, rules }: CategoriesManagerProps)
                 <Input
                   value={rulePattern}
                   onChange={(e) => setRulePattern(e.target.value)}
-                  placeholder="e.g. MERCADONA"
+                  placeholder={
+                    activeTab === "income" ? "e.g. ABANCA NOMINA" : "e.g. MERCADONA"
+                  }
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Category</Label>
+                <Label className="text-xs">
+                  {activeTab === "income" ? "Income category" : "Category"}
+                </Label>
                 <Select value={ruleCategoryId} onValueChange={setRuleCategoryId}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Pick a category" />
                   </SelectTrigger>
                   <SelectContent>
-                    {categories.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}
+                    {activeCategories.length === 0 ? (
+                      <SelectItem value="__none" disabled>
+                        {activeTab === "income"
+                          ? "No income categories — create one first"
+                          : "No categories"}
                       </SelectItem>
-                    ))}
+                    ) : (
+                      activeCategories.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -348,17 +402,17 @@ export function CategoriesManager({ categories, rules }: CategoriesManagerProps)
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rules.length === 0 ? (
+                {activeRules.length === 0 ? (
                   <TableRow className="hover:bg-transparent">
                     <TableCell
                       colSpan={6}
                       className="py-6 text-center text-sm text-[var(--color-muted-foreground)]"
                     >
-                      No rules yet.
+                      No {activeTab === "income" ? "income sources" : "rules"} yet.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  rules.map((r) => {
+                  activeRules.map((r) => {
                     const cat = categoryById.get(r.categoryId);
                     return (
                       <TableRow key={r.id}>
@@ -388,6 +442,8 @@ export function CategoriesManager({ categories, rules }: CategoriesManagerProps)
               </TableBody>
             </Table>
           </div>
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
     </div>

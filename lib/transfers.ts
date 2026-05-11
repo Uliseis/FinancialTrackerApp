@@ -32,6 +32,7 @@ export async function detectTransfers(
   const baseWhere = and(
     gte(transactions.bookedAt, since),
     sql`${transactions.amountEur} is not null`,
+    sql`${transactions.sharedExpenseGroupId} is null`,
   );
 
   const rows = await db

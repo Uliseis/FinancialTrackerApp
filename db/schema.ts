@@ -12,6 +12,7 @@ import {
   pgEnum,
   uuid,
   date,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
 export const accountTypeEnum = pgEnum("account_type", ["bank", "broker", "crypto"]);
@@ -129,14 +130,20 @@ export const instruments = pgTable(
   }),
 );
 
-export const categories = pgTable("categories", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  name: text("name").notNull(),
-  parentId: uuid("parent_id"),
-  kind: text("kind").notNull().default("expense"),
-  color: text("color"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const categories = pgTable(
+  "categories",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    parentId: uuid("parent_id"),
+    kind: text("kind").notNull().default("expense"),
+    color: text("color"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    kindIdx: index("categories_kind_idx").on(t.kind),
+  }),
+);
 
 export const categoryRules = pgTable("category_rules", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -200,6 +207,10 @@ export const transactions = pgTable(
     categorySource: categorySourceEnum("category_source"),
     isTransfer: boolean("is_transfer").notNull().default(false),
     transferGroupId: uuid("transfer_group_id"),
+    sharedExpenseGroupId: uuid("shared_expense_group_id").references(
+      (): AnyPgColumn => sharedExpenseGroups.id,
+      { onDelete: "set null" },
+    ),
     raw: jsonb("raw").$type<Record<string, unknown>>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -211,7 +222,26 @@ export const transactions = pgTable(
     bookedIdx: index("transactions_booked_idx").on(t.bookedAt),
     transferIdx: index("transactions_transfer_idx").on(t.isTransfer),
     transferGroupIdx: index("transactions_transfer_group_idx").on(t.transferGroupId),
+    sharedExpenseIdx: index("transactions_shared_expense_idx").on(t.sharedExpenseGroupId),
     categoryIdx: index("transactions_category_idx").on(t.categoryId),
+  }),
+);
+
+export const sharedExpenseGroups = pgTable(
+  "shared_expense_groups",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    label: text("label").notNull(),
+    primaryTxId: uuid("primary_tx_id")
+      .notNull()
+      .references(() => transactions.id, { onDelete: "cascade" }),
+    attributionMonth: date("attribution_month").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    primaryIdx: index("shared_expense_groups_primary_idx").on(t.primaryTxId),
+    monthIdx: index("shared_expense_groups_month_idx").on(t.attributionMonth),
   }),
 );
 
@@ -296,6 +326,8 @@ export type NewBudget = typeof budgets.$inferInsert;
 export type FxRate = typeof fxRates.$inferSelect;
 export type NewFxRate = typeof fxRates.$inferInsert;
 export type SyncRun = typeof syncRuns.$inferSelect;
+export type SharedExpenseGroup = typeof sharedExpenseGroups.$inferSelect;
+export type NewSharedExpenseGroup = typeof sharedExpenseGroups.$inferInsert;
 
 // Quiet unused-import warning if `sql` ends up unused in builds.
 export const _sql = sql;
