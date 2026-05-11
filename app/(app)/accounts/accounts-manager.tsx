@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Anchor, Plus, Trash2, Upload, Wallet } from "lucide-react";
@@ -740,9 +740,12 @@ function ImportCsvDialog({
   const [result, setResult] = useState<ImportResultDisplay | null>(null);
   const [currentStage, setCurrentStage] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (!account) {
+      abortRef.current?.abort();
+      abortRef.current = null;
       setFile(null);
       setResult(null);
       setSubmitting(false);
@@ -755,6 +758,9 @@ function ImportCsvDialog({
 
   async function submit() {
     if (!file || !account) return;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setSubmitting(true);
     setResult(null);
     setStreamError(null);
@@ -765,6 +771,7 @@ function ImportCsvDialog({
       const res = await fetch(`/api/accounts/${account.id}/import-csv`, {
         method: "POST",
         body: fd,
+        signal: controller.signal,
       });
       if (!res.ok || !res.body) {
         const text = await res.text().catch(() => "");
@@ -821,11 +828,16 @@ function ImportCsvDialog({
       toast.success(summary);
       onImported();
     } catch (err) {
+      if ((err as { name?: string })?.name === "AbortError") {
+        setStreamError("Import cancelled");
+        return;
+      }
       const message = err instanceof Error ? err.message : "Import failed";
       toast.error(message);
       setStreamError(message);
     } finally {
       setSubmitting(false);
+      if (abortRef.current === controller) abortRef.current = null;
     }
   }
 
@@ -912,8 +924,14 @@ function ImportCsvDialog({
           ) : null}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
-            {result ? "Close" : "Cancel"}
+          <Button
+            variant="outline"
+            onClick={() => {
+              abortRef.current?.abort();
+              onOpenChange(false);
+            }}
+          >
+            {submitting ? "Cancel" : result ? "Close" : "Cancel"}
           </Button>
           <Button onClick={submit} disabled={submitting || !file}>
             {submitting ? "Importing…" : "Import"}

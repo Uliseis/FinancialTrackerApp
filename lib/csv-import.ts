@@ -90,6 +90,9 @@ function getMadridOffsetMinutes(year: number, month: number, day: number, hour: 
   return (madridUtc - utc) / 60_000;
 }
 
+// Wall-clock strings inside the DST spring-forward gap (02:00-02:59 CET) or
+// fall-back overlap have no unambiguous mapping; results may shift by an hour.
+// Acceptable: the day-resolution external_id keeps dedup stable across re-imports.
 function parseMadridLocal(raw: string | undefined): Date | null {
   if (!raw) return null;
   const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2}))?/);
@@ -109,10 +112,23 @@ function parseMadridLocal(raw: string | undefined): Date | null {
 
 function normalizeSignedAmount(raw: string | undefined): string | null {
   if (raw == null) return null;
-  const cleaned = raw.trim().replace(/,/g, "");
-  if (!/^-?\d+(\.\d+)?$/.test(cleaned)) return null;
-  if (!Number.isFinite(Number(cleaned))) return null;
-  return cleaned;
+  let s = raw.trim();
+  const hasComma = s.includes(",");
+  const hasDot = s.includes(".");
+  if (hasComma && !hasDot) {
+    if (/^-?\d{1,3}(,\d{3})+$/.test(s)) {
+      s = s.replace(/,/g, "");
+    } else if (/^-?\d+,\d{1,2}$/.test(s)) {
+      s = s.replace(",", ".");
+    } else {
+      return null;
+    }
+  } else {
+    s = s.replace(/,/g, "");
+  }
+  if (!/^-?\d+(\.\d+)?$/.test(s)) return null;
+  if (!Number.isFinite(Number(s))) return null;
+  return s;
 }
 
 export async function importRevolutCsv(
@@ -171,8 +187,10 @@ export async function importRevolutCsv(
     .values({ connector: "manual", connectionId: null })
     .returning();
 
+  try {
   const dupCounts = new Map<string, number>();
   const toInsert: NewTransaction[] = [];
+  let minBookedAt: Date | null = null;
 
   for (let idx = 0; idx < rows.length; idx++) {
     const row = rows[idx];
@@ -192,14 +210,16 @@ export async function importRevolutCsv(
 
     const description = (row.Description ?? "").trim() || null;
     const descSlug = slugifyDescription(row.Description);
-    const startedIso = started.toISOString();
-    const signature = `${startedIso}|${amount}|${descSlug}`;
+    const dayKey = started.toISOString().slice(0, 10);
+    const signature = `${dayKey}|${amount}|${descSlug}`;
     const dupIdx = dupCounts.get(signature) ?? 0;
     dupCounts.set(signature, dupIdx + 1);
 
-    const externalId = `revolutcsv:v1:${startedIso}:${amount}:${descSlug}:${dupIdx}`;
+    const externalId = `revolutcsv:v1:${dayKey}:${amount}:${descSlug}:${dupIdx}`;
     const numericAmount = Number(amount);
     const direction: "debit" | "credit" = numericAmount < 0 ? "debit" : "credit";
+
+    if (!minBookedAt || started < minBookedAt) minBookedAt = started;
 
     toInsert.push({
       accountId,
@@ -271,7 +291,11 @@ export async function importRevolutCsv(
     }
     await emit({ stage: "transfers", message: "Detecting transfers" });
     try {
-      const transfers = await detectTransfers({ sinceDays: 30 });
+      const ageDays = minBookedAt
+        ? Math.ceil((Date.now() - minBookedAt.getTime()) / 86_400_000) + 3
+        : 30;
+      const sinceDays = Math.min(Math.max(ageDays, 30), 730);
+      const transfers = await detectTransfers({ sinceDays });
       transfersMatched = transfers.matched;
     } catch (err) {
       result.errors.push(`transfers: ${err instanceof Error ? err.message : String(err)}`);
@@ -294,7 +318,10 @@ export async function importRevolutCsv(
         skippedDuplicate: result.skippedDuplicate,
       },
     })
-    .where(eq(syncRuns.id, run.id));
+    .where(eq(syncRuns.id, run.id))
+    .catch((err) => {
+      result.errors.push(`syncRun: ${err instanceof Error ? err.message : String(err)}`);
+    });
 
   await emit({
     stage: "done",
@@ -303,4 +330,18 @@ export async function importRevolutCsv(
   });
 
   return result;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await db
+      .update(syncRuns)
+      .set({
+        finishedAt: new Date(),
+        status: "error",
+        insertedTransactions: result.inserted,
+        error: message,
+      })
+      .where(eq(syncRuns.id, run.id))
+      .catch(() => {});
+    throw err;
+  }
 }

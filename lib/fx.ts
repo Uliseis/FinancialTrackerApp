@@ -124,7 +124,7 @@ export async function backfillTransactionEurAmounts(opts: {
     })
     .from(transactions)
     .where(where)
-    .limit(opts.limit ?? 10_000);
+    .limit(opts.limit ?? opts.txIds?.length ?? 10_000);
 
   let updated = 0;
   let skipped = 0;
