@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
 import { accounts, categories, transactions } from "@/db/schema";
 import { PageHeader } from "@/components/page-header";
@@ -38,7 +39,7 @@ export default async function TransactionsPage({
   const q = firstParam(sp.q).trim();
   const showTransfers = firstParam(sp.transfers) === "show";
 
-  const filters: SQL[] = [];
+  const filters: SQL[] = [isNull(transactions.routedFromTxId)];
   if (!showTransfers) filters.push(eq(transactions.isTransfer, false));
   if (q) {
     const needle = `%${q}%`;
@@ -49,7 +50,7 @@ export default async function TransactionsPage({
       )!,
     );
   }
-  const whereClause = filters.length > 0 ? and(...filters) : undefined;
+  const whereClause = and(...filters);
 
   const [totalRow] = await db
     .select({ count: sql<string>`count(*)` })
@@ -59,6 +60,9 @@ export default async function TransactionsPage({
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const clampedPage = Math.min(page, totalPages);
   const offset = (clampedPage - 1) * PAGE_SIZE;
+
+  const mirrorTx = alias(transactions, "mirror_tx");
+  const mirrorAccount = alias(accounts, "mirror_account");
 
   const [rows, cats, manualAccts] = await Promise.all([
     db
@@ -79,9 +83,13 @@ export default async function TransactionsPage({
         accountId: transactions.accountId,
         accountName: accounts.name,
         institution: accounts.institution,
+        routedToAccountId: mirrorAccount.id,
+        routedToAccountName: mirrorAccount.name,
       })
       .from(transactions)
       .leftJoin(accounts, eq(transactions.accountId, accounts.id))
+      .leftJoin(mirrorTx, eq(mirrorTx.routedFromTxId, transactions.id))
+      .leftJoin(mirrorAccount, eq(mirrorAccount.id, mirrorTx.accountId))
       .where(whereClause)
       .orderBy(desc(transactions.bookedAt))
       .limit(PAGE_SIZE)

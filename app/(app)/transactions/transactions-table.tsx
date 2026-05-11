@@ -82,6 +82,8 @@ export interface TransactionsTableRow {
   isTransfer: boolean;
   sharedExpenseGroupId: string | null;
   routedFromTxId: string | null;
+  routedToAccountId: string | null;
+  routedToAccountName: string | null;
   accountId: string;
   accountName: string | null;
   institution: string | null;
@@ -403,32 +405,39 @@ export function TransactionsTable({
                       <p className="truncate text-sm" title={r.description ?? ""}>
                         {r.description ?? <span className="text-muted-foreground">—</span>}
                       </p>
-                      <p
-                        className="truncate text-xs"
-                        title={r.counterparty ?? "no counterparty on this transaction"}
-                      >
-                        <span className="mr-1 text-muted-foreground">
-                          {positive ? "from:" : "to:"}
-                        </span>
-                        {r.counterparty ? (
-                          <span className="font-medium">{r.counterparty}</span>
-                        ) : (
-                          <span className="italic text-muted-foreground">
-                            (none — bank didn&apos;t provide one)
+                      {r.routedToAccountName ? (
+                        <p className="truncate text-xs" title={r.routedToAccountName}>
+                          <span className="mr-1 text-muted-foreground">→</span>
+                          <span className="font-medium">{r.routedToAccountName}</span>
+                        </p>
+                      ) : (
+                        <p
+                          className="truncate text-xs"
+                          title={r.counterparty ?? "no counterparty on this transaction"}
+                        >
+                          <span className="mr-1 text-muted-foreground">
+                            {positive ? "from:" : "to:"}
                           </span>
-                        )}
-                      </p>
+                          {r.counterparty ? (
+                            <span className="font-medium">{r.counterparty}</span>
+                          ) : (
+                            <span className="italic text-muted-foreground">
+                              (none — bank didn&apos;t provide one)
+                            </span>
+                          )}
+                        </p>
+                      )}
                       <div className="mt-1 flex flex-wrap gap-1">
-                        {r.isTransfer ? (
+                        {r.isTransfer && !r.routedToAccountName ? (
                           <Badge variant="secondary" className="text-[10px]">
                             <ArrowLeftRight className="mr-1 h-3 w-3" />
                             transfer
                           </Badge>
                         ) : null}
-                        {r.routedFromTxId ? (
-                          <Badge variant="outline" className="text-[10px]">
+                        {r.routedToAccountName ? (
+                          <Badge variant="secondary" className="text-[10px]">
                             <Send className="mr-1 h-3 w-3" />
-                            routed
+                            internal transfer
                           </Badge>
                         ) : null}
                         {group ? (
