@@ -14,6 +14,7 @@ import {
   Tag,
   TrendingUp,
   Wand2,
+  Wand,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -104,6 +105,7 @@ export function TransactionsTable({
   const [showSharedAs, setShowSharedAs] = useState<"net" | "gross">("net");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [linkTarget, setLinkTarget] = useState<TransactionsTableRow | null>(null);
+  const [classifyTarget, setClassifyTarget] = useState<TransactionsTableRow | null>(null);
 
   const catById = useMemo(
     () => new Map(categories.map((c) => [c.id, c])),
@@ -333,12 +335,24 @@ export function TransactionsTable({
                       <p className="text-xs text-muted-foreground">{r.institution}</p>
                     </TableCell>
                     <TableCell className="max-w-[280px]">
-                      <p className="truncate text-sm">{r.description ?? ""}</p>
-                      {r.counterparty ? (
-                        <p className="truncate text-xs text-muted-foreground">
-                          {r.counterparty}
-                        </p>
-                      ) : null}
+                      <p className="truncate text-sm" title={r.description ?? ""}>
+                        {r.description ?? <span className="text-muted-foreground">—</span>}
+                      </p>
+                      <p
+                        className="truncate text-xs"
+                        title={r.counterparty ?? "no counterparty on this transaction"}
+                      >
+                        <span className="mr-1 text-muted-foreground">
+                          {positive ? "from:" : "to:"}
+                        </span>
+                        {r.counterparty ? (
+                          <span className="font-medium">{r.counterparty}</span>
+                        ) : (
+                          <span className="italic text-muted-foreground">
+                            (none — bank didn&apos;t provide one)
+                          </span>
+                        )}
+                      </p>
                       <div className="mt-1 flex flex-wrap gap-1">
                         {r.isTransfer ? (
                           <Badge variant="secondary" className="text-[10px]">
@@ -460,6 +474,10 @@ export function TransactionsTable({
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                          <DropdownMenuItem onClick={() => setClassifyTarget(r)}>
+                            <Wand className="h-4 w-4" />
+                            Classify like this…
+                          </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => toggleTransfer(r)}>
                             <ArrowLeftRight className="h-4 w-4" />
                             {r.isTransfer ? "Unmark transfer" : "Mark as transfer"}
@@ -497,6 +515,15 @@ export function TransactionsTable({
         onClose={() => setLinkTarget(null)}
         onLinked={() => {
           setLinkTarget(null);
+          startTransition(() => router.refresh());
+        }}
+      />
+      <ClassifyLikeThisDialog
+        target={classifyTarget}
+        categories={sortedCategories}
+        onClose={() => setClassifyTarget(null)}
+        onSaved={() => {
+          setClassifyTarget(null);
           startTransition(() => router.refresh());
         }}
       />
@@ -729,6 +756,272 @@ function LinkReimbursementsDialog({
           </Button>
           <Button onClick={submit} disabled={submitting || net < 0}>
             {submitting ? "Linking…" : "Link reimbursements"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type RuleField = "description" | "counterparty";
+type RuleMatch = "contains" | "equals" | "startsWith" | "endsWith" | "regex";
+
+interface PreviewSample {
+  id: string;
+  bookedAt: string;
+  description: string | null;
+  counterparty: string | null;
+  amount: string;
+  currency: string;
+  direction: "credit" | "debit";
+}
+
+function ClassifyLikeThisDialog({
+  target,
+  categories,
+  onClose,
+  onSaved,
+}: {
+  target: TransactionsTableRow | null;
+  categories: CategoryOption[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [field, setField] = useState<RuleField>("counterparty");
+  const [matchType, setMatchType] = useState<RuleMatch>("contains");
+  const [pattern, setPattern] = useState("");
+  const [categoryId, setCategoryId] = useState<string>("");
+  const [preview, setPreview] = useState<{ count: number; samples: PreviewSample[] } | null>(
+    null,
+  );
+  const [previewing, setPreviewing] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!target) {
+      setPattern("");
+      setPreview(null);
+      return;
+    }
+    const hasCp = !!target.counterparty;
+    const defaultField: RuleField = hasCp ? "counterparty" : "description";
+    setField(defaultField);
+    setMatchType("contains");
+    const seed = (hasCp ? target.counterparty : target.description) ?? "";
+    setPattern(seed.trim());
+    setCategoryId(target.categoryId ?? categories[0]?.id ?? "");
+  }, [target, categories]);
+
+  useEffect(() => {
+    if (!target) return;
+    if (!pattern.trim()) {
+      setPreview({ count: 0, samples: [] });
+      return;
+    }
+    let cancelled = false;
+    const ctrl = new AbortController();
+    setPreviewing(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await fetch("/api/category-rules/preview", {
+          method: "POST",
+          signal: ctrl.signal,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pattern: pattern.trim(), field, matchType }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error ?? "preview failed");
+        if (!cancelled) setPreview(data);
+      } catch (err) {
+        if (!cancelled && (err as Error).name !== "AbortError") {
+          setPreview(null);
+        }
+      } finally {
+        if (!cancelled) setPreviewing(false);
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      ctrl.abort();
+      window.clearTimeout(timer);
+    };
+  }, [target, pattern, field, matchType]);
+
+  async function submit() {
+    if (!target) return;
+    if (!pattern.trim()) {
+      toast.error("Pattern can't be empty");
+      return;
+    }
+    if (!categoryId) {
+      toast.error("Pick a category");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const ruleRes = await fetch("/api/category-rules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pattern: pattern.trim(),
+          field,
+          matchType,
+          categoryId,
+          priority: 0,
+        }),
+      });
+      if (!ruleRes.ok) {
+        const data = await ruleRes.json().catch(() => ({}));
+        throw new Error(data?.error?.formErrors?.join(", ") ?? "Rule creation failed");
+      }
+      const applyRes = await fetch("/api/transactions/recategorize", { method: "POST" });
+      const applyData = (await applyRes.json()) as { updated: number; scanned: number };
+      if (!applyRes.ok) throw new Error("Applying rule failed");
+      toast.success(
+        `Rule saved — categorized ${applyData.updated} of ${applyData.scanned} transactions`,
+      );
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={!!target} onOpenChange={(o) => (!o ? onClose() : undefined)}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Classify all like this</DialogTitle>
+          <DialogDescription>
+            Saves a rule and re-runs all rules across your transactions. Use the live
+            preview to confirm it&apos;ll match the rows you expect.
+          </DialogDescription>
+        </DialogHeader>
+
+        {target ? (
+          <div className="space-y-3">
+            <div className="rounded-md border border-border p-3 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="truncate">
+                  <strong>{target.description ?? "—"}</strong>
+                </span>
+                <span className="tabular font-medium">
+                  {target.direction === "credit" ? "+" : ""}
+                  {formatCurrency(parseFloat(target.amount), target.currency)}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {target.direction === "credit" ? "from" : "to"}:{" "}
+                {target.counterparty ?? "(no counterparty on this row)"}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[140px_140px_1fr]">
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Field</label>
+                <select
+                  className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                  value={field}
+                  onChange={(e) => setField(e.target.value as RuleField)}
+                >
+                  <option value="counterparty">Counterparty</option>
+                  <option value="description">Description</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Match</label>
+                <select
+                  className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                  value={matchType}
+                  onChange={(e) => setMatchType(e.target.value as RuleMatch)}
+                >
+                  <option value="contains">Contains</option>
+                  <option value="equals">Equals</option>
+                  <option value="startsWith">Starts with</option>
+                  <option value="endsWith">Ends with</option>
+                  <option value="regex">Regex</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Pattern</label>
+                <Input
+                  value={pattern}
+                  onChange={(e) => setPattern(e.target.value)}
+                  placeholder="e.g. MERCADONA"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Category</label>
+              <select
+                className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
+              >
+                <option value="">Pick a category…</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                    {c.kind !== "expense" ? `  (${c.kind})` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="rounded-md border border-border bg-[var(--color-muted)] p-3 text-sm">
+              {previewing ? (
+                <p className="text-muted-foreground">Checking…</p>
+              ) : preview ? (
+                <>
+                  <p className="font-medium">
+                    Matches {preview.count} transaction{preview.count === 1 ? "" : "s"}
+                    {preview.count === 0 && pattern
+                      ? " — try a shorter or broader pattern"
+                      : ""}
+                  </p>
+                  {preview.samples.length > 0 ? (
+                    <ul className="mt-2 space-y-1 text-xs">
+                      {preview.samples.map((s) => (
+                        <li key={s.id} className="flex items-center gap-2">
+                          <span className="shrink-0 text-muted-foreground tabular">
+                            {formatDate(new Date(s.bookedAt))}
+                          </span>
+                          <span className="truncate">
+                            {s.description ?? s.counterparty ?? "—"}
+                          </span>
+                          <span className="ml-auto tabular">
+                            {formatCurrency(parseFloat(s.amount), s.currency)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </>
+              ) : (
+                <p className="text-muted-foreground">Enter a pattern to preview.</p>
+              )}
+            </div>
+
+            {!target.counterparty && field === "counterparty" ? (
+              <p className="text-xs text-[var(--color-warning)]">
+                This row has no counterparty — switching to <strong>Description</strong>{" "}
+                will match more reliably.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button
+            onClick={submit}
+            disabled={submitting || !pattern.trim() || !categoryId}
+          >
+            {submitting ? "Saving…" : "Save rule & apply"}
           </Button>
         </DialogFooter>
       </DialogContent>
