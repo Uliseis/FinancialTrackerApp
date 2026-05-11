@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Anchor, Plus, Trash2, Wallet } from "lucide-react";
+import { Anchor, Plus, Trash2, Upload, Wallet } from "lucide-react";
 import type { Account, AccountGroup, AccountSpace } from "@/db/schema";
 import { Button } from "@/components/ui/button";
 import {
@@ -71,6 +71,7 @@ export function AccountsManager({
   const [manualBalance, setManualBalance] = useState("");
   const [creatingAccount, setCreatingAccount] = useState(false);
   const [anchorAccount, setAnchorAccount] = useState<Account | null>(null);
+  const [importAccount, setImportAccount] = useState<Account | null>(null);
 
   const accountsByGroup = useMemo(() => {
     const map = new Map<string | null, Account[]>();
@@ -402,6 +403,7 @@ export function AccountsManager({
                     onToggleExcluded={toggleExcluded}
                     onDelete={deleteAccount}
                     onSetAnchor={setAnchorAccount}
+                    onImport={setImportAccount}
                   />
                 </CardContent>
               </Card>
@@ -425,6 +427,7 @@ export function AccountsManager({
                 onToggleExcluded={toggleExcluded}
                 onDelete={deleteAccount}
                 onSetAnchor={setAnchorAccount}
+                onImport={setImportAccount}
               />
             </CardContent>
           </Card>
@@ -436,6 +439,13 @@ export function AccountsManager({
           if (!open) setAnchorAccount(null);
         }}
         onSaved={() => startTransition(() => router.refresh())}
+      />
+      <ImportCsvDialog
+        account={importAccount}
+        onOpenChange={(open) => {
+          if (!open) setImportAccount(null);
+        }}
+        onImported={() => startTransition(() => router.refresh())}
       />
     </div>
   );
@@ -452,6 +462,7 @@ function AccountList({
   onToggleExcluded,
   onDelete,
   onSetAnchor,
+  onImport,
 }: {
   items: Account[];
   groups: AccountGroup[];
@@ -463,6 +474,7 @@ function AccountList({
   onToggleExcluded: (accountId: string, excluded: boolean) => void;
   onDelete: (id: string) => void;
   onSetAnchor: (a: Account) => void;
+  onImport: (a: Account) => void;
 }) {
   if (items.length === 0) {
     return <p className="text-sm text-muted-foreground">No accounts in this group.</p>;
@@ -510,6 +522,17 @@ function AccountList({
           >
             <Anchor className="h-4 w-4" />
           </Button>
+          {a.connectionId ? null : (
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Import CSV statement"
+              onClick={() => onImport(a)}
+              title="Import CSV statement"
+            >
+              <Upload className="h-4 w-4" />
+            </Button>
+          )}
           <Select
             value={a.spaceId ?? defaultSpaceId}
             onValueChange={(v) => onAssignSpace(a.id, v)}
@@ -669,6 +692,130 @@ function AnchorDialog({
           ) : null}
           <Button onClick={() => submit(false)} disabled={saving || !amount || !dateStr}>
             {saving ? "Saving…" : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface ImportResultDisplay {
+  parsed: number;
+  inserted: number;
+  skippedTransfer: number;
+  skippedDuplicate: number;
+  errors?: string[];
+  postProcess?: {
+    fxBackfilled: number;
+    categorized: number;
+    routedMirrors: number;
+    transfersMatched: number;
+  };
+}
+
+function ImportCsvDialog({
+  account,
+  onOpenChange,
+  onImported,
+}: {
+  account: Account | null;
+  onOpenChange: (open: boolean) => void;
+  onImported: () => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<ImportResultDisplay | null>(null);
+
+  useEffect(() => {
+    if (!account) {
+      setFile(null);
+      setResult(null);
+      setSubmitting(false);
+    }
+  }, [account]);
+
+  if (!account) return null;
+
+  async function submit() {
+    if (!file || !account) return;
+    setSubmitting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`/api/accounts/${account.id}/import-csv`, {
+        method: "POST",
+        body: fd,
+      });
+      const body = (await res.json().catch(() => null)) as
+        | (ImportResultDisplay & { error?: string })
+        | null;
+      if (!res.ok) {
+        toast.error(body?.error ?? "Import failed");
+        return;
+      }
+      setResult(body);
+      const summary = `Imported ${body?.inserted ?? 0} · skipped ${body?.skippedDuplicate ?? 0} dup, ${body?.skippedTransfer ?? 0} transfer`;
+      toast.success(summary);
+      onImported();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Import failed");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={!!account} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Import CSV — {account.name}</DialogTitle>
+          <DialogDescription>
+            Upload a Revolut statement CSV. CARD_PAYMENT rows are inserted as debits.
+            TRANSFER rows are skipped (handled by transfer routes). Re-uploading the
+            same file is safe — duplicates are detected and skipped.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">CSV file</Label>
+            <Input
+              type="file"
+              accept=".csv,text/csv"
+              onChange={(e) => {
+                setFile(e.target.files?.[0] ?? null);
+                setResult(null);
+              }}
+            />
+          </div>
+          {result ? (
+            <div className="rounded-md border border-border bg-muted/30 p-3 text-xs">
+              <p className="font-medium">Import summary</p>
+              <ul className="mt-1 space-y-0.5 text-muted-foreground">
+                <li>Parsed: {result.parsed}</li>
+                <li>Inserted: {result.inserted}</li>
+                <li>Skipped (transfer rows): {result.skippedTransfer}</li>
+                <li>Skipped (duplicates): {result.skippedDuplicate}</li>
+                {result.postProcess ? (
+                  <>
+                    <li>FX backfilled: {result.postProcess.fxBackfilled}</li>
+                    <li>Categorised by rules: {result.postProcess.categorized}</li>
+                    <li>Routed mirrors created: {result.postProcess.routedMirrors}</li>
+                    <li>Transfers matched: {result.postProcess.transfersMatched}</li>
+                  </>
+                ) : null}
+                {result.errors && result.errors.length > 0 ? (
+                  <li className="text-destructive">Errors: {result.errors.length}</li>
+                ) : null}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
+            {result ? "Close" : "Cancel"}
+          </Button>
+          <Button onClick={submit} disabled={submitting || !file}>
+            {submitting ? "Importing…" : "Import"}
           </Button>
         </DialogFooter>
       </DialogContent>
