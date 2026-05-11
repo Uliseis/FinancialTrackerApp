@@ -4,7 +4,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { categoryRules } from "@/db/schema";
-import { RULE_FIELDS, RULE_MATCH_TYPES } from "@/lib/categorize";
+import { RULE_FIELDS, RULE_MATCH_TYPES } from "@/lib/rules";
 
 export const dynamic = "force-dynamic";
 

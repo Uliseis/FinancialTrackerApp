@@ -57,7 +57,7 @@ import {
   RULE_MATCH_TYPES,
   type RuleField,
   type RuleMatch,
-} from "@/lib/categorize";
+} from "@/lib/rules";
 import type { GroupSummary } from "@/lib/shared-expenses";
 
 export type SharedExpenseSummary = GroupSummary;

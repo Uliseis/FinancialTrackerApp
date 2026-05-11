@@ -32,7 +32,7 @@ import {
   RULE_MATCH_TYPES,
   type RuleField,
   type RuleMatch,
-} from "@/lib/categorize";
+} from "@/lib/rules";
 
 type CategoryWithUsage = Category & { usage: number };
 

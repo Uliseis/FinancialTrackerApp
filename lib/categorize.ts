@@ -6,18 +6,7 @@ import {
   type CategoryRule,
   type Transaction,
 } from "@/db/schema";
-
-export const RULE_FIELDS = ["description", "counterparty"] as const;
-export const RULE_MATCH_TYPES = [
-  "contains",
-  "equals",
-  "startsWith",
-  "endsWith",
-  "regex",
-] as const;
-
-export type RuleField = (typeof RULE_FIELDS)[number];
-export type RuleMatch = (typeof RULE_MATCH_TYPES)[number];
+import type { RuleField, RuleMatch } from "@/lib/rules";
 
 function matches(rule: CategoryRule, tx: Pick<Transaction, "description" | "counterparty">): boolean {
   const field = (rule.field as RuleField) ?? "description";

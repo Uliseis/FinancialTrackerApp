@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { transactions } from "@/db/schema";
-import { RULE_FIELDS, RULE_MATCH_TYPES } from "@/lib/categorize";
+import { RULE_FIELDS, RULE_MATCH_TYPES } from "@/lib/rules";
 import { requireUser } from "@/lib/api-helpers";
 
 export const dynamic = "force-dynamic";
