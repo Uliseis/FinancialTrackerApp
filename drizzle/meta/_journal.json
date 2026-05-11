@@ -29,6 +29,13 @@
       "when": 1778502127520,
       "tag": "0003_awesome_boomer",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1778509812897,
+      "tag": "0004_unknown_master_chief",
+      "breakpoints": true
     }
   ]
 }
