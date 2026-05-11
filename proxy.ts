@@ -6,8 +6,9 @@ const PUBLIC_PATHS = [
   "/privacy",
   "/terms",
   "/api/auth",
-  // Cron endpoint authenticates itself via Bearer CRON_SECRET.
+  // Cron endpoints authenticate themselves via Bearer CRON_SECRET.
   "/api/enablebanking/sync",
+  "/api/fx/sync",
 ];
 
 export default auth((req) => {

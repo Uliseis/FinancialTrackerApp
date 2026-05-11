@@ -11,6 +11,7 @@ import {
   index,
   pgEnum,
   uuid,
+  date,
 } from "drizzle-orm/pg-core";
 
 export const accountTypeEnum = pgEnum("account_type", ["bank", "broker", "crypto"]);
@@ -36,6 +37,15 @@ export const instrumentTypeEnum = pgEnum("instrument_type", [
   "cash",
   "other",
 ]);
+export const accountGroupKindEnum = pgEnum("account_group_kind", [
+  "cash",
+  "savings",
+  "investment",
+  "credit",
+  "other",
+]);
+export const budgetPeriodEnum = pgEnum("budget_period", ["week", "month", "year"]);
+export const categorySourceEnum = pgEnum("category_source", ["bank", "rule", "manual"]);
 
 export const connections = pgTable(
   "connections",
@@ -60,12 +70,25 @@ export const connections = pgTable(
   }),
 );
 
+export const accountGroups = pgTable("account_groups", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  color: text("color"),
+  kind: accountGroupKindEnum("kind").notNull().default("other"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const accounts = pgTable(
   "accounts",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     connectionId: uuid("connection_id").references(() => connections.id, {
       onDelete: "cascade",
+    }),
+    groupId: uuid("group_id").references(() => accountGroups.id, {
+      onDelete: "set null",
     }),
     externalId: text("external_id").notNull(),
     type: accountTypeEnum("type").notNull(),
@@ -77,6 +100,7 @@ export const accounts = pgTable(
     balanceUpdatedAt: timestamp("balance_updated_at", { withTimezone: true }),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     archived: boolean("archived").notNull().default(false),
+    manualOpeningBalance: numeric("manual_opening_balance", { precision: 20, scale: 4 }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -84,6 +108,7 @@ export const accounts = pgTable(
       t.connectionId,
       t.externalId,
     ),
+    groupIdx: index("accounts_group_idx").on(t.groupId),
   }),
 );
 
@@ -125,6 +150,33 @@ export const categoryRules = pgTable("category_rules", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const budgets = pgTable("budgets", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  categoryId: uuid("category_id")
+    .notNull()
+    .references(() => categories.id, { onDelete: "cascade" }),
+  amountEur: numeric("amount_eur", { precision: 14, scale: 2 }).notNull(),
+  period: budgetPeriodEnum("period").notNull().default("month"),
+  startsOn: date("starts_on").notNull(),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const fxRates = pgTable(
+  "fx_rates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    date: date("date").notNull(),
+    currency: text("currency").notNull(),
+    rate: numeric("rate", { precision: 18, scale: 8 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    dateCcyIdx: uniqueIndex("fx_rates_date_currency_idx").on(t.date, t.currency),
+  }),
+);
+
 export const transactions = pgTable(
   "transactions",
   {
@@ -137,12 +189,17 @@ export const transactions = pgTable(
     valueAt: timestamp("value_at", { withTimezone: true }),
     amount: numeric("amount", { precision: 20, scale: 4 }).notNull(),
     currency: text("currency").notNull(),
+    amountEur: numeric("amount_eur", { precision: 14, scale: 2 }),
+    fxRateUsed: numeric("fx_rate_used", { precision: 18, scale: 8 }),
     direction: txDirectionEnum("direction").notNull(),
     description: text("description"),
     counterparty: text("counterparty"),
     categoryId: uuid("category_id").references(() => categories.id, {
       onDelete: "set null",
     }),
+    categorySource: categorySourceEnum("category_source"),
+    isTransfer: boolean("is_transfer").notNull().default(false),
+    transferGroupId: uuid("transfer_group_id"),
     raw: jsonb("raw").$type<Record<string, unknown>>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -152,6 +209,9 @@ export const transactions = pgTable(
       t.externalId,
     ),
     bookedIdx: index("transactions_booked_idx").on(t.bookedAt),
+    transferIdx: index("transactions_transfer_idx").on(t.isTransfer),
+    transferGroupIdx: index("transactions_transfer_group_idx").on(t.transferGroupId),
+    categoryIdx: index("transactions_category_idx").on(t.categoryId),
   }),
 );
 
@@ -221,12 +281,20 @@ export type Connection = typeof connections.$inferSelect;
 export type NewConnection = typeof connections.$inferInsert;
 export type Account = typeof accounts.$inferSelect;
 export type NewAccount = typeof accounts.$inferInsert;
+export type AccountGroup = typeof accountGroups.$inferSelect;
+export type NewAccountGroup = typeof accountGroups.$inferInsert;
 export type Transaction = typeof transactions.$inferSelect;
 export type NewTransaction = typeof transactions.$inferInsert;
 export type Instrument = typeof instruments.$inferSelect;
 export type Holding = typeof holdings.$inferSelect;
 export type Category = typeof categories.$inferSelect;
+export type NewCategory = typeof categories.$inferInsert;
 export type CategoryRule = typeof categoryRules.$inferSelect;
+export type NewCategoryRule = typeof categoryRules.$inferInsert;
+export type Budget = typeof budgets.$inferSelect;
+export type NewBudget = typeof budgets.$inferInsert;
+export type FxRate = typeof fxRates.$inferSelect;
+export type NewFxRate = typeof fxRates.$inferInsert;
 export type SyncRun = typeof syncRuns.$inferSelect;
 
 // Quiet unused-import warning if `sql` ends up unused in builds.
