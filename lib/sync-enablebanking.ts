@@ -21,12 +21,21 @@ import {
   signedAmount,
   type EbTransaction,
 } from "@/lib/enablebanking";
+import { applyRulesToTransactions } from "@/lib/categorize";
+import { detectTransfers } from "@/lib/transfers";
+import { backfillTransactionEurAmounts } from "@/lib/fx";
 
 export interface SyncResult {
   connectionId: string;
   accountsTouched: number;
   transactionsInserted: number;
   errors: string[];
+  postProcess?: {
+    fxBackfilled: number;
+    fxSkipped: number;
+    categorized: number;
+    transfersMatched: number;
+  };
 }
 
 const TX_PAGE_LIMIT = 50;
@@ -59,6 +68,7 @@ export async function syncEnableBankingConnection(
     .returning();
 
   const client = new EnableBankingClient();
+  const insertedIds: string[] = [];
 
   try {
     const session = await client.getSession(conn.sessionId);
@@ -190,6 +200,7 @@ export async function syncEnableBankingConnection(
                 target: [transactions.accountId, transactions.externalId],
               })
               .returning({ id: transactions.id });
+            for (const row of inserted) insertedIds.push(row.id);
             result.transactionsInserted += inserted.length;
           }
           continuationKey = resp.continuation_key;
@@ -207,6 +218,34 @@ export async function syncEnableBankingConnection(
     }
 
     const expiresAt = session.access?.valid_until ? new Date(session.access.valid_until) : null;
+
+    let fxBackfilled = 0;
+    let fxSkipped = 0;
+    let categorized = 0;
+    let transfersMatched = 0;
+
+    if (insertedIds.length > 0) {
+      try {
+        const fx = await backfillTransactionEurAmounts({ sinceDays: 90 });
+        fxBackfilled = fx.updated;
+        fxSkipped = fx.skipped;
+      } catch (err) {
+        result.errors.push(`fx: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      try {
+        const cats = await applyRulesToTransactions(insertedIds);
+        categorized = cats.updated;
+      } catch (err) {
+        result.errors.push(`categorize: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      try {
+        const transfers = await detectTransfers({ sinceDays: 30 });
+        transfersMatched = transfers.matched;
+      } catch (err) {
+        result.errors.push(`transfers: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    result.postProcess = { fxBackfilled, fxSkipped, categorized, transfersMatched };
 
     await db
       .update(connections)

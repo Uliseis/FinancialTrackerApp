@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { MoreHorizontal, RefreshCw, ShieldCheck } from "lucide-react";
+import { MoreHorizontal, RefreshCcwDot, RefreshCw, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -19,6 +19,7 @@ export interface ConnectionRowActionsProps {
   institutionId: string | null;
   institutionName: string | null;
   status: string;
+  hasSession?: boolean;
   country?: string | null;
 }
 
@@ -27,11 +28,12 @@ export function ConnectionRowActions({
   institutionId,
   institutionName,
   status,
+  hasSession,
   country,
 }: ConnectionRowActionsProps) {
   const router = useRouter();
   const [, startTransition] = useTransition();
-  const [busy, setBusy] = useState<"sync" | "reauth" | null>(null);
+  const [busy, setBusy] = useState<"sync" | "reauth" | "refresh" | null>(null);
 
   function sync() {
     setBusy("sync");
@@ -95,8 +97,50 @@ export function ConnectionRowActions({
     });
   }
 
+  function refreshStatus() {
+    setBusy("refresh");
+    const promise = (async () => {
+      const res = await fetch(`/api/enablebanking/connection/${id}/refresh`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? `HTTP ${res.status}`);
+      }
+      return (await res.json()) as {
+        ok: boolean;
+        reason?: string;
+        sessionStatus?: string;
+        status?: string;
+        hint?: string;
+      };
+    })();
+
+    toast.promise(promise, {
+      loading: "Refreshing status…",
+      success: (data) => {
+        if (data.reason === "no_session") return data.hint ?? "Authorize to continue";
+        if (data.sessionStatus) return `Session: ${data.sessionStatus} → status ${data.status}`;
+        return "Status refreshed";
+      },
+      error: (err: Error) => `Refresh failed: ${err.message}`,
+    });
+
+    startTransition(async () => {
+      try {
+        await promise;
+        router.refresh();
+      } catch {
+        // surfaced by toast
+      } finally {
+        setBusy(null);
+      }
+    });
+  }
+
   const reauthLabel = status === "active" ? "Re-authorize" : "Authorize";
   const canReauth = Boolean(institutionId && country);
+  const showRefresh = status === "pending" && hasSession;
 
   return (
     <DropdownMenu>
@@ -105,9 +149,17 @@ export function ConnectionRowActions({
           <MoreHorizontal className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-44">
+      <DropdownMenuContent align="end" className="w-48">
         <DropdownMenuLabel>Actions</DropdownMenuLabel>
         <DropdownMenuSeparator />
+        {showRefresh ? (
+          <DropdownMenuItem onSelect={refreshStatus} disabled={busy === "refresh"}>
+            <RefreshCcwDot
+              className={`h-4 w-4 ${busy === "refresh" ? "animate-spin" : ""}`}
+            />
+            {busy === "refresh" ? "Refreshing…" : "Refresh status"}
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem onSelect={sync} disabled={busy === "sync"}>
           <RefreshCw className={`h-4 w-4 ${busy === "sync" ? "animate-spin" : ""}`} />
           {busy === "sync" ? "Syncing…" : "Sync now"}

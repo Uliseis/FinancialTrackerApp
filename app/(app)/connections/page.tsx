@@ -2,7 +2,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { connections } from "@/db/schema";
 import { desc } from "drizzle-orm";
-import { AlertCircle, CheckCircle2, Plug } from "lucide-react";
+import { AlertCircle, CheckCircle2, HelpCircle, Plug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -49,6 +49,36 @@ function expiryHint(expiresAt: Date | null): { label: string; warn: boolean } | 
   if (days < 0) return { label: `Expired ${Math.abs(days)}d ago`, warn: true };
   if (days <= 14) return { label: `Re-auth in ${days}d`, warn: true };
   return { label: `${days}d left`, warn: false };
+}
+
+function pendingDiagnostic(
+  hasSession: boolean,
+  sessionStatus: string | undefined,
+): { title: string; description: string } {
+  if (!hasSession) {
+    return {
+      title: "Callback never fired",
+      description:
+        "The bank didn't redirect back to us. Most likely the user closed the tab before SCA completed, or ENABLEBANKING_REDIRECT_URL doesn't match the URL registered with Enable Banking. Click Authorize to restart consent.",
+    };
+  }
+  if (sessionStatus === "PENDING_AUTHORIZATION") {
+    return {
+      title: "Awaiting bank authorization",
+      description:
+        "Enable Banking has a session but the bank hasn't confirmed SCA yet. Click Refresh status; if it stays in PENDING_AUTHORIZATION, the user has to finish authorizing in the bank app.",
+    };
+  }
+  if (sessionStatus) {
+    return {
+      title: `Session status: ${sessionStatus}`,
+      description: "Use Refresh status to re-check, or Re-authorize to restart consent.",
+    };
+  }
+  return {
+    title: "Pending — unknown reason",
+    description: "Try Refresh status, or Re-authorize to restart consent.",
+  };
 }
 
 export default async function ConnectionsPage({
@@ -121,6 +151,13 @@ export default async function ConnectionsPage({
               <TableBody>
                 {rows.map((c) => {
                   const hint = expiryHint(c.expiresAt);
+                  const metadata = (c.metadata as Record<string, unknown> | null) ?? {};
+                  const country = (metadata.country as string | undefined) ?? null;
+                  const sessionStatus = metadata.sessionStatus as string | undefined;
+                  const diag =
+                    c.status === "pending"
+                      ? pendingDiagnostic(Boolean(c.sessionId), sessionStatus)
+                      : null;
                   return (
                     <TableRow key={c.id}>
                       <TableCell>
@@ -134,6 +171,17 @@ export default async function ConnectionsPage({
                       <TableCell className="capitalize text-sm">{c.connector}</TableCell>
                       <TableCell>
                         <Badge variant={statusVariant(c.status)}>{c.status}</Badge>
+                        {diag ? (
+                          <details className="mt-2 max-w-xs">
+                            <summary className="flex cursor-pointer items-center gap-1 text-xs text-[var(--color-muted-foreground)] hover:text-foreground">
+                              <HelpCircle className="h-3 w-3" />
+                              {diag.title}
+                            </summary>
+                            <p className="mt-1 text-[11px] text-[var(--color-muted-foreground)]">
+                              {diag.description}
+                            </p>
+                          </details>
+                        ) : null}
                       </TableCell>
                       <TableCell>
                         {c.expiresAt ? (
@@ -171,9 +219,8 @@ export default async function ConnectionsPage({
                           institutionId={c.institutionId ?? null}
                           institutionName={c.institutionName ?? null}
                           status={c.status}
-                          country={
-                            (c.metadata as { country?: string } | null)?.country ?? null
-                          }
+                          hasSession={Boolean(c.sessionId)}
+                          country={country}
                         />
                       </TableCell>
                     </TableRow>
