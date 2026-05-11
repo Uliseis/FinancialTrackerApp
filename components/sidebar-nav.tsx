@@ -7,13 +7,19 @@ import {
   Link2,
   Receipt,
   Plug,
+  Wallet,
+  Tags,
+  PiggyBank,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const items = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/connections", label: "Connections", icon: Link2 },
+  { href: "/accounts", label: "Accounts", icon: Wallet },
   { href: "/transactions", label: "Transactions", icon: Receipt },
+  { href: "/categories", label: "Categories", icon: Tags },
+  { href: "/budgets", label: "Budgets", icon: PiggyBank },
+  { href: "/connections", label: "Connections", icon: Link2 },
   { href: "/connect", label: "Connect", icon: Plug },
 ];
 
