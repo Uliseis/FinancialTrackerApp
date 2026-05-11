@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { sharedExpenseGroups, transactions } from "@/db/schema";
 import {
   createSharedExpenseGroup,
+  findCandidateRefundedExpenses,
   findCandidateReimbursements,
   netForGroup,
 } from "@/lib/shared-expenses";
@@ -25,11 +26,21 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const txId = url.searchParams.get("txId");
   const candidatesFor = url.searchParams.get("candidatesFor");
+  const candidatesForRefund = url.searchParams.get("candidatesForRefund");
   const q = url.searchParams.get("q") ?? "";
 
   if (candidatesFor) {
     try {
       const rows = await findCandidateReimbursements(candidatesFor, q);
+      return NextResponse.json({ candidates: rows });
+    } catch (e) {
+      return errorResponse(e);
+    }
+  }
+
+  if (candidatesForRefund) {
+    try {
+      const rows = await findCandidateRefundedExpenses(candidatesForRefund, q);
       return NextResponse.json({ candidates: rows });
     } catch (e) {
       return errorResponse(e);

@@ -313,3 +313,55 @@ export async function findCandidateReimbursements(
     .orderBy(sql`${transactions.bookedAt} desc`)
     .limit(50);
 }
+
+export async function findCandidateRefundedExpenses(
+  creditTxId: string,
+  query: string,
+): Promise<
+  Array<{
+    id: string;
+    bookedAt: Date;
+    amountEur: string | null;
+    counterparty: string | null;
+    description: string | null;
+    accountId: string;
+  }>
+> {
+  const credit = await loadTxOrThrow(creditTxId, "credit");
+  if (credit.direction !== "credit") {
+    throw new SharedExpenseError("starting tx must be a credit");
+  }
+  const windowMs = REIMBURSEMENT_WINDOW_DAYS * 86_400_000;
+  const windowStart = new Date(credit.bookedAt.getTime() - windowMs);
+  const windowEnd = new Date(credit.bookedAt.getTime() + windowMs);
+
+  const baseFilters = and(
+    eq(transactions.direction, "debit"),
+    eq(transactions.isTransfer, false),
+    isNull(transactions.sharedExpenseGroupId),
+    gte(transactions.bookedAt, windowStart),
+    lte(transactions.bookedAt, windowEnd),
+  );
+  const needle = "%" + query.toLowerCase() + "%";
+  const filters = query
+    ? and(
+        baseFilters,
+        sql`(lower(coalesce(${transactions.counterparty}, '')) like ${needle}
+            or lower(coalesce(${transactions.description}, '')) like ${needle})`,
+      )
+    : baseFilters;
+
+  return db
+    .select({
+      id: transactions.id,
+      bookedAt: transactions.bookedAt,
+      amountEur: transactions.amountEur,
+      counterparty: transactions.counterparty,
+      description: transactions.description,
+      accountId: transactions.accountId,
+    })
+    .from(transactions)
+    .where(filters)
+    .orderBy(sql`${transactions.bookedAt} desc`)
+    .limit(50);
+}

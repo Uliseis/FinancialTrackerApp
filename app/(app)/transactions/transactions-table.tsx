@@ -135,6 +135,7 @@ export function TransactionsTable({
   const [showSharedAs, setShowSharedAs] = useState<"net" | "gross">("net");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [linkTarget, setLinkTarget] = useState<TransactionsTableRow | null>(null);
+  const [refundTarget, setRefundTarget] = useState<TransactionsTableRow | null>(null);
   const [classifyTarget, setClassifyTarget] = useState<TransactionsTableRow | null>(null);
 
   useEffect(() => setQuery(initialQuery), [initialQuery]);
@@ -591,6 +592,12 @@ export function TransactionsTable({
                               Link reimbursements…
                             </DropdownMenuItem>
                           ) : null}
+                          {r.direction === "credit" && !r.isTransfer && !group ? (
+                            <DropdownMenuItem onClick={() => setRefundTarget(r)}>
+                              <Link2 className="h-4 w-4" />
+                              Mark as refund of…
+                            </DropdownMenuItem>
+                          ) : null}
                           {group ? (
                             <>
                               <DropdownMenuSeparator />
@@ -645,6 +652,14 @@ export function TransactionsTable({
         onClose={() => setLinkTarget(null)}
         onLinked={() => {
           setLinkTarget(null);
+          startTransition(() => router.refresh());
+        }}
+      />
+      <MarkAsRefundDialog
+        credit={refundTarget}
+        onClose={() => setRefundTarget(null)}
+        onLinked={() => {
+          setRefundTarget(null);
           startTransition(() => router.refresh());
         }}
       />
@@ -886,6 +901,220 @@ function LinkReimbursementsDialog({
           </Button>
           <Button onClick={submit} disabled={submitting || net < 0}>
             {submitting ? "Linking…" : "Link reimbursements"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function MarkAsRefundDialog({
+  credit,
+  onClose,
+  onLinked,
+}: {
+  credit: TransactionsTableRow | null;
+  onClose: () => void;
+  onLinked: () => void;
+}) {
+  const [label, setLabel] = useState("");
+  const [query, setQuery] = useState("");
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!credit) {
+      setLabel("");
+      setQuery("");
+      setCandidates([]);
+      setSelectedId(null);
+      return;
+    }
+    const month = formatDate(credit.bookedAt);
+    setLabel(`${credit.counterparty ?? credit.description ?? "Refund"} · ${month}`);
+  }, [credit]);
+
+  useEffect(() => {
+    if (!credit) return;
+    let cancelled = false;
+    setLoading(true);
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        const url = `/api/shared-expenses?candidatesForRefund=${credit.id}&q=${encodeURIComponent(query)}`;
+        const res = await fetch(url, { signal: ctrl.signal });
+        if (!res.ok) throw new Error("Failed to load candidates");
+        const data = (await res.json()) as { candidates: Candidate[] };
+        if (!cancelled) setCandidates(data.candidates);
+      } catch (err) {
+        if (!cancelled && (err as Error).name !== "AbortError") {
+          toast.error((err as Error).message);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }, 200);
+    return () => {
+      cancelled = true;
+      ctrl.abort();
+      window.clearTimeout(timer);
+    };
+  }, [credit, query]);
+
+  const creditAmount = credit?.amountEur ? Math.abs(Number(credit.amountEur)) : 0;
+  const selectedDebit = candidates.find((c) => c.id === selectedId);
+  const debitAmount = selectedDebit?.amountEur ? Math.abs(Number(selectedDebit.amountEur)) : 0;
+  const overReimbursed = creditAmount > debitAmount + 0.001;
+
+  async function submit() {
+    if (!credit || !selectedId) {
+      toast.error("Pick an expense to refund");
+      return;
+    }
+    if (!label.trim()) {
+      toast.error("Label required");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/shared-expenses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          label: label.trim(),
+          primaryTxId: selectedId,
+          reimbursementTxIds: [credit.id],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? "Failed");
+      toast.success(`Linked — net: ${formatCurrency(data.net.net, "EUR")}`);
+      onLinked();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={!!credit} onOpenChange={(o) => (!o ? onClose() : undefined)}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Mark as refund of…</DialogTitle>
+          <DialogDescription>
+            Pick the original expense this credit (partially or fully) refunds. The
+            expense&apos;s net will be reduced by this amount.
+          </DialogDescription>
+        </DialogHeader>
+
+        {credit ? (
+          <div className="space-y-3">
+            <div className="rounded-md border border-border p-3">
+              <div className="flex items-center justify-between text-sm">
+                <span>
+                  <strong>{credit.description ?? credit.counterparty ?? "Credit"}</strong>
+                  {credit.counterparty ? (
+                    <span className="ml-2 text-muted-foreground">
+                      {credit.counterparty}
+                    </span>
+                  ) : null}
+                </span>
+                <span className="tabular font-medium">
+                  +{formatCurrency(parseFloat(credit.amount), credit.currency)}
+                </span>
+              </div>
+            </div>
+
+            <Input
+              placeholder="Label (e.g. Restaurant — Bob's share)"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+            />
+
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Filter expenses by counterparty or description…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="pl-8"
+              />
+            </div>
+
+            <div className="max-h-80 overflow-auto rounded-md border border-border">
+              {loading ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  Loading candidates…
+                </p>
+              ) : candidates.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  No matching expenses within ±60 days.
+                </p>
+              ) : (
+                <ul>
+                  {candidates.map((c) => {
+                    const eur = c.amountEur ? Math.abs(Number(c.amountEur)) : 0;
+                    return (
+                      <li
+                        key={c.id}
+                        className="flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0"
+                      >
+                        <input
+                          type="radio"
+                          name="refund-target"
+                          className="h-4 w-4 accent-current"
+                          checked={selectedId === c.id}
+                          onChange={() => setSelectedId(c.id)}
+                        />
+                        <div className="flex-1 text-sm">
+                          <p className="truncate">
+                            {c.description ?? c.counterparty ?? "—"}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatDate(new Date(c.bookedAt))}
+                            {c.counterparty ? ` · ${c.counterparty}` : ""}
+                          </p>
+                        </div>
+                        <span className="tabular text-sm font-medium">
+                          {formatCurrency(eur, "EUR")}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+
+            {selectedDebit ? (
+              <div className="rounded-md bg-[var(--color-muted)] p-3 text-sm">
+                Net after refund:{" "}
+                <strong className="tabular">
+                  {formatCurrency(debitAmount, "EUR")} −{" "}
+                  {formatCurrency(creditAmount, "EUR")} ={" "}
+                  {formatCurrency(Math.max(debitAmount - creditAmount, 0), "EUR")}
+                </strong>
+                {overReimbursed ? (
+                  <span className="ml-2 text-[var(--color-destructive)]">
+                    Refund exceeds the expense — pick a larger expense.
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button
+            onClick={submit}
+            disabled={submitting || !selectedId || overReimbursed}
+          >
+            {submitting ? "Linking…" : "Mark as refund"}
           </Button>
         </DialogFooter>
       </DialogContent>
