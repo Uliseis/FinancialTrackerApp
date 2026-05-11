@@ -101,6 +101,21 @@ export async function syncEnableBankingConnection(
 
     for (const sessionAccount of sessionAccounts) {
       try {
+        if (typeof sessionAccount.uid !== "string" || sessionAccount.uid.length === 0) {
+          await db
+            .update(connections)
+            .set({
+              metadata: {
+                ...(conn.metadata ?? {}),
+                lastBadAccount: sessionAccount as unknown as Record<string, unknown>,
+                lastBadAccountAt: new Date().toISOString(),
+              },
+            })
+            .where(eq(connections.id, connectionId));
+          throw new Error(
+            `Enable Banking returned an account with no uid for ${conn.institutionName ?? conn.institutionId ?? "this connection"}. Re-authorize the connection.`,
+          );
+        }
         const details = await client.getAccountDetails(sessionAccount.uid);
         const balancesResp = await client.getAccountBalances(sessionAccount.uid);
         const interim = preferredBalance(balancesResp.balances);
@@ -213,7 +228,12 @@ export async function syncEnableBankingConnection(
             : err instanceof Error
               ? err.message
               : String(err);
-        result.errors.push(`${sessionAccount.uid}: ${detail}`);
+        const label =
+          sessionAccount.uid ??
+          ibanOf(sessionAccount) ??
+          sessionAccount.identification_hash ??
+          "account";
+        result.errors.push(`${label}: ${detail}`);
       }
     }
 
