@@ -81,7 +81,10 @@ export function AddTransactionDialog({
     setPickedAccountId(
       account?.id ?? accountChoices?.[0]?.id ?? "",
     );
-  }, [open, account?.id, accountChoices]);
+    // accountChoices is intentionally excluded — only reset on open/account
+    // transitions, not on parent re-renders that produce a new array reference.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, account?.id]);
 
   useEffect(() => {
     if (effective) setCurrency(effective.currency);
@@ -113,7 +116,8 @@ export function AddTransactionDialog({
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(json?.error ?? "Failed to add transaction");
+        const msg = typeof json?.error === "string" ? json.error : "Failed to add transaction";
+        toast.error(msg);
         return;
       }
       if (json?.deduped) {

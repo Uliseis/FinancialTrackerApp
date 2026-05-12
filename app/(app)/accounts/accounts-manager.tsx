@@ -32,7 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { formatCurrency, formatDate, formatRelativeTime } from "@/lib/utils";
+import { formatCurrency, formatRelativeTime } from "@/lib/utils";
 import {
   AddTransactionDialog,
   type AddTxCategory,
@@ -537,7 +537,7 @@ function AccountList({
               {a.connectionId && a.balanceUpdatedAt ? (
                 <span
                   className="ml-2 text-[10px] text-muted-foreground"
-                  title={`Last sync: ${formatDate(a.balanceUpdatedAt)}`}
+                  title={`Last sync: ${new Date(a.balanceUpdatedAt).toLocaleString("en-GB")}`}
                 >
                   · synced {formatRelativeTime(a.balanceUpdatedAt)}
                 </span>

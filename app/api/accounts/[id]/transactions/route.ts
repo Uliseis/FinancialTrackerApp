@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { accounts, transactions } from "@/db/schema";
+import { accounts, categories, transactions } from "@/db/schema";
 import { backfillTransactionEurAmounts } from "@/lib/fx";
 import { applyRulesToTransactions } from "@/lib/categorize";
 
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 const bodySchema = z.object({
   bookedAt: z.string().datetime(),
   amount: z.number().finite().refine((n) => n !== 0, "amount must be non-zero"),
-  currency: z.string().min(3).max(3),
+  currency: z.string().regex(/^[A-Za-z]{3}$/, "currency must be 3 letters"),
   description: z.string().max(500).nullish(),
   counterparty: z.string().max(500).nullish(),
   categoryId: z.string().uuid().nullish(),
@@ -31,7 +31,10 @@ export async function POST(
   const body = await req.json().catch(() => null);
   const parsed = bodySchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+    return NextResponse.json(
+      { error: "invalid request body", details: parsed.error.flatten() },
+      { status: 400 },
+    );
   }
 
   const [account] = await db.select().from(accounts).where(eq(accounts.id, id));
@@ -46,6 +49,16 @@ export async function POST(
   }
   if (account.archived) {
     return NextResponse.json({ error: "account is archived" }, { status: 400 });
+  }
+
+  if (parsed.data.categoryId) {
+    const [cat] = await db
+      .select({ id: categories.id })
+      .from(categories)
+      .where(eq(categories.id, parsed.data.categoryId));
+    if (!cat) {
+      return NextResponse.json({ error: "category not found" }, { status: 400 });
+    }
   }
 
   const amount = parsed.data.amount;
