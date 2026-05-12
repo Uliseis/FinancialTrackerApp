@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { transactions, transferRoutes } from "@/db/schema";
+import { transferRoutes } from "@/db/schema";
+import { removeRouteMirrors } from "@/lib/transfer-routes";
 import { RULE_FIELDS, RULE_MATCH_TYPES } from "@/lib/rules";
 
 export const dynamic = "force-dynamic";
@@ -43,24 +44,24 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const targetChanged =
     parsed.data.targetAccountId && parsed.data.targetAccountId !== existing.targetAccountId;
 
+  let mirrorsRemoved: Awaited<ReturnType<typeof removeRouteMirrors>> | null = null;
+  if (targetChanged) {
+    mirrorsRemoved = await removeRouteMirrors(id);
+  }
+
   await db
     .update(transferRoutes)
     .set({ ...parsed.data, updatedAt: new Date() })
     .where(eq(transferRoutes.id, id));
 
-  if (targetChanged) {
-    await db
-      .delete(transactions)
-      .where(sql`${transactions.raw}->>'routeId' = ${id}`);
-  }
-
-  return NextResponse.json({ ok: true, targetChanged: !!targetChanged });
+  return NextResponse.json({ ok: true, targetChanged: !!targetChanged, mirrorsRemoved });
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const { id } = await ctx.params;
+  const mirrorsRemoved = await removeRouteMirrors(id);
   await db.delete(transferRoutes).where(eq(transferRoutes.id, id));
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, mirrorsRemoved });
 }

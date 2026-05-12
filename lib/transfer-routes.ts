@@ -195,6 +195,35 @@ export async function removeMirrorTransaction(
   return { deleted: deleted.length };
 }
 
+export async function removeRouteMirrors(
+  routeId: string,
+): Promise<{ deleted: number; sourcesReset: number }> {
+  const mirrors = await db
+    .select({ id: transactions.id, sourceId: transactions.routedFromTxId })
+    .from(transactions)
+    .where(sql`${transactions.raw}->>'routeId' = ${routeId}`);
+
+  if (mirrors.length === 0) return { deleted: 0, sourcesReset: 0 };
+
+  const sourceIds = mirrors.map((m) => m.sourceId).filter((id): id is string => !!id);
+
+  await db
+    .delete(transactions)
+    .where(sql`${transactions.raw}->>'routeId' = ${routeId}`);
+
+  let sourcesReset = 0;
+  if (sourceIds.length > 0) {
+    const reset = await db
+      .update(transactions)
+      .set({ isTransfer: false, transferGroupId: null })
+      .where(inArray(transactions.id, sourceIds))
+      .returning({ id: transactions.id });
+    sourcesReset = reset.length;
+  }
+
+  return { deleted: mirrors.length, sourcesReset };
+}
+
 export interface ApplyRoutesOptions {
   txIds?: string[];
   sinceDays?: number;
