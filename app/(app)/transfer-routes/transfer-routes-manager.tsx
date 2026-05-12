@@ -117,13 +117,26 @@ export function TransferRoutesManager({
   }
 
   async function deleteRoute(id: string) {
-    if (!confirm("Delete this route? Existing mirrors stay until you also delete them.")) return;
+    if (
+      !confirm(
+        "Delete this route? Existing mirrors created by it will also be removed and the original transactions reset.",
+      )
+    )
+      return;
     const res = await fetch(`/api/transfer-routes/${id}`, { method: "DELETE" });
     if (!res.ok) {
       toast.error("Delete failed");
       return;
     }
-    toast.success("Deleted");
+    const data = (await res.json().catch(() => ({}))) as {
+      mirrorsRemoved?: { deleted: number; sourcesReset: number };
+    };
+    const removed = data.mirrorsRemoved?.deleted ?? 0;
+    toast.success(
+      removed > 0
+        ? `Deleted · removed ${removed} mirror${removed === 1 ? "" : "s"}`
+        : "Deleted",
+    );
     startTransition(() => router.refresh());
   }
 

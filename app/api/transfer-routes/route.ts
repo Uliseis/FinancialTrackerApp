@@ -4,6 +4,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { transferRoutes } from "@/db/schema";
+import { applyTransferRoutes } from "@/lib/transfer-routes";
 import { RULE_FIELDS, RULE_MATCH_TYPES } from "@/lib/rules";
 
 export const dynamic = "force-dynamic";
@@ -42,5 +43,9 @@ export async function POST(req: Request) {
     );
   }
   const [row] = await db.insert(transferRoutes).values(parsed.data).returning();
-  return NextResponse.json({ route: row });
+  let applied: Awaited<ReturnType<typeof applyTransferRoutes>> | null = null;
+  if (row.enabled) {
+    applied = await applyTransferRoutes({ routeId: row.id, sinceDays: 730 });
+  }
+  return NextResponse.json({ route: row, applied });
 }

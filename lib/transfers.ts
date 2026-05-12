@@ -116,6 +116,7 @@ export interface RepairResult {
   groupsBroken: number;
   txsUnflagged: number;
   mirrorsDeleted: number;
+  orphansFixed: number;
 }
 
 function isInvalid(
@@ -127,7 +128,12 @@ function isInvalid(
 export async function repairTransferGroups(
   opts: { accountId?: string } = {},
 ): Promise<RepairResult> {
-  const result: RepairResult = { groupsBroken: 0, txsUnflagged: 0, mirrorsDeleted: 0 };
+  const result: RepairResult = {
+    groupsBroken: 0,
+    txsUnflagged: 0,
+    mirrorsDeleted: 0,
+    orphansFixed: 0,
+  };
 
   const groupIdsRows = opts.accountId
     ? await db
@@ -157,6 +163,7 @@ export async function repairTransferGroups(
         spaceId: accounts.spaceId,
         excluded: accounts.excluded,
         archived: accounts.archived,
+        routedFromTxId: transactions.routedFromTxId,
       })
       .from(transactions)
       .leftJoin(accounts, eq(transactions.accountId, accounts.id))
@@ -170,6 +177,7 @@ export async function repairTransferGroups(
         spaceId: string | null;
         excluded: boolean;
         archived: boolean;
+        routedFromTxId: string | null;
       }>
     >();
     for (const m of members) {
@@ -181,16 +189,24 @@ export async function repairTransferGroups(
         spaceId: m.spaceId,
         excluded: m.excluded ?? false,
         archived: m.archived ?? false,
+        routedFromTxId: m.routedFromTxId,
       });
     }
 
     const txsToUnflag: string[] = [];
+    const orphansToReset: string[] = [];
     for (const [, group] of byGroup) {
       const spaces = new Set(group.map((g) => g.spaceId));
       const anyBad = group.some((g) => g.excluded || g.archived);
+      const hasMirror = group.some((g) => g.routedFromTxId != null);
       if (spaces.size > 1 || anyBad) {
         for (const m of group) txsToUnflag.push(m.id);
         result.groupsBroken += 1;
+        continue;
+      }
+      if (group.length < 2 && !hasMirror) {
+        for (const m of group) orphansToReset.push(m.id);
+        result.orphansFixed += 1;
       }
     }
 
@@ -201,6 +217,14 @@ export async function repairTransferGroups(
         .where(inArray(transactions.id, txsToUnflag))
         .returning({ id: transactions.id });
       result.txsUnflagged += unflagged.length;
+    }
+    if (orphansToReset.length > 0) {
+      const reset = await db
+        .update(transactions)
+        .set({ isTransfer: false, transferGroupId: null })
+        .where(inArray(transactions.id, orphansToReset))
+        .returning({ id: transactions.id });
+      result.txsUnflagged += reset.length;
     }
   }
 

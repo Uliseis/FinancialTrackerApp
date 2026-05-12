@@ -4,7 +4,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { transferRoutes } from "@/db/schema";
-import { removeRouteMirrors } from "@/lib/transfer-routes";
+import { applyTransferRoutes, removeRouteMirrors } from "@/lib/transfer-routes";
 import { RULE_FIELDS, RULE_MATCH_TYPES } from "@/lib/rules";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +19,15 @@ const patchSchema = z.object({
   priority: z.number().int().optional(),
   enabled: z.boolean().optional(),
 });
+
+const MATCHER_KEYS = [
+  "pattern",
+  "targetAccountId",
+  "sourceAccountId",
+  "field",
+  "matchType",
+  "direction",
+] as const;
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -41,11 +50,13 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     );
   }
 
-  const targetChanged =
-    parsed.data.targetAccountId && parsed.data.targetAccountId !== existing.targetAccountId;
+  const matchersChanged = MATCHER_KEYS.some(
+    (key) => key in parsed.data && parsed.data[key] !== existing[key],
+  );
+  const willBeEnabled = parsed.data.enabled ?? existing.enabled;
 
   let mirrorsRemoved: Awaited<ReturnType<typeof removeRouteMirrors>> | null = null;
-  if (targetChanged) {
+  if (matchersChanged || parsed.data.enabled === false) {
     mirrorsRemoved = await removeRouteMirrors(id);
   }
 
@@ -54,7 +65,17 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     .set({ ...parsed.data, updatedAt: new Date() })
     .where(eq(transferRoutes.id, id));
 
-  return NextResponse.json({ ok: true, targetChanged: !!targetChanged, mirrorsRemoved });
+  let reapplied: Awaited<ReturnType<typeof applyTransferRoutes>> | null = null;
+  if (matchersChanged && willBeEnabled) {
+    reapplied = await applyTransferRoutes({ routeId: id, sinceDays: 730 });
+  }
+
+  return NextResponse.json({
+    ok: true,
+    matchersChanged,
+    mirrorsRemoved,
+    reapplied,
+  });
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
