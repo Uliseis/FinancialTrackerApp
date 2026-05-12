@@ -29,6 +29,7 @@ import {
   connections,
   sharedExpenseGroups,
   transactions,
+  type AccountGroup,
 } from "@/db/schema";
 import { activeBudgetsProgress } from "@/lib/budgets";
 import { computeAccountBalancesEur } from "@/lib/accounts";
@@ -59,7 +60,19 @@ async function netWorthByGroup(accountIds: string[]) {
     .orderBy(asc(accountGroups.sortOrder));
 
   if (accountIds.length === 0) {
-    return { groups: [] as Array<{ id: string; name: string; color: string | null; eur: number; count: number }>, total: 0 };
+    return {
+      groups: [] as Array<{
+        id: string;
+        name: string;
+        color: string | null;
+        eur: number;
+        count: number;
+        kind: AccountGroup["kind"] | null;
+        excluded: boolean;
+      }>,
+      total: 0,
+      liabilities: 0,
+    };
   }
 
   const acctRows = await db
@@ -76,11 +89,20 @@ async function netWorthByGroup(accountIds: string[]) {
     return r ?? 1;
   }
 
-  const groupMap = new Map<string | null, { name: string; color: string | null; eur: number; count: number }>();
+  const groupMap = new Map<
+    string | null,
+    {
+      name: string;
+      color: string | null;
+      eur: number;
+      count: number;
+      kind: AccountGroup["kind"] | null;
+    }
+  >();
   for (const g of groupRows) {
-    groupMap.set(g.id, { name: g.name, color: g.color, eur: 0, count: 0 });
+    groupMap.set(g.id, { name: g.name, color: g.color, eur: 0, count: 0, kind: g.kind });
   }
-  groupMap.set(null, { name: "Ungrouped", color: null, eur: 0, count: 0 });
+  groupMap.set(null, { name: "Ungrouped", color: null, eur: 0, count: 0, kind: null });
 
   const balanceMap = await computeAccountBalancesEur(acctRows, { rateFor });
   for (const a of acctRows) {
@@ -92,16 +114,29 @@ async function netWorthByGroup(accountIds: string[]) {
     bucket.count += 1;
   }
 
-  const groups = groupRows.map((g) => ({ id: g.id, ...groupMap.get(g.id)! }));
+  const groups = groupRows.map((g) => ({
+    id: g.id,
+    ...groupMap.get(g.id)!,
+    excluded: groupMap.get(g.id)!.kind === "credit",
+  }));
   const ungrouped = groupMap.get(null)!;
   if (ungrouped.count > 0) {
-    groups.push({ id: null as unknown as string, ...ungrouped });
+    groups.push({ id: null as unknown as string, ...ungrouped, excluded: false });
   }
-  const total = Array.from(groupMap.values()).reduce((s, g) => s + g.eur, 0);
-  return { groups, total };
+  let total = 0;
+  let liabilities = 0;
+  for (const g of groups) {
+    if (g.excluded) liabilities += g.eur;
+    else total += g.eur;
+  }
+  return { groups, total, liabilities };
 }
 
-async function monthlyCashFlow(months: number, accountIds: string[]) {
+async function monthlyCashFlow(
+  months: number,
+  accountIds: string[],
+  incomeAccountIds: string[],
+) {
   const now = new Date();
   if (accountIds.length === 0) {
     return Array.from({ length: months }, (_, idx) => months - 1 - idx).map((i) => ({
@@ -122,6 +157,9 @@ async function monthlyCashFlow(months: number, accountIds: string[]) {
             income: sql<string>`coalesce(sum(case
               when ${transactions.direction} = 'credit'
                 and (${transactions.categoryId} is null or ${categories.kind} = 'income')
+                ${incomeAccountIds.length === 0
+                  ? sql`and false`
+                  : sql`and ${inArray(transactions.accountId, incomeAccountIds)}`}
               then ${transactions.amountEur} else 0 end), 0)`,
             expense: sql<string>`coalesce(sum(case when ${transactions.direction} = 'debit' then ${transactions.amountEur} else 0 end), 0)`,
           })
@@ -258,6 +296,20 @@ async function unclassifiedCreditsThisMonth(accountIds: string[]): Promise<numbe
   return Number(count);
 }
 
+async function partitionAccountsByCreditKind(accountIds: string[]): Promise<{
+  all: string[];
+  income: string[];
+}> {
+  if (accountIds.length === 0) return { all: [], income: [] };
+  const rows = await db
+    .select({ id: accounts.id, groupId: accounts.groupId, kind: accountGroups.kind })
+    .from(accounts)
+    .leftJoin(accountGroups, eq(accounts.groupId, accountGroups.id))
+    .where(inArray(accounts.id, accountIds));
+  const income = rows.filter((r) => r.kind !== "credit").map((r) => r.id);
+  return { all: accountIds, income };
+}
+
 export default async function DashboardPage({
   searchParams,
 }: {
@@ -281,6 +333,7 @@ export default async function DashboardPage({
       ),
     );
   const accountIds = spaceAccountRows.map((r) => r.id);
+  const { income: incomeAccountIds } = await partitionAccountsByCreditKind(accountIds);
 
   const cats = await db.select().from(categories);
   const catById = new Map(cats.map((c) => [c.id, c]));
@@ -314,7 +367,7 @@ export default async function DashboardPage({
         ),
       ),
     netWorthByGroup(accountIds),
-    monthlyCashFlow(4, accountIds),
+    monthlyCashFlow(4, accountIds, incomeAccountIds),
     topCategoriesThisMonth(catById, accountIds),
     activeBudgetsProgress(),
     accountIds.length === 0
@@ -358,7 +411,7 @@ export default async function DashboardPage({
       .from(connections)
       .orderBy(desc(connections.createdAt))
       .limit(5),
-    unclassifiedCreditsThisMonth(accountIds),
+    unclassifiedCreditsThisMonth(incomeAccountIds),
   ]);
 
   const empty = Number(connStats.total) === 0 && Number(accountStats.total) === 0;
@@ -471,9 +524,15 @@ export default async function DashboardPage({
                   {netWorth.groups
                     .filter((g) => g.count > 0)
                     .map((g) => {
-                      const pct = netWorth.total > 0 ? (g.eur / netWorth.total) * 100 : 0;
+                      const pct =
+                        !g.excluded && netWorth.total > 0
+                          ? (g.eur / netWorth.total) * 100
+                          : 0;
                       return (
-                        <li key={g.id ?? "ungrouped"} className="space-y-1">
+                        <li
+                          key={g.id ?? "ungrouped"}
+                          className={`space-y-1 ${g.excluded ? "opacity-70" : ""}`}
+                        >
                           <div className="flex items-center justify-between text-sm">
                             <span className="flex items-center gap-2">
                               <span
@@ -484,12 +543,17 @@ export default async function DashboardPage({
                               <span className="text-xs text-muted-foreground">
                                 {g.count} {g.count === 1 ? "account" : "accounts"}
                               </span>
+                              {g.excluded ? (
+                                <Badge variant="outline" className="text-[10px] uppercase">
+                                  liability · not in total
+                                </Badge>
+                              ) : null}
                             </span>
                             <span className="tabular font-medium">
                               {formatCurrency(g.eur, "EUR")}
                             </span>
                           </div>
-                          <Progress value={Math.max(0, pct)} />
+                          {g.excluded ? null : <Progress value={Math.max(0, pct)} />}
                         </li>
                       );
                     })}
