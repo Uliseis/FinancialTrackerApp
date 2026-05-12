@@ -12,6 +12,7 @@ import {
   Link2,
   Link2Off,
   MoreHorizontal,
+  Plus,
   Search,
   Send,
   Tag,
@@ -57,6 +58,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { AddTransactionDialog } from "../accounts/add-transaction-dialog";
 import type { CategoryKind } from "@/lib/income";
 import {
   RULE_FIELDS,
@@ -137,6 +139,7 @@ export function TransactionsTable({
   const [linkTarget, setLinkTarget] = useState<TransactionsTableRow | null>(null);
   const [refundTarget, setRefundTarget] = useState<TransactionsTableRow | null>(null);
   const [classifyTarget, setClassifyTarget] = useState<TransactionsTableRow | null>(null);
+  const [addTxOpen, setAddTxOpen] = useState(false);
 
   useEffect(() => setQuery(initialQuery), [initialQuery]);
   useEffect(() => setShowTransfers(initialShowTransfers), [initialShowTransfers]);
@@ -343,6 +346,12 @@ export function TransactionsTable({
           </select>
         </label>
         <div className="ml-auto flex gap-2">
+          {manualAccounts.length > 0 ? (
+            <Button size="sm" onClick={() => setAddTxOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Add transaction
+            </Button>
+          ) : null}
           <Button size="sm" variant="outline" onClick={runRules}>
             <Wand2 className="h-4 w-4" />
             Run rules
@@ -671,6 +680,22 @@ export function TransactionsTable({
           setClassifyTarget(null);
           startTransition(() => router.refresh());
         }}
+      />
+      <AddTransactionDialog
+        open={addTxOpen}
+        account={null}
+        accountChoices={manualAccounts.map((a) => ({
+          id: a.id,
+          name: a.name,
+          currency: a.currency,
+        }))}
+        categories={categories.map((c) => ({
+          id: c.id,
+          name: c.name,
+          color: c.color,
+        }))}
+        onOpenChange={setAddTxOpen}
+        onSaved={() => startTransition(() => router.refresh())}
       />
     </div>
   );

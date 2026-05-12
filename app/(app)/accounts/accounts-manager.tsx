@@ -32,7 +32,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatDate, formatRelativeTime } from "@/lib/utils";
+import {
+  AddTransactionDialog,
+  type AddTxCategory,
+} from "./add-transaction-dialog";
 
 const UNGROUPED = "__none__";
 
@@ -45,6 +49,7 @@ export interface AccountsManagerProps {
   defaultSpaceId: string;
   nativeBalances: Record<string, string | null>;
   eurBalances: Record<string, number>;
+  categories: AddTxCategory[];
 }
 
 export function AccountsManager({
@@ -54,6 +59,7 @@ export function AccountsManager({
   defaultSpaceId,
   nativeBalances,
   eurBalances,
+  categories,
 }: AccountsManagerProps) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -72,6 +78,7 @@ export function AccountsManager({
   const [creatingAccount, setCreatingAccount] = useState(false);
   const [anchorAccount, setAnchorAccount] = useState<Account | null>(null);
   const [importAccount, setImportAccount] = useState<Account | null>(null);
+  const [addTxAccount, setAddTxAccount] = useState<Account | null>(null);
 
   const accountsByGroup = useMemo(() => {
     const map = new Map<string | null, Account[]>();
@@ -404,6 +411,7 @@ export function AccountsManager({
                     onDelete={deleteAccount}
                     onSetAnchor={setAnchorAccount}
                     onImport={setImportAccount}
+                    onAddTx={setAddTxAccount}
                   />
                 </CardContent>
               </Card>
@@ -428,6 +436,7 @@ export function AccountsManager({
                 onDelete={deleteAccount}
                 onSetAnchor={setAnchorAccount}
                 onImport={setImportAccount}
+                onAddTx={setAddTxAccount}
               />
             </CardContent>
           </Card>
@@ -447,6 +456,23 @@ export function AccountsManager({
         }}
         onImported={() => startTransition(() => router.refresh())}
       />
+      <AddTransactionDialog
+        open={!!addTxAccount}
+        account={
+          addTxAccount
+            ? {
+                id: addTxAccount.id,
+                name: addTxAccount.name,
+                currency: addTxAccount.currency,
+              }
+            : null
+        }
+        categories={categories}
+        onOpenChange={(open) => {
+          if (!open) setAddTxAccount(null);
+        }}
+        onSaved={() => startTransition(() => router.refresh())}
+      />
     </div>
   );
 }
@@ -463,6 +489,7 @@ function AccountList({
   onDelete,
   onSetAnchor,
   onImport,
+  onAddTx,
 }: {
   items: Account[];
   groups: AccountGroup[];
@@ -475,6 +502,7 @@ function AccountList({
   onDelete: (id: string) => void;
   onSetAnchor: (a: Account) => void;
   onImport: (a: Account) => void;
+  onAddTx: (a: Account) => void;
 }) {
   if (items.length === 0) {
     return <p className="text-sm text-muted-foreground">No accounts in this group.</p>;
@@ -506,6 +534,14 @@ function AccountList({
                   excluded
                 </Badge>
               ) : null}
+              {a.connectionId && a.balanceUpdatedAt ? (
+                <span
+                  className="ml-2 text-[10px] text-muted-foreground"
+                  title={`Last sync: ${formatDate(a.balanceUpdatedAt)}`}
+                >
+                  · synced {formatRelativeTime(a.balanceUpdatedAt)}
+                </span>
+              ) : null}
             </p>
           </div>
           <p className="tabular text-sm">
@@ -523,15 +559,26 @@ function AccountList({
             <Anchor className="h-4 w-4" />
           </Button>
           {a.connectionId ? null : (
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Import CSV statement"
-              onClick={() => onImport(a)}
-              title="Import CSV statement"
-            >
-              <Upload className="h-4 w-4" />
-            </Button>
+            <>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Add transaction"
+                onClick={() => onAddTx(a)}
+                title="Add transaction"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Import CSV statement"
+                onClick={() => onImport(a)}
+                title="Import CSV statement"
+              >
+                <Upload className="h-4 w-4" />
+              </Button>
+            </>
           )}
           <Select
             value={a.spaceId ?? defaultSpaceId}

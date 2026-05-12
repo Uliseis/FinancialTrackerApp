@@ -1,6 +1,6 @@
 import { asc } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { accountGroups, accounts } from "@/db/schema";
+import { accountGroups, accounts, categories } from "@/db/schema";
 import { PageHeader } from "@/components/page-header";
 import {
   computeAccountBalancesEur,
@@ -14,11 +14,15 @@ import { SpacesManager } from "./spaces-manager";
 export const dynamic = "force-dynamic";
 
 export default async function AccountsPage() {
-  const [acctRows, groupRows, spaceRows, defaultSpaceId] = await Promise.all([
+  const [acctRows, groupRows, spaceRows, defaultSpaceId, categoryRows] = await Promise.all([
     db.select().from(accounts).orderBy(asc(accounts.name)),
     db.select().from(accountGroups).orderBy(asc(accountGroups.sortOrder)),
     listSpaces(),
     getDefaultSpaceId(),
+    db
+      .select({ id: categories.id, name: categories.name, color: categories.color })
+      .from(categories)
+      .orderBy(asc(categories.name)),
   ]);
 
   const rateCache = new Map<string, number>();
@@ -59,6 +63,7 @@ export default async function AccountsPage() {
           defaultSpaceId={defaultSpaceId}
           nativeBalances={nativeBalances}
           eurBalances={eurBalances}
+          categories={categoryRows}
         />
       </div>
     </>
