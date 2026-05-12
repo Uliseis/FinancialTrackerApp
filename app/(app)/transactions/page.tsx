@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
 import { accounts, categories, transactions } from "@/db/schema";
@@ -16,14 +16,17 @@ import {
   TransactionsEmpty,
   TransactionsTable,
   type CategoryOption,
+  type FilterAccountOption,
   type ManualAccountOption,
   type SharedExpenseSummary,
+  type SortKey,
   type TransactionsTableRow,
 } from "./transactions-table";
 
 export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 100;
+const VALID_SORTS = new Set<SortKey>(["date:desc", "date:asc", "amount:desc", "amount:asc"]);
 
 function parsePage(raw: string | string[] | undefined): number {
   const v = Array.isArray(raw) ? raw[0] : raw;
@@ -36,6 +39,26 @@ function firstParam(raw: string | string[] | undefined): string {
   return v ?? "";
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function parseUuidList(raw: string | string[] | undefined): string[] {
+  const v = firstParam(raw);
+  if (!v) return [];
+  return v.split(",").map((s) => s.trim()).filter((s) => UUID_RE.test(s));
+}
+
+function parseDate(raw: string | string[] | undefined): Date | null {
+  const v = firstParam(raw);
+  if (!v) return null;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function parseSort(raw: string | string[] | undefined): SortKey {
+  const v = firstParam(raw) as SortKey;
+  return VALID_SORTS.has(v) ? v : "date:desc";
+}
+
 export default async function TransactionsPage({
   searchParams,
 }: {
@@ -45,6 +68,20 @@ export default async function TransactionsPage({
   const page = parsePage(sp.page);
   const q = firstParam(sp.q).trim();
   const showTransfers = firstParam(sp.transfers) === "show";
+  const sort = parseSort(sp.sort);
+  const accountFilter = parseUuidList(sp.accounts);
+  const categoryFilterRaw = firstParam(sp.categories);
+  const includeUncategorized = categoryFilterRaw
+    .split(",")
+    .map((s) => s.trim())
+    .includes("none");
+  const categoryFilter = parseUuidList(sp.categories);
+  const directionRaw = firstParam(sp.direction);
+  const direction: "credit" | "debit" | null =
+    directionRaw === "credit" || directionRaw === "debit" ? directionRaw : null;
+  const from = parseDate(sp.from);
+  const toRaw = parseDate(sp.to);
+  const to = toRaw ? new Date(toRaw.getTime() + 24 * 60 * 60 * 1000 - 1) : null;
 
   const [spaces, defaultSpaceId, currentSpaceId] = await Promise.all([
     listSpaces(),
@@ -53,7 +90,13 @@ export default async function TransactionsPage({
   ]);
 
   const spaceAccountRows = await db
-    .select({ id: accounts.id })
+    .select({
+      id: accounts.id,
+      name: accounts.name,
+      currency: accounts.currency,
+      institution: accounts.institution,
+      connectionId: accounts.connectionId,
+    })
     .from(accounts)
     .where(
       and(
@@ -61,14 +104,23 @@ export default async function TransactionsPage({
         eq(accounts.archived, false),
         eq(accounts.excluded, false),
       ),
-    );
+    )
+    .orderBy(asc(accounts.name));
   const spaceAccountIds = spaceAccountRows.map((r) => r.id);
 
+  let effectiveAccountIds: string[];
+  if (accountFilter.length > 0) {
+    const allowed = new Set(spaceAccountIds);
+    effectiveAccountIds = accountFilter.filter((id) => allowed.has(id));
+  } else {
+    effectiveAccountIds = spaceAccountIds;
+  }
+
   const filters: SQL[] = [isNull(transactions.routedFromTxId)];
-  if (spaceAccountIds.length === 0) {
+  if (effectiveAccountIds.length === 0) {
     filters.push(sql`false`);
   } else {
-    filters.push(inArray(transactions.accountId, spaceAccountIds));
+    filters.push(inArray(transactions.accountId, effectiveAccountIds));
   }
   if (!showTransfers) filters.push(eq(transactions.isTransfer, false));
   if (q) {
@@ -79,6 +131,20 @@ export default async function TransactionsPage({
         ilike(transactions.counterparty, needle),
       )!,
     );
+  }
+  if (direction) filters.push(eq(transactions.direction, direction));
+  if (from) filters.push(gte(transactions.bookedAt, from));
+  if (to) filters.push(lte(transactions.bookedAt, to));
+  if (categoryFilter.length > 0 || includeUncategorized) {
+    const catClauses: SQL[] = [];
+    if (categoryFilter.length > 0) {
+      catClauses.push(inArray(transactions.categoryId, categoryFilter));
+    }
+    if (includeUncategorized) {
+      catClauses.push(isNull(transactions.categoryId));
+    }
+    const combined = catClauses.length === 1 ? catClauses[0] : or(...catClauses);
+    if (combined) filters.push(combined);
   }
   const whereClause = and(...filters);
 
@@ -93,6 +159,36 @@ export default async function TransactionsPage({
 
   const mirrorTx = alias(transactions, "mirror_tx");
   const mirrorAccount = alias(accounts, "mirror_account");
+
+  const orderClauses: SQL[] = (() => {
+    switch (sort) {
+      case "date:asc":
+        return [
+          asc(transactions.bookedAt),
+          asc(transactions.createdAt),
+          asc(transactions.id),
+        ];
+      case "amount:desc":
+        return [
+          sql`ABS(${transactions.amountEur}) DESC NULLS LAST`,
+          desc(transactions.bookedAt),
+          desc(transactions.id),
+        ];
+      case "amount:asc":
+        return [
+          sql`ABS(${transactions.amountEur}) ASC NULLS LAST`,
+          desc(transactions.bookedAt),
+          desc(transactions.id),
+        ];
+      case "date:desc":
+      default:
+        return [
+          desc(transactions.bookedAt),
+          desc(transactions.createdAt),
+          desc(transactions.id),
+        ];
+    }
+  })();
 
   const [rows, cats, manualAccts] = await Promise.all([
     db
@@ -121,7 +217,7 @@ export default async function TransactionsPage({
       .leftJoin(mirrorTx, eq(mirrorTx.routedFromTxId, transactions.id))
       .leftJoin(mirrorAccount, eq(mirrorAccount.id, mirrorTx.accountId))
       .where(whereClause)
-      .orderBy(desc(transactions.bookedAt))
+      .orderBy(...orderClauses)
       .limit(PAGE_SIZE)
       .offset(offset),
     db.select().from(categories).orderBy(asc(categories.name)),
@@ -156,8 +252,21 @@ export default async function TransactionsPage({
     currency: a.currency,
     institution: a.institution,
   }));
+  const filterAccountOptions: FilterAccountOption[] = spaceAccountRows.map((a) => ({
+    id: a.id,
+    name: a.name,
+    institution: a.institution,
+  }));
 
-  const hasAnyTransactions = total > 0 || q.length > 0 || showTransfers;
+  const hasFilters =
+    accountFilter.length > 0 ||
+    categoryFilter.length > 0 ||
+    includeUncategorized ||
+    direction != null ||
+    from != null ||
+    to != null ||
+    sort !== "date:desc";
+  const hasAnyTransactions = total > 0 || q.length > 0 || showTransfers || hasFilters;
 
   return (
     <>
@@ -179,12 +288,20 @@ export default async function TransactionsPage({
             categories={catOptions}
             sharedGroups={groupSummaries}
             manualAccounts={manualOptions}
+            filterAccounts={filterAccountOptions}
             page={clampedPage}
             totalPages={totalPages}
             total={total}
             pageSize={PAGE_SIZE}
             query={q}
             showTransfers={showTransfers}
+            sort={sort}
+            accountFilter={accountFilter}
+            categoryFilter={categoryFilter}
+            includeUncategorized={includeUncategorized}
+            direction={direction}
+            from={firstParam(sp.from)}
+            to={firstParam(sp.to)}
           />
         )}
       </div>

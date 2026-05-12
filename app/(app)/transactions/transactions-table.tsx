@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   ArrowDownLeft,
@@ -38,6 +38,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,6 +60,8 @@ import {
 } from "@/components/ui/dialog";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { AddTransactionDialog } from "../accounts/add-transaction-dialog";
+import { EditTransactionDialog } from "./edit-transaction-dialog";
+import { Pencil } from "lucide-react";
 import type { CategoryKind } from "@/lib/income";
 import {
   RULE_FIELDS,
@@ -105,32 +108,71 @@ export interface ManualAccountOption {
   institution: string;
 }
 
+export interface FilterAccountOption {
+  id: string;
+  name: string;
+  institution: string;
+}
+
+export type SortKey = "date:desc" | "date:asc" | "amount:desc" | "amount:asc";
+
+const SORT_LABELS: Record<SortKey, string> = {
+  "date:desc": "Date · newest",
+  "date:asc": "Date · oldest",
+  "amount:desc": "Amount · biggest first",
+  "amount:asc": "Amount · smallest first",
+};
+
 const UNCATEGORIZED = "__none__";
+const FILTER_UNCATEGORIZED = "__uncat__";
+
+function sameStringArray(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
 
 export function TransactionsTable({
   rows,
   categories,
   sharedGroups,
   manualAccounts,
+  filterAccounts,
   page,
   totalPages,
   total,
   pageSize,
   query: initialQuery,
   showTransfers: initialShowTransfers,
+  sort: initialSort,
+  accountFilter: initialAccountFilter,
+  categoryFilter: initialCategoryFilter,
+  includeUncategorized: initialIncludeUncategorized,
+  direction: initialDirection,
+  from: initialFrom,
+  to: initialTo,
 }: {
   rows: TransactionsTableRow[];
   categories: CategoryOption[];
   sharedGroups: SharedExpenseSummary[];
   manualAccounts: ManualAccountOption[];
+  filterAccounts: FilterAccountOption[];
   page: number;
   totalPages: number;
   total: number;
   pageSize: number;
   query: string;
   showTransfers: boolean;
+  sort: SortKey;
+  accountFilter: string[];
+  categoryFilter: string[];
+  includeUncategorized: boolean;
+  direction: "credit" | "debit" | null;
+  from: string;
+  to: string;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const [query, setQuery] = useState(initialQuery);
   const [showTransfers, setShowTransfers] = useState(initialShowTransfers);
@@ -140,9 +182,34 @@ export function TransactionsTable({
   const [refundTarget, setRefundTarget] = useState<TransactionsTableRow | null>(null);
   const [classifyTarget, setClassifyTarget] = useState<TransactionsTableRow | null>(null);
   const [addTxOpen, setAddTxOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<TransactionsTableRow | null>(null);
+  const [sort, setSort] = useState<SortKey>(initialSort);
+  const [accountFilter, setAccountFilter] = useState<string[]>(initialAccountFilter);
+  const [categoryFilter, setCategoryFilter] = useState<string[]>(initialCategoryFilter);
+  const [includeUncategorized, setIncludeUncategorized] = useState(
+    initialIncludeUncategorized,
+  );
+  const [direction, setDirection] = useState<"credit" | "debit" | null>(initialDirection);
+  const [from, setFrom] = useState(initialFrom);
+  const [to, setTo] = useState(initialTo);
 
   useEffect(() => setQuery(initialQuery), [initialQuery]);
   useEffect(() => setShowTransfers(initialShowTransfers), [initialShowTransfers]);
+  useEffect(() => setSort(initialSort), [initialSort]);
+  useEffect(() => {
+    setAccountFilter((prev) =>
+      sameStringArray(prev, initialAccountFilter) ? prev : initialAccountFilter,
+    );
+  }, [initialAccountFilter]);
+  useEffect(() => {
+    setCategoryFilter((prev) =>
+      sameStringArray(prev, initialCategoryFilter) ? prev : initialCategoryFilter,
+    );
+  }, [initialCategoryFilter]);
+  useEffect(() => setIncludeUncategorized(initialIncludeUncategorized), [initialIncludeUncategorized]);
+  useEffect(() => setDirection(initialDirection), [initialDirection]);
+  useEffect(() => setFrom(initialFrom), [initialFrom]);
+  useEffect(() => setTo(initialTo), [initialTo]);
 
   const catById = useMemo(
     () => new Map(categories.map((c) => [c.id, c])),
@@ -167,6 +234,27 @@ export function TransactionsTable({
     [sharedGroups],
   );
 
+  const currentSpace = searchParams.get("space");
+  const buildParams = useCallback(
+    (targetPage: number) => {
+      const params = new URLSearchParams();
+      if (currentSpace) params.set("space", currentSpace);
+      if (query.trim()) params.set("q", query.trim());
+      if (showTransfers) params.set("transfers", "show");
+      if (sort !== "date:desc") params.set("sort", sort);
+      if (accountFilter.length > 0) params.set("accounts", accountFilter.join(","));
+      const catParts: string[] = [...categoryFilter];
+      if (includeUncategorized) catParts.push("none");
+      if (catParts.length > 0) params.set("categories", catParts.join(","));
+      if (direction) params.set("direction", direction);
+      if (from) params.set("from", from);
+      if (to) params.set("to", to);
+      if (targetPage > 1) params.set("page", String(targetPage));
+      return params;
+    },
+    [currentSpace, query, showTransfers, sort, accountFilter, categoryFilter, includeUncategorized, direction, from, to],
+  );
+
   const firstRender = useRef(true);
   useEffect(() => {
     if (firstRender.current) {
@@ -174,20 +262,15 @@ export function TransactionsTable({
       return;
     }
     const t = window.setTimeout(() => {
-      const params = new URLSearchParams();
-      if (query.trim()) params.set("q", query.trim());
-      if (showTransfers) params.set("transfers", "show");
+      const params = buildParams(1);
       const qs = params.toString();
       startTransition(() => router.replace(qs ? `/transactions?${qs}` : "/transactions"));
     }, 250);
     return () => window.clearTimeout(t);
-  }, [query, showTransfers, router]);
+  }, [buildParams, router]);
 
   function goToPage(target: number) {
-    const params = new URLSearchParams();
-    if (query.trim()) params.set("q", query.trim());
-    if (showTransfers) params.set("transfers", "show");
-    if (target > 1) params.set("page", String(target));
+    const params = buildParams(target);
     const qs = params.toString();
     startTransition(() => router.replace(qs ? `/transactions?${qs}` : "/transactions"));
   }
@@ -313,6 +396,23 @@ export function TransactionsTable({
     } catch {}
   }
 
+  const activeFilterCount =
+    accountFilter.length +
+    categoryFilter.length +
+    (includeUncategorized ? 1 : 0) +
+    (direction ? 1 : 0) +
+    (from ? 1 : 0) +
+    (to ? 1 : 0);
+
+  function clearFilters() {
+    setAccountFilter([]);
+    setCategoryFilter([]);
+    setIncludeUncategorized(false);
+    setDirection(null);
+    setFrom("");
+    setTo("");
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -361,11 +461,104 @@ export function TransactionsTable({
             Detect transfers
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className="w-full text-xs text-muted-foreground">
           {total === 0
             ? "0 results"
             : `${rangeStart.toLocaleString()}–${rangeEnd.toLocaleString()} of ${total.toLocaleString()}`}
         </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
+          <SelectTrigger className="h-8 w-[200px]" size="sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {(Object.keys(SORT_LABELS) as SortKey[]).map((k) => (
+              <SelectItem key={k} value={k}>
+                {SORT_LABELS[k]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <MultiSelectPopover
+          label="Accounts"
+          selected={accountFilter}
+          options={filterAccounts.map((a) => ({
+            id: a.id,
+            label: a.name,
+            sub: a.institution,
+          }))}
+          onChange={setAccountFilter}
+        />
+
+        <MultiSelectPopover
+          label="Categories"
+          selected={[...categoryFilter, ...(includeUncategorized ? [FILTER_UNCATEGORIZED] : [])]}
+          options={[
+            { id: FILTER_UNCATEGORIZED, label: "Uncategorized", sub: null },
+            ...sortedCategories.map((c) => ({
+              id: c.id,
+              label: c.name,
+              sub: c.kind !== "expense" ? c.kind : null,
+              color: c.color,
+            })),
+          ]}
+          onChange={(ids) => {
+            setIncludeUncategorized(ids.includes(FILTER_UNCATEGORIZED));
+            setCategoryFilter(ids.filter((id) => id !== FILTER_UNCATEGORIZED));
+          }}
+        />
+
+        <div className="inline-flex overflow-hidden rounded-md border border-border text-sm">
+          <button
+            type="button"
+            onClick={() => setDirection(null)}
+            className={`px-2.5 py-1 ${direction === null ? "bg-muted font-medium" : "text-muted-foreground"}`}
+          >
+            All
+          </button>
+          <button
+            type="button"
+            onClick={() => setDirection("credit")}
+            className={`border-l border-border px-2.5 py-1 ${direction === "credit" ? "bg-muted font-medium" : "text-muted-foreground"}`}
+          >
+            Credit
+          </button>
+          <button
+            type="button"
+            onClick={() => setDirection("debit")}
+            className={`border-l border-border px-2.5 py-1 ${direction === "debit" ? "bg-muted font-medium" : "text-muted-foreground"}`}
+          >
+            Debit
+          </button>
+        </div>
+
+        <label className="flex items-center gap-1 text-xs text-muted-foreground">
+          From
+          <Input
+            type="date"
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+            className="h-8 w-[140px]"
+          />
+        </label>
+        <label className="flex items-center gap-1 text-xs text-muted-foreground">
+          To
+          <Input
+            type="date"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            className="h-8 w-[140px]"
+          />
+        </label>
+
+        {activeFilterCount > 0 ? (
+          <Button size="sm" variant="ghost" onClick={clearFilters}>
+            Clear filters ({activeFilterCount})
+          </Button>
+        ) : null}
       </div>
 
       <div className="rounded-lg border border-border">
@@ -564,6 +757,10 @@ export function TransactionsTable({
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                          <DropdownMenuItem onClick={() => setEditTarget(r)}>
+                            <Pencil className="h-4 w-4" />
+                            Edit transaction…
+                          </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => setClassifyTarget(r)}>
                             <Wand className="h-4 w-4" />
                             Classify like this…
@@ -696,6 +893,15 @@ export function TransactionsTable({
         }))}
         onOpenChange={setAddTxOpen}
         onSaved={() => startTransition(() => router.refresh())}
+      />
+      <EditTransactionDialog
+        target={editTarget}
+        categories={sortedCategories}
+        onClose={() => setEditTarget(null)}
+        onSaved={() => {
+          setEditTarget(null);
+          startTransition(() => router.refresh());
+        }}
       />
     </div>
   );
@@ -1425,5 +1631,84 @@ export function TransactionsEmpty() {
         Empty
       </Badge>
     </div>
+  );
+}
+
+function MultiSelectPopover({
+  label,
+  selected,
+  options,
+  onChange,
+}: {
+  label: string;
+  selected: string[];
+  options: { id: string; label: string; sub?: string | null; color?: string | null }[];
+  onChange: (ids: string[]) => void;
+}) {
+  function toggle(id: string) {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    onChange(Array.from(next));
+  }
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button size="sm" variant="outline" className="h-8">
+          {label}
+          {selected.length > 0 ? (
+            <Badge variant="secondary" className="ml-1.5 px-1.5 text-[10px]">
+              {selected.length}
+            </Badge>
+          ) : null}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 p-2">
+        <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+          <span>{label}</span>
+          {selected.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className="hover:text-foreground"
+            >
+              Clear
+            </button>
+          ) : null}
+        </div>
+        <div className="max-h-72 overflow-auto">
+          {options.length === 0 ? (
+            <p className="py-4 text-center text-xs text-muted-foreground">No options.</p>
+          ) : (
+            <ul className="space-y-0.5">
+              {options.map((opt) => (
+                <li key={opt.id}>
+                  <label className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-sm hover:bg-muted">
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 accent-current"
+                      checked={selected.includes(opt.id)}
+                      onChange={() => toggle(opt.id)}
+                    />
+                    {opt.color !== undefined ? (
+                      <span
+                        className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{ background: opt.color ?? "#64748b" }}
+                      />
+                    ) : null}
+                    <span className="min-w-0 flex-1 truncate">{opt.label}</span>
+                    {opt.sub ? (
+                      <span className="text-[10px] text-muted-foreground">
+                        {opt.sub}
+                      </span>
+                    ) : null}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
