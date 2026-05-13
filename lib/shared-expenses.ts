@@ -1,12 +1,22 @@
 import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
+  accounts,
   sharedExpenseGroups,
   transactions,
   type SharedExpenseGroup,
   type Transaction,
 } from "@/db/schema";
 import { monthStart } from "@/lib/utils";
+
+async function accountSpaceFor(accountId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ spaceId: accounts.spaceId })
+    .from(accounts)
+    .where(eq(accounts.id, accountId))
+    .limit(1);
+  return row?.spaceId ?? null;
+}
 
 const REIMBURSEMENT_WINDOW_DAYS = 60;
 
@@ -60,6 +70,30 @@ function validateReimbursement(r: Transaction, primary: Transaction): number {
     throw new SharedExpenseError(`tx ${r.id} has no EUR amount yet`);
   }
   return Math.abs(Number(r.amountEur));
+}
+
+async function assertSameSpace(
+  primary: Transaction,
+  reimbursements: Transaction[],
+): Promise<void> {
+  if (reimbursements.length === 0) return;
+  const ids = Array.from(
+    new Set([primary.accountId, ...reimbursements.map((r) => r.accountId)]),
+  );
+  const rows = await db
+    .select({ id: accounts.id, spaceId: accounts.spaceId })
+    .from(accounts)
+    .where(inArray(accounts.id, ids));
+  const spaceById = new Map(rows.map((r) => [r.id, r.spaceId]));
+  const primarySpace = spaceById.get(primary.accountId) ?? null;
+  for (const r of reimbursements) {
+    const space = spaceById.get(r.accountId) ?? null;
+    if (space !== primarySpace) {
+      throw new SharedExpenseError(
+        `tx ${r.id} is in a different space than the primary — cross-space refunds aren't allowed`,
+      );
+    }
+  }
 }
 
 function assertWithinPrimary(total: number, primaryAmount: number): void {
@@ -123,6 +157,7 @@ export async function createSharedExpenseGroup(
     reimbursedTotal += validateReimbursement(r, primary);
   }
   assertWithinPrimary(reimbursedTotal, primaryAmount);
+  await assertSameSpace(primary, reimbursements);
 
   const [group] = await db
     .insert(sharedExpenseGroups)
@@ -165,6 +200,7 @@ export async function addReimbursements(groupId: string, txIds: string[]): Promi
     total += validateReimbursement(r, primary);
   }
   assertWithinPrimary(total, primaryAmount);
+  await assertSameSpace(primary, candidates);
 
   await db
     .update(transactions)
@@ -279,9 +315,13 @@ export async function findCandidateReimbursements(
   }>
 > {
   const primary = await loadTxOrThrow(primaryTxId, "primary");
+  const primarySpaceId = await accountSpaceFor(primary.accountId);
   const windowMs = REIMBURSEMENT_WINDOW_DAYS * 86_400_000;
   const windowStart = new Date(primary.bookedAt.getTime() - windowMs);
   const windowEnd = new Date(primary.bookedAt.getTime() + windowMs);
+
+  const spaceFilter =
+    primarySpaceId === null ? isNull(accounts.spaceId) : eq(accounts.spaceId, primarySpaceId);
 
   const baseFilters = and(
     eq(transactions.direction, "credit"),
@@ -289,6 +329,7 @@ export async function findCandidateReimbursements(
     isNull(transactions.sharedExpenseGroupId),
     gte(transactions.bookedAt, windowStart),
     lte(transactions.bookedAt, windowEnd),
+    spaceFilter,
   );
   const needle = "%" + query.toLowerCase() + "%";
   const filters = query
@@ -309,6 +350,7 @@ export async function findCandidateReimbursements(
       accountId: transactions.accountId,
     })
     .from(transactions)
+    .leftJoin(accounts, eq(accounts.id, transactions.accountId))
     .where(filters)
     .orderBy(sql`${transactions.bookedAt} desc`)
     .limit(50);
@@ -325,21 +367,28 @@ export async function findCandidateRefundedExpenses(
     counterparty: string | null;
     description: string | null;
     accountId: string;
+    sharedExpenseGroupId: string | null;
+    existingReimbursed: number;
   }>
 > {
   const credit = await loadTxOrThrow(creditTxId, "credit");
   if (credit.direction !== "credit") {
     throw new SharedExpenseError("starting tx must be a credit");
   }
+  const creditSpaceId = await accountSpaceFor(credit.accountId);
   const windowMs = REIMBURSEMENT_WINDOW_DAYS * 86_400_000;
   const windowStart = new Date(credit.bookedAt.getTime() - windowMs);
   const windowEnd = new Date(credit.bookedAt.getTime() + windowMs);
+
+  const spaceFilter =
+    creditSpaceId === null ? isNull(accounts.spaceId) : eq(accounts.spaceId, creditSpaceId);
 
   const baseFilters = and(
     eq(transactions.direction, "debit"),
     eq(transactions.isTransfer, false),
     gte(transactions.bookedAt, windowStart),
     lte(transactions.bookedAt, windowEnd),
+    spaceFilter,
   );
   const needle = "%" + query.toLowerCase() + "%";
   const filters = query
@@ -350,7 +399,7 @@ export async function findCandidateRefundedExpenses(
       )
     : baseFilters;
 
-  return db
+  const rows = await db
     .select({
       id: transactions.id,
       bookedAt: transactions.bookedAt,
@@ -361,7 +410,47 @@ export async function findCandidateRefundedExpenses(
       sharedExpenseGroupId: transactions.sharedExpenseGroupId,
     })
     .from(transactions)
+    .leftJoin(accounts, eq(accounts.id, transactions.accountId))
     .where(filters)
     .orderBy(sql`${transactions.bookedAt} desc`)
     .limit(50);
+
+  const groupedIds = rows
+    .map((r) => r.sharedExpenseGroupId)
+    .filter((v): v is string => !!v);
+  const reimbursedByGroup = new Map<string, number>();
+  if (groupedIds.length > 0) {
+    const groups = await db
+      .select({
+        groupId: sharedExpenseGroups.id,
+        primaryTxId: sharedExpenseGroups.primaryTxId,
+      })
+      .from(sharedExpenseGroups)
+      .where(inArray(sharedExpenseGroups.id, groupedIds));
+    const members = await db
+      .select({
+        id: transactions.id,
+        groupId: transactions.sharedExpenseGroupId,
+        amountEur: transactions.amountEur,
+      })
+      .from(transactions)
+      .where(inArray(transactions.sharedExpenseGroupId, groupedIds));
+    const primaryByGroup = new Map(groups.map((g) => [g.groupId, g.primaryTxId]));
+    for (const m of members) {
+      if (!m.groupId) continue;
+      if (m.id === primaryByGroup.get(m.groupId)) continue;
+      const prev = reimbursedByGroup.get(m.groupId) ?? 0;
+      reimbursedByGroup.set(
+        m.groupId,
+        prev + (m.amountEur ? Math.abs(Number(m.amountEur)) : 0),
+      );
+    }
+  }
+
+  return rows.map((r) => ({
+    ...r,
+    existingReimbursed: r.sharedExpenseGroupId
+      ? reimbursedByGroup.get(r.sharedExpenseGroupId) ?? 0
+      : 0,
+  }));
 }

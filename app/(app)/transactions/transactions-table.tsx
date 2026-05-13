@@ -921,6 +921,8 @@ interface Candidate {
   counterparty: string | null;
   description: string | null;
   accountId: string;
+  sharedExpenseGroupId?: string | null;
+  existingReimbursed?: number;
 }
 
 function LinkReimbursementsDialog({
@@ -1044,7 +1046,7 @@ function LinkReimbursementsDialog({
 
   return (
     <Dialog open={!!primary} onOpenChange={(o) => (!o ? onClose() : undefined)}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>
             {appendMode ? "Add more reimbursements" : "Link reimbursements"}
@@ -1224,7 +1226,9 @@ function MarkAsRefundDialog({
   const creditAmount = credit?.amountEur ? Math.abs(Number(credit.amountEur)) : 0;
   const selectedDebit = candidates.find((c) => c.id === selectedId);
   const debitAmount = selectedDebit?.amountEur ? Math.abs(Number(selectedDebit.amountEur)) : 0;
-  const overReimbursed = creditAmount > debitAmount + 0.001;
+  const alreadyReimbursed = selectedDebit?.existingReimbursed ?? 0;
+  const remainingRoom = Math.max(debitAmount - alreadyReimbursed, 0);
+  const overReimbursed = creditAmount > remainingRoom + 0.001;
 
   async function submit() {
     if (!credit || !selectedId) {
@@ -1259,7 +1263,7 @@ function MarkAsRefundDialog({
 
   return (
     <Dialog open={!!credit} onOpenChange={(o) => (!o ? onClose() : undefined)}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Mark as refund of…</DialogTitle>
           <DialogDescription>
@@ -1315,6 +1319,8 @@ function MarkAsRefundDialog({
                 <ul>
                   {candidates.map((c) => {
                     const eur = c.amountEur ? Math.abs(Number(c.amountEur)) : 0;
+                    const reimbursed = c.existingReimbursed ?? 0;
+                    const remaining = Math.max(eur - reimbursed, 0);
                     return (
                       <li
                         key={c.id}
@@ -1334,6 +1340,11 @@ function MarkAsRefundDialog({
                           <p className="truncate text-xs text-muted-foreground">
                             {formatDate(new Date(c.bookedAt))}
                             {c.counterparty ? ` · ${c.counterparty}` : ""}
+                            {c.sharedExpenseGroupId ? (
+                              <span className="ml-1 text-[var(--color-warning)]">
+                                · €{reimbursed.toFixed(2)} already refunded · €{remaining.toFixed(2)} left
+                              </span>
+                            ) : null}
                           </p>
                         </div>
                         <span className="tabular shrink-0 text-sm font-medium">
@@ -1351,12 +1362,14 @@ function MarkAsRefundDialog({
                 Net after refund:{" "}
                 <strong className="tabular">
                   {formatCurrency(debitAmount, "EUR")} −{" "}
-                  {formatCurrency(creditAmount, "EUR")} ={" "}
-                  {formatCurrency(Math.max(debitAmount - creditAmount, 0), "EUR")}
+                  {alreadyReimbursed > 0
+                    ? `(${formatCurrency(alreadyReimbursed, "EUR")} already + ${formatCurrency(creditAmount, "EUR")} this)`
+                    : formatCurrency(creditAmount, "EUR")}{" "}
+                  = {formatCurrency(Math.max(remainingRoom - creditAmount, 0), "EUR")}
                 </strong>
                 {overReimbursed ? (
                   <span className="ml-2 text-[var(--color-destructive)]">
-                    Refund exceeds the expense — pick a larger expense.
+                    Refund exceeds the {alreadyReimbursed > 0 ? "remaining room" : "expense"} — pick a larger expense.
                   </span>
                 ) : null}
               </div>
