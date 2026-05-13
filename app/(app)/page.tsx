@@ -178,7 +178,7 @@ async function monthlyCashFlow(
           .select({
             groupNet: sql<string>`coalesce(sum(case
               when ${transactions.id} = ${sharedExpenseGroups.primaryTxId}
-                then ${transactions.amountEur}
+                then -${transactions.amountEur}
               else -${transactions.amountEur} end), 0)`,
           })
           .from(sharedExpenseGroups)
@@ -235,7 +235,7 @@ async function topCategoriesThisMonth(
         primaryCategoryId: primaryTx.categoryId,
         net: sql<string>`coalesce(sum(case
           when ${transactions.id} = ${sharedExpenseGroups.primaryTxId}
-            then ${transactions.amountEur}
+            then -${transactions.amountEur}
           else -${transactions.amountEur} end), 0)`,
       })
       .from(sharedExpenseGroups)
