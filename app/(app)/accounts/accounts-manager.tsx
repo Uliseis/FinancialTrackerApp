@@ -49,6 +49,7 @@ export interface AccountsManagerProps {
   defaultSpaceId: string;
   nativeBalances: Record<string, string | null>;
   eurBalances: Record<string, number>;
+  eurExpenses: Record<string, number>;
   categories: AddTxCategory[];
 }
 
@@ -59,6 +60,7 @@ export function AccountsManager({
   defaultSpaceId,
   nativeBalances,
   eurBalances,
+  eurExpenses,
   categories,
 }: AccountsManagerProps) {
   const router = useRouter();
@@ -209,6 +211,10 @@ export function AccountsManager({
 
   function totalForGroup(items: Account[]): number {
     return items.reduce((sum, a) => sum + (eurBalances[a.id] ?? 0), 0);
+  }
+
+  function expenseForGroup(items: Account[]): number {
+    return items.reduce((sum, a) => sum + (eurExpenses[a.id] ?? 0), 0);
   }
 
   return (
@@ -371,6 +377,7 @@ export function AccountsManager({
           {groups.map((g) => {
             const items = accountsByGroup.get(g.id) ?? [];
             const total = totalForGroup(items);
+            const expense = expenseForGroup(items);
             return (
               <Card key={g.id}>
                 <CardHeader className="flex flex-row items-center justify-between">
@@ -385,9 +392,16 @@ export function AccountsManager({
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <p className="tabular text-sm font-medium">
-                      {formatCurrency(total, "EUR")}
-                    </p>
+                    <div className="text-right">
+                      <p className="tabular text-sm font-medium">
+                        {formatCurrency(total, "EUR")}
+                      </p>
+                      {expense > 0 ? (
+                        <p className="tabular text-xs text-muted-foreground">
+                          −{formatCurrency(expense, "EUR")} this month
+                        </p>
+                      ) : null}
+                    </div>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -405,6 +419,7 @@ export function AccountsManager({
                     spaces={spaces}
                     defaultSpaceId={defaultSpaceId}
                     nativeBalances={nativeBalances}
+                    eurExpenses={eurExpenses}
                     onAssign={assignGroup}
                     onAssignSpace={assignSpace}
                     onToggleExcluded={toggleExcluded}
@@ -430,6 +445,7 @@ export function AccountsManager({
                 spaces={spaces}
                 defaultSpaceId={defaultSpaceId}
                 nativeBalances={nativeBalances}
+                eurExpenses={eurExpenses}
                 onAssign={assignGroup}
                 onAssignSpace={assignSpace}
                 onToggleExcluded={toggleExcluded}
@@ -483,6 +499,7 @@ function AccountList({
   spaces,
   defaultSpaceId,
   nativeBalances,
+  eurExpenses,
   onAssign,
   onAssignSpace,
   onToggleExcluded,
@@ -496,6 +513,7 @@ function AccountList({
   spaces: AccountSpace[];
   defaultSpaceId: string;
   nativeBalances: Record<string, string | null>;
+  eurExpenses: Record<string, number>;
   onAssign: (accountId: string, groupId: string) => void;
   onAssignSpace: (accountId: string, spaceId: string) => void;
   onToggleExcluded: (accountId: string, excluded: boolean) => void;
@@ -544,11 +562,21 @@ function AccountList({
               ) : null}
             </p>
           </div>
-          <p className="tabular text-sm">
-            {nativeBalances[a.id]
-              ? formatCurrency(Number(nativeBalances[a.id]), a.currency)
-              : "—"}
-          </p>
+          <div className="text-right">
+            <p className="tabular text-sm">
+              {nativeBalances[a.id]
+                ? formatCurrency(Number(nativeBalances[a.id]), a.currency)
+                : "—"}
+            </p>
+            {(eurExpenses[a.id] ?? 0) > 0 ? (
+              <p
+                className="tabular text-[10px] text-muted-foreground"
+                title="Expense this month (EUR, transfers excluded, shared-expense netting applied)"
+              >
+                −{formatCurrency(eurExpenses[a.id], "EUR")} /mo
+              </p>
+            ) : null}
+          </div>
           <Button
             variant="ghost"
             size="icon"

@@ -5,9 +5,11 @@ import { PageHeader } from "@/components/page-header";
 import {
   computeAccountBalancesEur,
   computeAccountNativeBalances,
+  computeMonthlyExpenseEurByAccount,
 } from "@/lib/accounts";
 import { getRate } from "@/lib/fx";
 import { getDefaultSpaceId, listSpaces } from "@/lib/spaces";
+import { monthStart } from "@/lib/utils";
 import { AccountsManager } from "./accounts-manager";
 import { SpacesManager } from "./spaces-manager";
 
@@ -35,9 +37,17 @@ export default async function AccountsPage() {
   }
 
   const activeRows = acctRows.filter((a) => !a.archived);
-  const [eurMap, nativeMap] = await Promise.all([
+  const now = new Date();
+  const start = monthStart(now);
+  const end = monthStart(now, 1);
+  const [eurMap, nativeMap, expenseMap] = await Promise.all([
     computeAccountBalancesEur(activeRows, { rateFor }),
     computeAccountNativeBalances(activeRows),
+    computeMonthlyExpenseEurByAccount(
+      activeRows.map((a) => a.id),
+      start,
+      end,
+    ),
   ]);
 
   const nativeBalances: Record<string, string | null> = {};
@@ -47,6 +57,8 @@ export default async function AccountsPage() {
   }
   const eurBalances: Record<string, number> = {};
   for (const [id, v] of eurMap) eurBalances[id] = v;
+  const eurExpenses: Record<string, number> = {};
+  for (const [id, v] of expenseMap) eurExpenses[id] = v;
 
   return (
     <>
@@ -63,6 +75,7 @@ export default async function AccountsPage() {
           defaultSpaceId={defaultSpaceId}
           nativeBalances={nativeBalances}
           eurBalances={eurBalances}
+          eurExpenses={eurExpenses}
           categories={categoryRows}
         />
       </div>

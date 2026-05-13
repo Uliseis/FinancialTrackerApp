@@ -1,6 +1,7 @@
-import { and, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, eq, gt, gte, inArray, lt, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
-import { transactions, type Account } from "@/db/schema";
+import { sharedExpenseGroups, transactions, type Account } from "@/db/schema";
 
 export function isManualAccount(account: Pick<Account, "connectionId">): boolean {
   return account.connectionId == null;
@@ -133,6 +134,63 @@ export async function computeAccountNativeBalances(
       out.set(a.id, Number(a.balance));
     }
   }
+  return out;
+}
+
+export async function computeMonthlyExpenseEurByAccount(
+  accountIds: string[],
+  monthStart: Date,
+  monthEnd: Date,
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (accountIds.length === 0) return out;
+
+  const startDate = monthStart.toISOString().slice(0, 10);
+
+  const directRows = await db
+    .select({
+      accountId: transactions.accountId,
+      total: sql<string>`coalesce(sum(${transactions.amountEur}), 0)`,
+    })
+    .from(transactions)
+    .where(
+      and(
+        inArray(transactions.accountId, accountIds),
+        eq(transactions.direction, "debit"),
+        eq(transactions.isTransfer, false),
+        sql`${transactions.sharedExpenseGroupId} is null`,
+        gte(transactions.bookedAt, monthStart),
+        lt(transactions.bookedAt, monthEnd),
+      ),
+    )
+    .groupBy(transactions.accountId);
+
+  for (const r of directRows) {
+    out.set(r.accountId, Math.abs(Number(r.total)));
+  }
+
+  const primaryTx = alias(transactions, "primary_tx");
+  const groupRows = await db
+    .select({
+      primaryAccountId: primaryTx.accountId,
+      net: sql<string>`coalesce(sum(-${transactions.amountEur}), 0)`,
+    })
+    .from(sharedExpenseGroups)
+    .leftJoin(transactions, eq(transactions.sharedExpenseGroupId, sharedExpenseGroups.id))
+    .leftJoin(primaryTx, eq(primaryTx.id, sharedExpenseGroups.primaryTxId))
+    .where(
+      and(
+        eq(sharedExpenseGroups.attributionMonth, startDate),
+        inArray(transactions.accountId, accountIds),
+      ),
+    )
+    .groupBy(primaryTx.accountId);
+
+  for (const r of groupRows) {
+    if (!r.primaryAccountId) continue;
+    out.set(r.primaryAccountId, (out.get(r.primaryAccountId) ?? 0) + Number(r.net));
+  }
+
   return out;
 }
 
