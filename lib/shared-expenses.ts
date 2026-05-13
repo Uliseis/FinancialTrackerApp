@@ -338,7 +338,6 @@ export async function findCandidateRefundedExpenses(
   const baseFilters = and(
     eq(transactions.direction, "debit"),
     eq(transactions.isTransfer, false),
-    isNull(transactions.sharedExpenseGroupId),
     gte(transactions.bookedAt, windowStart),
     lte(transactions.bookedAt, windowEnd),
   );
@@ -359,6 +358,7 @@ export async function findCandidateRefundedExpenses(
       counterparty: transactions.counterparty,
       description: transactions.description,
       accountId: transactions.accountId,
+      sharedExpenseGroupId: transactions.sharedExpenseGroupId,
     })
     .from(transactions)
     .where(filters)

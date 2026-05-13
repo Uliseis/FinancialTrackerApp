@@ -792,10 +792,12 @@ export function TransactionsTable({
                               </DropdownMenuSubContent>
                             </DropdownMenuSub>
                           ) : null}
-                          {r.direction === "debit" && !r.isTransfer && !group ? (
+                          {r.direction === "debit" &&
+                          !r.isTransfer &&
+                          (!group || group.primaryTxId === r.id) ? (
                             <DropdownMenuItem onClick={() => setLinkTarget(r)}>
                               <Link2 className="h-4 w-4" />
-                              Link reimbursements…
+                              {group ? "Link more reimbursements…" : "Link reimbursements…"}
                             </DropdownMenuItem>
                           ) : null}
                           {r.direction === "credit" && !r.isTransfer && !group ? (
@@ -855,6 +857,11 @@ export function TransactionsTable({
 
       <LinkReimbursementsDialog
         primary={linkTarget}
+        existingGroup={
+          linkTarget?.sharedExpenseGroupId
+            ? groupById.get(linkTarget.sharedExpenseGroupId) ?? null
+            : null
+        }
         onClose={() => setLinkTarget(null)}
         onLinked={() => {
           setLinkTarget(null);
@@ -918,13 +925,16 @@ interface Candidate {
 
 function LinkReimbursementsDialog({
   primary,
+  existingGroup,
   onClose,
   onLinked,
 }: {
   primary: TransactionsTableRow | null;
+  existingGroup: SharedExpenseSummary | null;
   onClose: () => void;
   onLinked: () => void;
 }) {
+  const appendMode = !!existingGroup;
   const [label, setLabel] = useState("");
   const [query, setQuery] = useState("");
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -940,9 +950,13 @@ function LinkReimbursementsDialog({
       setSelected(new Set());
       return;
     }
-    const month = formatDate(primary.bookedAt);
-    setLabel(`${primary.description ?? "Shared expense"} · ${month}`);
-  }, [primary]);
+    if (existingGroup) {
+      setLabel(existingGroup.label);
+    } else {
+      const month = formatDate(primary.bookedAt);
+      setLabel(`${primary.description ?? "Shared expense"} · ${month}`);
+    }
+  }, [primary, existingGroup]);
 
   useEffect(() => {
     if (!primary) return;
@@ -972,13 +986,15 @@ function LinkReimbursementsDialog({
   }, [primary, query]);
 
   const primaryAmount = primary?.amountEur ? Math.abs(Number(primary.amountEur)) : 0;
-  const reimbursedSum = useMemo(() => {
+  const newReimbursedSum = useMemo(() => {
     let total = 0;
     for (const c of candidates) {
       if (selected.has(c.id) && c.amountEur) total += Math.abs(Number(c.amountEur));
     }
     return total;
   }, [candidates, selected]);
+  const alreadyReimbursed = existingGroup ? existingGroup.reimbursed : 0;
+  const reimbursedSum = newReimbursedSum + alreadyReimbursed;
   const net = primaryAmount - reimbursedSum;
 
   function toggle(id: string) {
@@ -996,7 +1012,7 @@ function LinkReimbursementsDialog({
       toast.error("Pick at least one reimbursement");
       return;
     }
-    if (!label.trim()) {
+    if (!appendMode && !label.trim()) {
       toast.error("Label required");
       return;
     }
@@ -1006,14 +1022,18 @@ function LinkReimbursementsDialog({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          label: label.trim(),
+          ...(appendMode ? {} : { label: label.trim() }),
           primaryTxId: primary.id,
           reimbursementTxIds: Array.from(selected),
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? "Failed");
-      toast.success(`Linked — your share: ${formatCurrency(data.net.net, "EUR")}`);
+      toast.success(
+        appendMode
+          ? `Added — your share: ${formatCurrency(data.net.net, "EUR")}`
+          : `Linked — your share: ${formatCurrency(data.net.net, "EUR")}`,
+      );
       onLinked();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed");
@@ -1026,10 +1046,13 @@ function LinkReimbursementsDialog({
     <Dialog open={!!primary} onOpenChange={(o) => (!o ? onClose() : undefined)}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>Link reimbursements</DialogTitle>
+          <DialogTitle>
+            {appendMode ? "Add more reimbursements" : "Link reimbursements"}
+          </DialogTitle>
           <DialogDescription>
-            Pick the incoming Bizum / transfer credits that partially reimburse this
-            expense. The net will be attributed to {primary ? formatDate(primary.bookedAt) : ""}.
+            {appendMode
+              ? `Adding to "${existingGroup?.label ?? ""}". Already linked: ${formatCurrency(alreadyReimbursed, "EUR")} reimbursed. Pick more partial refunds below.`
+              : `Pick the incoming Bizum / transfer credits that partially reimburse this expense. The net will be attributed to ${primary ? formatDate(primary.bookedAt) : ""}.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -1051,11 +1074,13 @@ function LinkReimbursementsDialog({
               </div>
             </div>
 
-            <Input
-              placeholder="Label (e.g. Rent Mar 2026)"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-            />
+            {appendMode ? null : (
+              <Input
+                placeholder="Label (e.g. Rent Mar 2026)"
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+              />
+            )}
 
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -1114,8 +1139,10 @@ function LinkReimbursementsDialog({
               Your share:{" "}
               <strong className="tabular">
                 {formatCurrency(primaryAmount, "EUR")} −{" "}
-                {formatCurrency(reimbursedSum, "EUR")} ={" "}
-                {formatCurrency(Math.max(net, 0), "EUR")}
+                {appendMode
+                  ? `(${formatCurrency(alreadyReimbursed, "EUR")} already + ${formatCurrency(newReimbursedSum, "EUR")} new)`
+                  : formatCurrency(reimbursedSum, "EUR")}{" "}
+                = {formatCurrency(Math.max(net, 0), "EUR")}
               </strong>
               {net < 0 ? (
                 <span className="ml-2 text-[var(--color-destructive)]">

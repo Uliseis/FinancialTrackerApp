@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { sharedExpenseGroups, transactions } from "@/db/schema";
 import {
+  addReimbursements,
   createSharedExpenseGroup,
   findCandidateRefundedExpenses,
   findCandidateReimbursements,
@@ -14,7 +15,7 @@ import { errorResponse, requireUser } from "@/lib/api-helpers";
 export const dynamic = "force-dynamic";
 
 const createSchema = z.object({
-  label: z.string().min(1).max(120),
+  label: z.string().min(1).max(120).optional(),
   primaryTxId: z.string().uuid(),
   reimbursementTxIds: z.array(z.string().uuid()).min(1).max(20),
 });
@@ -81,9 +82,34 @@ export async function POST(req: Request) {
   }
 
   try {
-    const group = await createSharedExpenseGroup(parsed.data);
+    const [primary] = await db
+      .select({ sharedExpenseGroupId: transactions.sharedExpenseGroupId })
+      .from(transactions)
+      .where(eq(transactions.id, parsed.data.primaryTxId));
+
+    if (primary?.sharedExpenseGroupId) {
+      await addReimbursements(primary.sharedExpenseGroupId, parsed.data.reimbursementTxIds);
+      const [group] = await db
+        .select()
+        .from(sharedExpenseGroups)
+        .where(eq(sharedExpenseGroups.id, primary.sharedExpenseGroupId));
+      const net = await netForGroup(primary.sharedExpenseGroupId);
+      return NextResponse.json({ group, net, appended: true });
+    }
+
+    if (!parsed.data.label) {
+      return NextResponse.json(
+        { error: "label required when creating a new shared expense group" },
+        { status: 400 },
+      );
+    }
+    const group = await createSharedExpenseGroup({
+      label: parsed.data.label,
+      primaryTxId: parsed.data.primaryTxId,
+      reimbursementTxIds: parsed.data.reimbursementTxIds,
+    });
     const net = await netForGroup(group.id);
-    return NextResponse.json({ group, net });
+    return NextResponse.json({ group, net, appended: false });
   } catch (e) {
     return errorResponse(e);
   }
