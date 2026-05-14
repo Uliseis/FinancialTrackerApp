@@ -29,11 +29,19 @@ export interface AccountRow {
   baselineEur: number | null;
   latestAsOf: string | null;
   latestEur: number | null;
+  latestCashEur: number | null;
+  latestPositionsEur: number | null;
   netContributionsSinceBaselineEur: number;
   costBasisEur: number | null;
   pnlEur: number | null;
   pnlPct: number | null;
-  history: Array<{ id: string; asOf: string; marketValueEur: string; notes: string | null }>;
+  history: Array<{
+    id: string;
+    asOf: string;
+    marketValueEur: string;
+    cashValueEur: string | null;
+    notes: string | null;
+  }>;
 }
 
 export function InvestmentsManager({ rows }: { rows: AccountRow[] }) {
@@ -58,6 +66,7 @@ export function InvestmentsManager({ rows }: { rows: AccountRow[] }) {
       accountId,
       asOf: v.asOf,
       marketValueEur: v.marketValueEur,
+      cashValueEur: v.cashValueEur,
       notes: v.notes,
     });
     setDefaultAccountId(accountId);
@@ -163,7 +172,15 @@ export function InvestmentsManager({ rows }: { rows: AccountRow[] }) {
                       </TableCell>
                       <TableCell className="text-right tabular font-medium">
                         {r.latestEur != null ? (
-                          formatCurrency(r.latestEur, "EUR")
+                          <div>
+                            <div>{formatCurrency(r.latestEur, "EUR")}</div>
+                            {r.latestCashEur != null && r.latestPositionsEur != null ? (
+                              <div className="text-xs font-normal text-muted-foreground">
+                                {formatCurrency(r.latestPositionsEur, "EUR")} pos ·{" "}
+                                {formatCurrency(r.latestCashEur, "EUR")} cash
+                              </div>
+                            ) : null}
+                          </div>
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
@@ -233,7 +250,19 @@ export function InvestmentsManager({ rows }: { rows: AccountRow[] }) {
                                       {formatDate(h.asOf)}
                                     </TableCell>
                                     <TableCell className="text-right text-xs tabular">
-                                      {formatCurrency(Number(h.marketValueEur), "EUR")}
+                                      <div>{formatCurrency(Number(h.marketValueEur), "EUR")}</div>
+                                      {h.cashValueEur != null ? (
+                                        <div className="text-[10px] text-muted-foreground">
+                                          {formatCurrency(
+                                            Math.max(
+                                              0,
+                                              Number(h.marketValueEur) - Number(h.cashValueEur),
+                                            ),
+                                            "EUR",
+                                          )}{" "}
+                                          pos · {formatCurrency(Number(h.cashValueEur), "EUR")} cash
+                                        </div>
+                                      ) : null}
                                     </TableCell>
                                     <TableCell className="text-xs text-muted-foreground">
                                       {h.notes ?? ""}

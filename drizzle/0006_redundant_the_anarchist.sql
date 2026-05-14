@@ -1,0 +1,1 @@
+ALTER TABLE "portfolio_valuations" ADD COLUMN "cash_value_eur" numeric(14, 2);

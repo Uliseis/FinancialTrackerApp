@@ -347,6 +347,7 @@ export const portfolioValuations = pgTable(
       .references(() => accounts.id, { onDelete: "cascade" }),
     asOf: timestamp("as_of", { withTimezone: true }).notNull(),
     marketValueEur: numeric("market_value_eur", { precision: 14, scale: 2 }).notNull(),
+    cashValueEur: numeric("cash_value_eur", { precision: 14, scale: 2 }),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

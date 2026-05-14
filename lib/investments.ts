@@ -103,6 +103,8 @@ export interface AccountMetrics {
   baselineEur: number | null;
   latestAsOf: Date | null;
   latestEur: number | null;
+  latestCashEur: number | null;
+  latestPositionsEur: number | null;
   netContributionsSinceBaselineEur: number;
   costBasisEur: number | null;
   pnlEur: number | null;
@@ -116,6 +118,8 @@ function emptyMetrics(accountId: string): AccountMetrics {
     baselineEur: null,
     latestAsOf: null,
     latestEur: null,
+    latestCashEur: null,
+    latestPositionsEur: null,
     netContributionsSinceBaselineEur: 0,
     costBasisEur: null,
     pnlEur: null,
@@ -156,6 +160,9 @@ export function computeAccountMetrics(
     }
     const baselineEur = Number(baseline.marketValueEur);
     const latestEur = Number(latest.marketValueEur);
+    const latestCashEur = latest.cashValueEur != null ? Number(latest.cashValueEur) : null;
+    const latestPositionsEur =
+      latestCashEur != null ? Math.max(0, latestEur - latestCashEur) : null;
     const costBasis = baselineEur + net;
     const pnl = latestEur - costBasis;
     const pnlPct = Math.abs(costBasis) > 1e-6 ? pnl / costBasis : null;
@@ -165,6 +172,8 @@ export function computeAccountMetrics(
       baselineEur,
       latestAsOf: latest.asOf,
       latestEur,
+      latestCashEur,
+      latestPositionsEur,
       netContributionsSinceBaselineEur: net,
       costBasisEur: costBasis,
       pnlEur: pnl,
@@ -178,6 +187,8 @@ export interface PortfolioSeriesPoint {
   date: string; // YYYY-MM-DD
   marketValueEur: number;
   costBasisEur: number;
+  cashEur: number;
+  positionsEur: number;
 }
 
 /**
@@ -209,6 +220,7 @@ export function computePortfolioSeries(
   for (const d of dates) {
     const endTime = new Date(d + "T23:59:59.999Z").getTime();
     let marketValue = 0;
+    let cashTotal = 0;
     let costBasis = 0;
     for (const accId of investmentAccountIds) {
       const list = valsByAccount.get(accId);
@@ -217,11 +229,17 @@ export function computePortfolioSeries(
       const baselineTime = baseline.asOf.getTime();
       if (baselineTime > endTime) continue;
       let mv = 0;
+      let cash: number | null = null;
       for (const v of list) {
-        if (v.asOf.getTime() <= endTime) mv = Number(v.marketValueEur);
-        else break;
+        if (v.asOf.getTime() <= endTime) {
+          mv = Number(v.marketValueEur);
+          if (v.cashValueEur != null) cash = Number(v.cashValueEur);
+        } else {
+          break;
+        }
       }
       marketValue += mv;
+      cashTotal += cash ?? 0;
       let contrib = 0;
       for (const leg of legs) {
         if (leg.accountId !== accId) continue;
@@ -230,7 +248,14 @@ export function computePortfolioSeries(
       }
       costBasis += Number(baseline.marketValueEur) + contrib;
     }
-    series.push({ date: d, marketValueEur: marketValue, costBasisEur: costBasis });
+    const positions = Math.max(0, marketValue - cashTotal);
+    series.push({
+      date: d,
+      marketValueEur: marketValue,
+      costBasisEur: costBasis,
+      cashEur: cashTotal,
+      positionsEur: positions,
+    });
   }
 
   return series;

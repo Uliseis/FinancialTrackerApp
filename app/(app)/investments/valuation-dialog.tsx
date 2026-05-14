@@ -26,6 +26,7 @@ export interface ExistingValuation {
   accountId: string;
   asOf: string; // YYYY-MM-DD
   marketValueEur: string;
+  cashValueEur: string | null;
   notes: string | null;
 }
 
@@ -56,6 +57,7 @@ export function ValuationDialog({
   const [accountId, setAccountId] = useState<string>(defaultAccountId ?? accounts[0]?.id ?? "");
   const [asOf, setAsOf] = useState<string>(defaultAsOf ?? todayLocal());
   const [marketValueEur, setMarketValueEur] = useState<string>("");
+  const [cashValueEur, setCashValueEur] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
 
   useEffect(() => {
@@ -64,11 +66,15 @@ export function ValuationDialog({
       setAccountId(existing.accountId);
       setAsOf(existing.asOf);
       setMarketValueEur(Number(existing.marketValueEur).toFixed(2));
+      setCashValueEur(
+        existing.cashValueEur != null ? Number(existing.cashValueEur).toFixed(2) : "",
+      );
       setNotes(existing.notes ?? "");
     } else {
       setAccountId(defaultAccountId ?? accounts[0]?.id ?? "");
       setAsOf(defaultAsOf ?? todayLocal());
       setMarketValueEur("");
+      setCashValueEur("");
       setNotes("");
     }
   }, [open, existing, defaultAccountId, defaultAsOf, accounts]);
@@ -86,11 +92,21 @@ export function ValuationDialog({
       toast.error("Market value must be a non-negative number (max 2 decimals)");
       return;
     }
+    const cashTrimmed = cashValueEur.trim();
+    if (cashTrimmed !== "" && !/^\d+(\.\d{1,2})?$/.test(cashTrimmed)) {
+      toast.error("Cash portion must be a non-negative number (max 2 decimals)");
+      return;
+    }
+    if (cashTrimmed !== "" && Number(cashTrimmed) > Number(marketValueEur)) {
+      toast.error("Cash portion cannot exceed total market value");
+      return;
+    }
     startTransition(async () => {
       const body = JSON.stringify({
         accountId,
         asOf,
         marketValueEur,
+        cashValueEur: cashTrimmed === "" ? null : cashTrimmed,
         notes: notes.trim() ? notes.trim() : null,
       });
       const url = existing
@@ -152,7 +168,7 @@ export function ValuationDialog({
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="value">Market value (EUR)</Label>
+              <Label htmlFor="value">Total value (EUR)</Label>
               <Input
                 id="value"
                 type="number"
@@ -163,6 +179,22 @@ export function ValuationDialog({
                 onChange={(e) => setMarketValueEur(e.target.value)}
               />
             </div>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="cash">Of which, cash (EUR, optional)</Label>
+            <Input
+              id="cash"
+              type="number"
+              step="0.01"
+              inputMode="decimal"
+              placeholder="leave empty if not tracked"
+              value={cashValueEur}
+              onChange={(e) => setCashValueEur(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Un-invested EUR sitting in the broker. The rest is treated as deployed in
+              positions.
+            </p>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="notes">Notes (optional)</Label>

@@ -62,6 +62,7 @@ export default async function InvestmentsPage({
           id: v.id,
           asOf: v.asOf.toISOString().slice(0, 10),
           marketValueEur: v.marketValueEur,
+          cashValueEur: v.cashValueEur,
           notes: v.notes,
         }));
       return {
@@ -72,6 +73,8 @@ export default async function InvestmentsPage({
         baselineEur: m?.baselineEur ?? null,
         latestAsOf: m?.latestAsOf ? m.latestAsOf.toISOString().slice(0, 10) : null,
         latestEur: m?.latestEur ?? null,
+        latestCashEur: m?.latestCashEur ?? null,
+        latestPositionsEur: m?.latestPositionsEur ?? null,
         netContributionsSinceBaselineEur: m?.netContributionsSinceBaselineEur ?? 0,
         costBasisEur: m?.costBasisEur ?? null,
         pnlEur: m?.pnlEur ?? null,
@@ -83,12 +86,20 @@ export default async function InvestmentsPage({
 
   let portfolioValue = 0;
   let totalCostBasis = 0;
+  let totalCash = 0;
+  let totalPositions = 0;
+  let cashCounted = 0;
   let countedForCost = 0;
   for (const r of rows) {
     if (r.latestEur != null) portfolioValue += r.latestEur;
     if (r.costBasisEur != null) {
       totalCostBasis += r.costBasisEur;
       countedForCost++;
+    }
+    if (r.latestCashEur != null && r.latestPositionsEur != null) {
+      totalCash += r.latestCashEur;
+      totalPositions += r.latestPositionsEur;
+      cashCounted++;
     }
   }
   const totalPnl = countedForCost > 0 ? portfolioValue - totalCostBasis : null;
@@ -137,7 +148,11 @@ export default async function InvestmentsPage({
               <KpiCard
                 label="Portfolio value"
                 value={formatCurrency(portfolioValue, "EUR")}
-                hint={`across ${rows.length} accounts`}
+                hint={
+                  cashCounted > 0
+                    ? `${formatCurrency(totalPositions, "EUR")} pos · ${formatCurrency(totalCash, "EUR")} cash`
+                    : `across ${rows.length} accounts`
+                }
                 icon={<Wallet className="h-4 w-4" />}
               />
               <KpiCard

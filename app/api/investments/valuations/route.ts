@@ -11,6 +11,11 @@ const createSchema = z.object({
   accountId: z.string().uuid(),
   asOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   marketValueEur: z.string().regex(/^\d+(\.\d{1,2})?$/),
+  cashValueEur: z
+    .string()
+    .regex(/^\d+(\.\d{1,2})?$/)
+    .optional()
+    .nullable(),
   notes: z.string().trim().max(500).optional().nullable(),
 });
 
@@ -41,6 +46,14 @@ export async function POST(req: Request) {
 
   const asOf = new Date(parsed.data.asOf + "T00:00:00.000Z");
   const notes = parsed.data.notes?.trim() ? parsed.data.notes.trim() : null;
+  const cashValueEur = parsed.data.cashValueEur ?? null;
+
+  if (cashValueEur != null && Number(cashValueEur) > Number(parsed.data.marketValueEur)) {
+    return NextResponse.json(
+      { error: "cash portion cannot exceed total market value" },
+      { status: 400 },
+    );
+  }
 
   const [row] = await db
     .insert(portfolioValuations)
@@ -48,12 +61,14 @@ export async function POST(req: Request) {
       accountId: parsed.data.accountId,
       asOf,
       marketValueEur: parsed.data.marketValueEur,
+      cashValueEur,
       notes,
     })
     .onConflictDoUpdate({
       target: [portfolioValuations.accountId, portfolioValuations.asOf],
       set: {
         marketValueEur: parsed.data.marketValueEur,
+        cashValueEur,
         notes,
         updatedAt: sql`now()`,
       },

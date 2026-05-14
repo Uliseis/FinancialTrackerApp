@@ -16,7 +16,16 @@ export interface PortfolioSeriesPoint {
   date: string;
   marketValueEur: number;
   costBasisEur: number;
+  cashEur: number;
+  positionsEur: number;
 }
+
+const LABELS: Record<string, string> = {
+  marketValueEur: "Market value",
+  costBasisEur: "Cost basis",
+  cashEur: "Cash",
+  positionsEur: "Positions",
+};
 
 export function PortfolioChart({ data }: { data: PortfolioSeriesPoint[] }) {
   if (data.length === 0) {
@@ -27,11 +36,21 @@ export function PortfolioChart({ data }: { data: PortfolioSeriesPoint[] }) {
     );
   }
 
+  const hasCashSplit = data.some((d) => d.cashEur > 0);
+
   return (
     <div className="h-72 w-full">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
           <defs>
+            <linearGradient id="positions" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--color-chart-1)" stopOpacity={0.5} />
+              <stop offset="100%" stopColor="var(--color-chart-1)" stopOpacity={0.05} />
+            </linearGradient>
+            <linearGradient id="cash" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--color-chart-3)" stopOpacity={0.5} />
+              <stop offset="100%" stopColor="var(--color-chart-3)" stopOpacity={0.05} />
+            </linearGradient>
             <linearGradient id="mv" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="var(--color-chart-1)" stopOpacity={0.4} />
               <stop offset="100%" stopColor="var(--color-chart-1)" stopOpacity={0} />
@@ -59,24 +78,43 @@ export function PortfolioChart({ data }: { data: PortfolioSeriesPoint[] }) {
             }}
             formatter={(value, key) => [
               formatCurrency(Number(value), "EUR"),
-              key === "marketValueEur" ? "Market value" : "Cost basis",
+              LABELS[String(key)] ?? String(key),
             ]}
             labelStyle={{ color: "var(--color-foreground)" }}
           />
           <Legend
             iconType="circle"
             wrapperStyle={{ fontSize: 12 }}
-            formatter={(value: string) =>
-              value === "marketValueEur" ? "Market value" : "Cost basis"
-            }
+            formatter={(value: string) => LABELS[value] ?? value}
           />
-          <Area
-            type="monotone"
-            dataKey="marketValueEur"
-            stroke="var(--color-chart-1)"
-            strokeWidth={2}
-            fill="url(#mv)"
-          />
+          {hasCashSplit ? (
+            <>
+              <Area
+                type="monotone"
+                stackId="value"
+                dataKey="positionsEur"
+                stroke="var(--color-chart-1)"
+                strokeWidth={2}
+                fill="url(#positions)"
+              />
+              <Area
+                type="monotone"
+                stackId="value"
+                dataKey="cashEur"
+                stroke="var(--color-chart-3)"
+                strokeWidth={2}
+                fill="url(#cash)"
+              />
+            </>
+          ) : (
+            <Area
+              type="monotone"
+              dataKey="marketValueEur"
+              stroke="var(--color-chart-1)"
+              strokeWidth={2}
+              fill="url(#mv)"
+            />
+          )}
           <Area
             type="monotone"
             dataKey="costBasisEur"
