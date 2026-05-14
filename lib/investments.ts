@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   accountGroups,
@@ -77,6 +77,7 @@ export async function listInvestmentContributionLegs(
       and(
         inArray(transactions.accountId, investmentAccountIds),
         eq(transactions.isTransfer, true),
+        isNotNull(transactions.transferGroupId),
         isNotNull(transactions.amountEur),
       ),
     )
@@ -148,7 +149,9 @@ export function computeAccountMetrics(
     let net = 0;
     for (const leg of legs) {
       if (leg.accountId !== accId) continue;
-      if (leg.bookedAt.getTime() > baselineTime) net += leg.netEur;
+      // >= so a move recorded on the baseline date itself still shifts cost
+      // basis (the common "set baseline today, then record a move today" UX).
+      if (leg.bookedAt.getTime() >= baselineTime) net += leg.netEur;
     }
     const baselineEur = Number(baseline.marketValueEur);
     const latestEur = Number(latest.marketValueEur);
@@ -236,7 +239,7 @@ export function computePortfolioSeries(
       for (const leg of legs) {
         if (leg.accountId !== accId) continue;
         const t = leg.bookedAt.getTime();
-        if (t > baselineTime && t <= endTime) contrib += leg.netEur;
+        if (t >= baselineTime && t <= endTime) contrib += leg.netEur;
       }
       costBasis += Number(baseline.marketValueEur) + contrib;
     }

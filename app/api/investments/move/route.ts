@@ -84,6 +84,12 @@ export async function POST(req: Request) {
   const description = parsed.data.description?.trim() || null;
   const signedAmount = numericAmount.toFixed(4);
   const signedDebit = (-numericAmount).toFixed(4);
+  // EUR-to-EUR move: amount_eur can be set inline (rate = 1). For other currencies
+  // we leave it null and rely on the FX backfill below; the cost-basis math filters
+  // on amount_eur is not null, so until backfill runs the move is invisible.
+  const isEur = currency === "EUR";
+  const amountEurCredit = isEur ? numericAmount.toFixed(2) : null;
+  const amountEurDebit = isEur ? (-numericAmount).toFixed(2) : null;
 
   const rows = await db
     .insert(transactions)
@@ -93,6 +99,7 @@ export async function POST(req: Request) {
         externalId: debitExternalId,
         bookedAt,
         amount: signedDebit,
+        amountEur: amountEurDebit,
         currency,
         direction: "debit",
         description,
@@ -105,6 +112,7 @@ export async function POST(req: Request) {
         externalId: creditExternalId,
         bookedAt,
         amount: signedAmount,
+        amountEur: amountEurCredit,
         currency,
         direction: "credit",
         description,
@@ -115,10 +123,13 @@ export async function POST(req: Request) {
     ])
     .returning({ id: transactions.id });
 
-  try {
-    await backfillTransactionEurAmounts({ txIds: rows.map((r) => r.id) });
-  } catch {
-    // non-fatal: amount_eur will be backfilled on next sync
+  if (!isEur) {
+    try {
+      await backfillTransactionEurAmounts({ txIds: rows.map((r) => r.id) });
+    } catch {
+      // non-fatal: amount_eur will be backfilled on next sync; cost basis will
+      // catch up automatically once it does.
+    }
   }
 
   return NextResponse.json({ ok: true, transferGroupId, txIds: rows.map((r) => r.id) });
