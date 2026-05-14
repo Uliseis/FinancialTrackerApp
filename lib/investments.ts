@@ -1,9 +1,11 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, ne, notExists, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
 import {
   accountGroups,
   accounts,
   portfolioValuations,
+  transactions,
   type Account,
   type AccountGroup,
   type PortfolioValuation,
@@ -66,35 +68,47 @@ export async function listInvestmentContributionLegs(
   investmentAccountIds: string[],
 ): Promise<NetContributionLeg[]> {
   if (investmentAccountIds.length === 0) return [];
-  const rows = await db.execute(sql`
-    select
-      t.account_id as account_id,
-      t.booked_at as booked_at,
-      case when t.direction = 'credit' then t.amount_eur else -t.amount_eur end as net_eur
-    from transactions t
-    where t.account_id = any(${investmentAccountIds}::uuid[])
-      and t.is_transfer = true
-      and t.transfer_group_id is not null
-      and t.amount_eur is not null
-      and not exists (
-        select 1
-        from transactions sibling
-        join accounts sib_acct on sib_acct.id = sibling.account_id
-        join account_groups sib_grp on sib_grp.id = sib_acct.group_id
-        where sibling.transfer_group_id = t.transfer_group_id
-          and sibling.id <> t.id
-          and sibling.direction <> t.direction
-          and sib_grp.kind = 'investment'
-      )
-    order by t.booked_at asc
-  `);
-  return (rows.rows as Array<{ account_id: string; booked_at: Date; net_eur: string }>).map(
-    (r) => ({
-      accountId: r.account_id,
-      bookedAt: r.booked_at instanceof Date ? r.booked_at : new Date(r.booked_at),
-      netEur: Number(r.net_eur),
-    }),
-  );
+  const sib = alias(transactions, "sibling");
+  const sibAcct = alias(accounts, "sib_acct");
+  const sibGrp = alias(accountGroups, "sib_grp");
+
+  const rows = await db
+    .select({
+      accountId: transactions.accountId,
+      bookedAt: transactions.bookedAt,
+      amountEur: transactions.amountEur,
+    })
+    .from(transactions)
+    .where(
+      and(
+        inArray(transactions.accountId, investmentAccountIds),
+        eq(transactions.isTransfer, true),
+        isNotNull(transactions.transferGroupId),
+        isNotNull(transactions.amountEur),
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(sib)
+            .innerJoin(sibAcct, eq(sibAcct.id, sib.accountId))
+            .innerJoin(sibGrp, eq(sibGrp.id, sibAcct.groupId))
+            .where(
+              and(
+                eq(sib.transferGroupId, transactions.transferGroupId),
+                ne(sib.id, transactions.id),
+                ne(sib.direction, transactions.direction),
+                eq(sibGrp.kind, "investment"),
+              ),
+            ),
+        ),
+      ),
+    )
+    .orderBy(asc(transactions.bookedAt));
+
+  return rows.map((r) => ({
+    accountId: r.accountId,
+    bookedAt: r.bookedAt,
+    netEur: Number(r.amountEur),
+  }));
 }
 
 export interface AccountMetrics {
@@ -269,16 +283,22 @@ export async function sumLatestInvestmentValueEur(
   investmentAccountIds: string[],
 ): Promise<number> {
   if (investmentAccountIds.length === 0) return 0;
-  const rows = await db.execute(sql`
-    select coalesce(sum(market_value_eur), 0) as total
-    from (
-      select distinct on (account_id) account_id, market_value_eur
-      from portfolio_valuations
-      where account_id = any(${investmentAccountIds}::uuid[])
-      order by account_id, as_of desc
-    ) latest
-  `);
-  return Number((rows.rows[0] as { total: string } | undefined)?.total ?? 0);
+  const rows = await db
+    .select({
+      accountId: portfolioValuations.accountId,
+      marketValueEur: portfolioValuations.marketValueEur,
+    })
+    .from(portfolioValuations)
+    .where(inArray(portfolioValuations.accountId, investmentAccountIds))
+    .orderBy(desc(portfolioValuations.asOf));
+  const seen = new Set<string>();
+  let total = 0;
+  for (const r of rows) {
+    if (seen.has(r.accountId)) continue;
+    seen.add(r.accountId);
+    total += Number(r.marketValueEur);
+  }
+  return total;
 }
 
 /**
