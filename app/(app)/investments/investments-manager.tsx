@@ -2,7 +2,7 @@
 
 import { Fragment, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowLeftRight, ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
+import { MoveDialog } from "./move-dialog";
 import {
   ValuationDialog,
   type ExistingValuation,
@@ -48,6 +49,7 @@ export function InvestmentsManager({ rows }: { rows: AccountRow[] }) {
   const router = useRouter();
   const [pendingDelete, startDelete] = useTransition();
   const [open, setOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
   const [defaultAccountId, setDefaultAccountId] = useState<string | null>(null);
   const [editing, setEditing] = useState<ExistingValuation | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -100,10 +102,18 @@ export function InvestmentsManager({ rows }: { rows: AccountRow[] }) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Accounts</CardTitle>
-          <Button size="sm" onClick={() => openCreate()}>
-            <Plus className="h-4 w-4" />
-            Record valuation
-          </Button>
+          <div className="flex gap-2">
+            {rows.length >= 2 ? (
+              <Button size="sm" variant="outline" onClick={() => setMoveOpen(true)}>
+                <ArrowLeftRight className="h-4 w-4" />
+                Move
+              </Button>
+            ) : null}
+            <Button size="sm" onClick={() => openCreate()}>
+              <Plus className="h-4 w-4" />
+              Record valuation
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <Table>
@@ -308,6 +318,12 @@ export function InvestmentsManager({ rows }: { rows: AccountRow[] }) {
         accounts={accountsForDialog}
         defaultAccountId={defaultAccountId}
         existing={editing}
+      />
+
+      <MoveDialog
+        open={moveOpen}
+        onOpenChange={setMoveOpen}
+        accounts={accountsForDialog}
       />
     </>
   );
