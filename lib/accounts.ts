@@ -194,6 +194,29 @@ export async function computeMonthlyExpenseEurByAccount(
   return out;
 }
 
+export async function computeBalanceDrifts(
+  rows: Account[],
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const anchorPairs = rows
+    .filter((a) => a.connectionId != null && a.balanceAnchor != null && a.balanceAnchorAt != null && a.balance != null)
+    .map((a) => ({
+      id: a.id,
+      bank: Number(a.balance),
+      anchor: Number(a.balanceAnchor),
+      since: a.balanceAnchorAt as Date,
+    }));
+  for (const p of anchorPairs) {
+    const [row] = await db
+      .select({ total: sql<string>`coalesce(sum(${transactions.amount}), 0)` })
+      .from(transactions)
+      .where(and(eq(transactions.accountId, p.id), gt(transactions.bookedAt, p.since)));
+    const computed = p.anchor + Number(row?.total ?? 0);
+    out.set(p.id, p.bank - computed);
+  }
+  return out;
+}
+
 export async function computeManualAccountNativeBalances(
   rows: Account[],
 ): Promise<Map<string, number>> {

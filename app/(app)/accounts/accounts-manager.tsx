@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Anchor, Plus, Trash2, Upload, Wallet } from "lucide-react";
+import { Anchor, Percent, Plus, Trash2, Upload, Wallet } from "lucide-react";
 import type { Account, AccountGroup, AccountSpace } from "@/db/schema";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +37,7 @@ import {
   AddTransactionDialog,
   type AddTxCategory,
 } from "./add-transaction-dialog";
+import { AddInterestDialog } from "./add-interest-dialog";
 
 const UNGROUPED = "__none__";
 
@@ -50,6 +51,7 @@ export interface AccountsManagerProps {
   nativeBalances: Record<string, string | null>;
   eurBalances: Record<string, number>;
   eurExpenses: Record<string, number>;
+  nativeDrifts: Record<string, number>;
   categories: AddTxCategory[];
 }
 
@@ -61,6 +63,7 @@ export function AccountsManager({
   nativeBalances,
   eurBalances,
   eurExpenses,
+  nativeDrifts,
   categories,
 }: AccountsManagerProps) {
   const router = useRouter();
@@ -81,6 +84,7 @@ export function AccountsManager({
   const [anchorAccount, setAnchorAccount] = useState<Account | null>(null);
   const [importAccount, setImportAccount] = useState<Account | null>(null);
   const [addTxAccount, setAddTxAccount] = useState<Account | null>(null);
+  const [interestAccount, setInterestAccount] = useState<Account | null>(null);
 
   const accountsByGroup = useMemo(() => {
     const map = new Map<string | null, Account[]>();
@@ -420,6 +424,7 @@ export function AccountsManager({
                     defaultSpaceId={defaultSpaceId}
                     nativeBalances={nativeBalances}
                     eurExpenses={eurExpenses}
+                    nativeDrifts={nativeDrifts}
                     onAssign={assignGroup}
                     onAssignSpace={assignSpace}
                     onToggleExcluded={toggleExcluded}
@@ -427,6 +432,7 @@ export function AccountsManager({
                     onSetAnchor={setAnchorAccount}
                     onImport={setImportAccount}
                     onAddTx={setAddTxAccount}
+                    onAddInterest={setInterestAccount}
                   />
                 </CardContent>
               </Card>
@@ -446,6 +452,7 @@ export function AccountsManager({
                 defaultSpaceId={defaultSpaceId}
                 nativeBalances={nativeBalances}
                 eurExpenses={eurExpenses}
+                nativeDrifts={nativeDrifts}
                 onAssign={assignGroup}
                 onAssignSpace={assignSpace}
                 onToggleExcluded={toggleExcluded}
@@ -453,6 +460,7 @@ export function AccountsManager({
                 onSetAnchor={setAnchorAccount}
                 onImport={setImportAccount}
                 onAddTx={setAddTxAccount}
+                onAddInterest={setInterestAccount}
               />
             </CardContent>
           </Card>
@@ -489,6 +497,26 @@ export function AccountsManager({
         }}
         onSaved={() => startTransition(() => router.refresh())}
       />
+      <AddInterestDialog
+        open={!!interestAccount}
+        account={
+          interestAccount
+            ? {
+                id: interestAccount.id,
+                name: interestAccount.name,
+                currency: interestAccount.currency,
+              }
+            : null
+        }
+        suggestedAmount={
+          interestAccount ? nativeDrifts[interestAccount.id] ?? null : null
+        }
+        categories={categories}
+        onOpenChange={(open) => {
+          if (!open) setInterestAccount(null);
+        }}
+        onSaved={() => startTransition(() => router.refresh())}
+      />
     </div>
   );
 }
@@ -500,6 +528,7 @@ function AccountList({
   defaultSpaceId,
   nativeBalances,
   eurExpenses,
+  nativeDrifts,
   onAssign,
   onAssignSpace,
   onToggleExcluded,
@@ -507,6 +536,7 @@ function AccountList({
   onSetAnchor,
   onImport,
   onAddTx,
+  onAddInterest,
 }: {
   items: Account[];
   groups: AccountGroup[];
@@ -514,6 +544,7 @@ function AccountList({
   defaultSpaceId: string;
   nativeBalances: Record<string, string | null>;
   eurExpenses: Record<string, number>;
+  nativeDrifts: Record<string, number>;
   onAssign: (accountId: string, groupId: string) => void;
   onAssignSpace: (accountId: string, spaceId: string) => void;
   onToggleExcluded: (accountId: string, excluded: boolean) => void;
@@ -521,6 +552,7 @@ function AccountList({
   onSetAnchor: (a: Account) => void;
   onImport: (a: Account) => void;
   onAddTx: (a: Account) => void;
+  onAddInterest: (a: Account) => void;
 }) {
   if (items.length === 0) {
     return <p className="text-sm text-muted-foreground">No accounts in this group.</p>;
@@ -585,6 +617,19 @@ function AccountList({
             title="Set current balance (anchor)"
           >
             <Anchor className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Post interest"
+            onClick={() => onAddInterest(a)}
+            title={
+              (nativeDrifts[a.id] ?? 0) > 0
+                ? `Post interest — drift ${nativeDrifts[a.id].toFixed(2)} ${a.currency}`
+                : "Post interest"
+            }
+          >
+            <Percent className="h-4 w-4" />
           </Button>
           {a.connectionId ? null : (
             <>

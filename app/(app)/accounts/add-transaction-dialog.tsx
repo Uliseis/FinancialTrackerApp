@@ -31,6 +31,7 @@ export interface AddTxCategory {
   id: string;
   name: string;
   color: string | null;
+  kind?: string;
 }
 
 const UNCATEGORIZED = "__none__";

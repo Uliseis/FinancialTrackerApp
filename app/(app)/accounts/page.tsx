@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/page-header";
 import {
   computeAccountBalancesEur,
   computeAccountNativeBalances,
+  computeBalanceDrifts,
   computeMonthlyExpenseEurByAccount,
 } from "@/lib/accounts";
 import { getRate } from "@/lib/fx";
@@ -22,7 +23,12 @@ export default async function AccountsPage() {
     listSpaces(),
     getDefaultSpaceId(),
     db
-      .select({ id: categories.id, name: categories.name, color: categories.color })
+      .select({
+        id: categories.id,
+        name: categories.name,
+        color: categories.color,
+        kind: categories.kind,
+      })
       .from(categories)
       .orderBy(asc(categories.name)),
   ]);
@@ -40,7 +46,7 @@ export default async function AccountsPage() {
   const now = new Date();
   const start = monthStart(now);
   const end = monthStart(now, 1);
-  const [eurMap, nativeMap, expenseMap] = await Promise.all([
+  const [eurMap, nativeMap, expenseMap, driftMap] = await Promise.all([
     computeAccountBalancesEur(activeRows, { rateFor }),
     computeAccountNativeBalances(activeRows),
     computeMonthlyExpenseEurByAccount(
@@ -48,6 +54,7 @@ export default async function AccountsPage() {
       start,
       end,
     ),
+    computeBalanceDrifts(activeRows),
   ]);
 
   const nativeBalances: Record<string, string | null> = {};
@@ -59,6 +66,8 @@ export default async function AccountsPage() {
   for (const [id, v] of eurMap) eurBalances[id] = v;
   const eurExpenses: Record<string, number> = {};
   for (const [id, v] of expenseMap) eurExpenses[id] = v;
+  const nativeDrifts: Record<string, number> = {};
+  for (const [id, v] of driftMap) nativeDrifts[id] = v;
 
   return (
     <>
@@ -76,6 +85,7 @@ export default async function AccountsPage() {
           nativeBalances={nativeBalances}
           eurBalances={eurBalances}
           eurExpenses={eurExpenses}
+          nativeDrifts={nativeDrifts}
           categories={categoryRows}
         />
       </div>
