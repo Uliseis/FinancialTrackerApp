@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { KpiCard } from "@/components/kpi-card";
 import { PageHeader } from "@/components/page-header";
 import { db } from "@/lib/db";
 import {
@@ -34,6 +35,10 @@ import {
 import { activeBudgetsProgress } from "@/lib/budgets";
 import { computeAccountBalancesEur } from "@/lib/accounts";
 import { getRate } from "@/lib/fx";
+import {
+  listInvestmentAccountIdsInSpace,
+  sumLatestInvestmentValueEur,
+} from "@/lib/investments";
 import {
   accountInSpaceClause,
   getDefaultSpaceId,
@@ -335,6 +340,12 @@ export default async function DashboardPage({
   const accountIds = spaceAccountRows.map((r) => r.id);
   const { income: incomeAccountIds } = await partitionAccountsByCreditKind(accountIds);
 
+  const investmentAccountIds = await listInvestmentAccountIdsInSpace(
+    currentSpaceId,
+    defaultSpaceId,
+  );
+  const investmentValueEur = await sumLatestInvestmentValueEur(investmentAccountIds);
+
   const cats = await db.select().from(categories);
   const catById = new Map(cats.map((c) => [c.id, c]));
   const catNameById = new Map(cats.map((c) => [c.id, c.name]));
@@ -465,9 +476,13 @@ export default async function DashboardPage({
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <KpiCard
-            label="Net worth"
-            value={formatCurrency(netWorth.total, "EUR")}
-            hint={`across ${Number(accountStats.total)} accounts`}
+            label="Total net worth"
+            value={formatCurrency(netWorth.total + investmentValueEur, "EUR")}
+            hint={
+              investmentValueEur > 0
+                ? `cash ${formatCurrency(netWorth.total, "EUR")} · inv ${formatCurrency(investmentValueEur, "EUR")}`
+                : `across ${Number(accountStats.total)} cash accounts`
+            }
             icon={<Wallet className="h-4 w-4" />}
           />
           <KpiCard
@@ -808,30 +823,4 @@ export default async function DashboardPage({
   );
 }
 
-function KpiCard({
-  label,
-  value,
-  hint,
-  icon,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  icon: React.ReactNode;
-}) {
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
-          {label}
-        </CardTitle>
-        <div className="text-muted-foreground">{icon}</div>
-      </CardHeader>
-      <CardContent>
-        <p className="tabular text-2xl font-semibold tracking-tight">{value}</p>
-        {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
-      </CardContent>
-    </Card>
-  );
-}
 

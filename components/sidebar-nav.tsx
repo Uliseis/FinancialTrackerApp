@@ -11,6 +11,7 @@ import {
   Wallet,
   Tags,
   PiggyBank,
+  TrendingUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +19,7 @@ const items = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/accounts", label: "Accounts", icon: Wallet },
   { href: "/transactions", label: "Transactions", icon: Receipt },
+  { href: "/investments", label: "Investments", icon: TrendingUp },
   { href: "/categories", label: "Categories", icon: Tags },
   { href: "/transfer-routes", label: "Transfer routes", icon: Send },
   { href: "/budgets", label: "Budgets", icon: PiggyBank },

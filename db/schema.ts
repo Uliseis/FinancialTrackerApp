@@ -338,6 +338,28 @@ export const prices = pgTable(
   }),
 );
 
+export const portfolioValuations = pgTable(
+  "portfolio_valuations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    asOf: timestamp("as_of", { withTimezone: true }).notNull(),
+    marketValueEur: numeric("market_value_eur", { precision: 14, scale: 2 }).notNull(),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    acctAsOfIdx: uniqueIndex("portfolio_valuations_account_as_of_idx").on(
+      t.accountId,
+      t.asOf,
+    ),
+    acctIdx: index("portfolio_valuations_account_idx").on(t.accountId),
+  }),
+);
+
 export const syncRuns = pgTable(
   "sync_runs",
   {
@@ -383,6 +405,8 @@ export type NewFxRate = typeof fxRates.$inferInsert;
 export type SyncRun = typeof syncRuns.$inferSelect;
 export type SharedExpenseGroup = typeof sharedExpenseGroups.$inferSelect;
 export type NewSharedExpenseGroup = typeof sharedExpenseGroups.$inferInsert;
+export type PortfolioValuation = typeof portfolioValuations.$inferSelect;
+export type NewPortfolioValuation = typeof portfolioValuations.$inferInsert;
 
 // Quiet unused-import warning if `sql` ends up unused in builds.
 export const _sql = sql;
