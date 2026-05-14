@@ -1,5 +1,4 @@
-import { and, asc, desc, eq, inArray, isNotNull, ne, notExists, sql } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   accountGroups,
@@ -54,24 +53,19 @@ export interface NetContributionLeg {
 }
 
 /**
- * All transfer legs into the given investment accounts that count toward "Invested",
- * i.e. where the sibling leg lives outside the investment-group set (we drop
- * inter-investment transfers per the same-class-net-zero rule). Each leg is
- * signed: credits positive, debits negative.
+ * All transfer legs touching the given investment accounts. Each leg counts
+ * toward its own account's cost basis, signed: credits positive, debits negative.
  *
- * Inter-investment exclusion requires an OPPOSITE-direction sibling tx with the
- * same `transfer_group_id` to live in an investment-kind group. This avoids
- * dropping a real cash→broker contribution that happens to share a group id
- * with a multi-leg fan-out.
+ * Inter-investment moves (Investment → Pension, Trading212 → MyInvestor) are
+ * NOT excluded: each leg shifts its own account's cost basis, and the totals
+ * across accounts naturally cancel (the debit on one is the credit on the
+ * other), so the portfolio-wide cost basis stays correct while per-account
+ * numbers reflect the reallocation.
  */
 export async function listInvestmentContributionLegs(
   investmentAccountIds: string[],
 ): Promise<NetContributionLeg[]> {
   if (investmentAccountIds.length === 0) return [];
-  const sib = alias(transactions, "sibling");
-  const sibAcct = alias(accounts, "sib_acct");
-  const sibGrp = alias(accountGroups, "sib_grp");
-
   const rows = await db
     .select({
       accountId: transactions.accountId,
@@ -83,23 +77,7 @@ export async function listInvestmentContributionLegs(
       and(
         inArray(transactions.accountId, investmentAccountIds),
         eq(transactions.isTransfer, true),
-        isNotNull(transactions.transferGroupId),
         isNotNull(transactions.amountEur),
-        notExists(
-          db
-            .select({ one: sql`1` })
-            .from(sib)
-            .innerJoin(sibAcct, eq(sibAcct.id, sib.accountId))
-            .innerJoin(sibGrp, eq(sibGrp.id, sibAcct.groupId))
-            .where(
-              and(
-                eq(sib.transferGroupId, transactions.transferGroupId),
-                ne(sib.id, transactions.id),
-                ne(sib.direction, transactions.direction),
-                eq(sibGrp.kind, "investment"),
-              ),
-            ),
-        ),
       ),
     )
     .orderBy(asc(transactions.bookedAt));
