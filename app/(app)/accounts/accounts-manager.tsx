@@ -77,7 +77,8 @@ export function AccountsManager({
   const [manualName, setManualName] = useState("");
   const [manualInstitution, setManualInstitution] = useState("");
   const [manualCurrency, setManualCurrency] = useState("EUR");
-  const [manualType, setManualType] = useState<"bank" | "broker" | "crypto">("bank");
+  const [manualType, setManualType] =
+    useState<"bank" | "broker" | "crypto" | "real_estate" | "pension" | "other">("bank");
   const [manualGroupId, setManualGroupId] = useState<string>(UNGROUPED);
   const [manualBalance, setManualBalance] = useState("");
   const [creatingAccount, setCreatingAccount] = useState(false);
@@ -318,7 +319,9 @@ export function AccountsManager({
                 <Select
                   value={manualType}
                   onValueChange={(v) =>
-                    setManualType(v as "bank" | "broker" | "crypto")
+                    setManualType(
+                      v as "bank" | "broker" | "crypto" | "real_estate" | "pension" | "other",
+                    )
                   }
                 >
                   <SelectTrigger className="w-full">
@@ -328,6 +331,9 @@ export function AccountsManager({
                     <SelectItem value="bank">Bank</SelectItem>
                     <SelectItem value="broker">Broker</SelectItem>
                     <SelectItem value="crypto">Crypto</SelectItem>
+                    <SelectItem value="real_estate">Real estate</SelectItem>
+                    <SelectItem value="pension">Pension</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

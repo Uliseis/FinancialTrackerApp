@@ -15,7 +15,14 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
-export const accountTypeEnum = pgEnum("account_type", ["bank", "broker", "crypto"]);
+export const accountTypeEnum = pgEnum("account_type", [
+  "bank",
+  "broker",
+  "crypto",
+  "real_estate",
+  "pension",
+  "other",
+]);
 export const connectionStatusEnum = pgEnum("connection_status", [
   "pending",
   "active",

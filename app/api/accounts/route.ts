@@ -10,7 +10,9 @@ export const dynamic = "force-dynamic";
 
 const createManualSchema = z.object({
   name: z.string().min(1).max(120),
-  type: z.enum(["bank", "broker", "crypto"]).default("bank"),
+  type: z
+    .enum(["bank", "broker", "crypto", "real_estate", "pension", "other"])
+    .default("bank"),
   institution: z.string().min(1).max(120),
   currency: z.string().min(3).max(3).default("EUR"),
   groupId: z.string().uuid().nullable().optional(),
