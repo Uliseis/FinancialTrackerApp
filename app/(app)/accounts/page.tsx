@@ -1,6 +1,6 @@
-import { asc } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { accountGroups, accounts, categories } from "@/db/schema";
+import { accountGroups, accounts, categories, connections } from "@/db/schema";
 import { PageHeader } from "@/components/page-header";
 import {
   computeAccountBalancesEur,
@@ -13,6 +13,10 @@ import { getDefaultSpaceId, listSpaces } from "@/lib/spaces";
 import { monthStart } from "@/lib/utils";
 import { AccountsManager } from "./accounts-manager";
 import { SpacesManager } from "./spaces-manager";
+import {
+  PendingApprovalBanner,
+  type PendingAccount,
+} from "../connections/pending-approval-banner";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +73,38 @@ export default async function AccountsPage() {
   const nativeDrifts: Record<string, number> = {};
   for (const [id, v] of driftMap) nativeDrifts[id] = v;
 
+  const pendingRows = await db
+    .select({
+      id: accounts.id,
+      name: accounts.name,
+      iban: accounts.iban,
+      type: accounts.type,
+      metadata: accounts.metadata,
+      connectionId: accounts.connectionId,
+      institutionName: connections.institutionName,
+    })
+    .from(accounts)
+    .leftJoin(connections, eq(connections.id, accounts.connectionId))
+    .where(
+      and(
+        eq(accounts.archived, true),
+        sql`${accounts.metadata}->>'pendingApproval' = 'true'`,
+      ),
+    );
+  const pendingAccounts: PendingAccount[] = pendingRows.map((r) => {
+    const meta = (r.metadata as Record<string, unknown> | null) ?? {};
+    return {
+      id: r.id,
+      name: r.name,
+      iban: r.iban,
+      type: r.type,
+      discoveredAt:
+        typeof meta.discoveredAt === "string" ? meta.discoveredAt : null,
+      connectionId: r.connectionId,
+      institutionName: r.institutionName,
+    };
+  });
+
   return (
     <>
       <PageHeader
@@ -76,6 +112,7 @@ export default async function AccountsPage() {
         description="Group accounts to roll up balances on the dashboard."
       />
       <div className="space-y-6 p-6">
+        <PendingApprovalBanner accounts={pendingAccounts} />
         <SpacesManager spaces={spaceRows} />
         <AccountsManager
           accounts={acctRows}

@@ -98,7 +98,15 @@ export function MoveDialog({
         toast.error(typeof data?.error === "string" ? data.error : "Move failed");
         return;
       }
-      toast.success("Move recorded");
+      const data = (await res.json().catch(() => ({}))) as {
+        amountEurMissing?: boolean;
+        message?: string;
+      };
+      if (data.amountEurMissing) {
+        toast.warning(data.message ?? "Move recorded, EUR amount pending FX backfill");
+      } else {
+        toast.success("Move recorded");
+      }
       onOpenChange(false);
       router.refresh();
     });

@@ -119,11 +119,14 @@ async function netWorthByGroup(accountIds: string[]) {
     bucket.count += 1;
   }
 
-  const groups = groupRows.map((g) => ({
-    id: g.id,
-    ...groupMap.get(g.id)!,
-    excluded: groupMap.get(g.id)!.kind === "credit",
-  }));
+  const groups = groupRows.map((g) => {
+    const bucket = groupMap.get(g.id)!;
+    return {
+      id: g.id,
+      ...bucket,
+      excluded: bucket.kind === "credit" || bucket.kind === "investment",
+    };
+  });
   const ungrouped = groupMap.get(null)!;
   if (ungrouped.count > 0) {
     groups.push({ id: null as unknown as string, ...ungrouped, excluded: false });
@@ -131,7 +134,8 @@ async function netWorthByGroup(accountIds: string[]) {
   let total = 0;
   let liabilities = 0;
   for (const g of groups) {
-    if (g.excluded) liabilities += g.eur;
+    if (g.kind === "credit") liabilities += g.eur;
+    else if (g.kind === "investment") continue;
     else total += g.eur;
   }
   return { groups, total, liabilities };
@@ -558,9 +562,13 @@ export default async function DashboardPage({
                               <span className="text-xs text-muted-foreground">
                                 {g.count} {g.count === 1 ? "account" : "accounts"}
                               </span>
-                              {g.excluded ? (
+                              {g.kind === "credit" ? (
                                 <Badge variant="outline" className="text-[10px] uppercase">
                                   liability · not in total
+                                </Badge>
+                              ) : g.kind === "investment" ? (
+                                <Badge variant="outline" className="text-[10px] uppercase">
+                                  investments · separate
                                 </Badge>
                               ) : null}
                             </span>

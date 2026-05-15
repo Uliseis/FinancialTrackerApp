@@ -149,9 +149,10 @@ export function computeAccountMetrics(
     let net = 0;
     for (const leg of legs) {
       if (leg.accountId !== accId) continue;
-      // >= so a move recorded on the baseline date itself still shifts cost
-      // basis (the common "set baseline today, then record a move today" UX).
-      if (leg.bookedAt.getTime() >= baselineTime) net += leg.netEur;
+      // Strict >: the baseline already reflects everything as of its date, so
+      // same-day moves are NOT added on top. Otherwise a snapshot that
+      // implicitly includes today's deposit would double-count it.
+      if (leg.bookedAt.getTime() > baselineTime) net += leg.netEur;
     }
     const baselineEur = Number(baseline.marketValueEur);
     const latestEur = Number(latest.marketValueEur);
@@ -224,22 +225,22 @@ export function computePortfolioSeries(
       const baselineTime = baseline.asOf.getTime();
       if (baselineTime > endTime) continue;
       let mv = 0;
-      let cash: number | null = null;
+      let cash = 0;
       for (const v of list) {
         if (v.asOf.getTime() <= endTime) {
           mv = Number(v.marketValueEur);
-          if (v.cashValueEur != null) cash = Number(v.cashValueEur);
+          cash = v.cashValueEur != null ? Number(v.cashValueEur) : 0;
         } else {
           break;
         }
       }
       marketValue += mv;
-      cashTotal += cash ?? 0;
+      cashTotal += cash;
       let contrib = 0;
       for (const leg of legs) {
         if (leg.accountId !== accId) continue;
         const t = leg.bookedAt.getTime();
-        if (t >= baselineTime && t <= endTime) contrib += leg.netEur;
+        if (t > baselineTime && t <= endTime) contrib += leg.netEur;
       }
       costBasis += Number(baseline.marketValueEur) + contrib;
     }

@@ -123,14 +123,23 @@ export async function POST(req: Request) {
     ])
     .returning({ id: transactions.id });
 
+  let amountEurMissing = false;
   if (!isEur) {
     try {
-      await backfillTransactionEurAmounts({ txIds: rows.map((r) => r.id) });
+      const result = await backfillTransactionEurAmounts({ txIds: rows.map((r) => r.id) });
+      amountEurMissing = result.updated < rows.length;
     } catch {
-      // non-fatal: amount_eur will be backfilled on next sync; cost basis will
-      // catch up automatically once it does.
+      amountEurMissing = true;
     }
   }
 
-  return NextResponse.json({ ok: true, transferGroupId, txIds: rows.map((r) => r.id) });
+  return NextResponse.json({
+    ok: true,
+    transferGroupId,
+    txIds: rows.map((r) => r.id),
+    amountEurMissing,
+    message: amountEurMissing
+      ? "Move recorded. EUR amount will be filled on the next FX sync; cost basis will catch up automatically."
+      : undefined,
+  });
 }

@@ -93,11 +93,11 @@ export function ValuationDialog({
       return;
     }
     const cashTrimmed = cashValueEur.trim();
-    if (cashTrimmed !== "" && !/^\d+(\.\d{1,2})?$/.test(cashTrimmed)) {
-      toast.error("Cash portion must be a non-negative number (max 2 decimals)");
+    if (!/^\d+(\.\d{1,2})?$/.test(cashTrimmed)) {
+      toast.error("Cash portion is required (use 0 if fully invested)");
       return;
     }
-    if (cashTrimmed !== "" && Number(cashTrimmed) > Number(marketValueEur)) {
+    if (Number(cashTrimmed) > Number(marketValueEur)) {
       toast.error("Cash portion cannot exceed total market value");
       return;
     }
@@ -106,7 +106,7 @@ export function ValuationDialog({
         accountId,
         asOf,
         marketValueEur,
-        cashValueEur: cashTrimmed === "" ? null : cashTrimmed,
+        cashValueEur: cashTrimmed,
         notes: notes.trim() ? notes.trim() : null,
       });
       const url = existing
@@ -181,13 +181,13 @@ export function ValuationDialog({
             </div>
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="cash">Of which, cash (EUR, optional)</Label>
+            <Label htmlFor="cash">Of which, cash (EUR)</Label>
             <Input
               id="cash"
               type="number"
               step="0.01"
               inputMode="decimal"
-              placeholder="leave empty if not tracked"
+              placeholder="0.00 if fully invested"
               value={cashValueEur}
               onChange={(e) => setCashValueEur(e.target.value)}
             />

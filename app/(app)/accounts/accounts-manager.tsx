@@ -174,6 +174,34 @@ export function AccountsManager({
     startTransition(() => router.refresh());
   }
 
+  async function assignCurrency(accountId: string, currency: string) {
+    const account = accounts.find((a) => a.id === accountId);
+    if (account) {
+      const hasNumerics =
+        account.balance != null ||
+        account.balanceAnchor != null ||
+        account.manualOpeningBalance != null;
+      if (hasNumerics && account.currency !== currency) {
+        const ok = confirm(
+          `This account has a stored balance or anchor in ${account.currency}. Changing the currency does NOT convert those numbers — they will be interpreted as ${currency} going forward. Continue?`,
+        );
+        if (!ok) return;
+      }
+    }
+    const res = await fetch(`/api/accounts/${accountId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ currency }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      toast.error(typeof data?.error === "string" ? data.error : "Failed");
+      return;
+    }
+    toast.success(`Currency set to ${currency}`);
+    startTransition(() => router.refresh());
+  }
+
   async function createManualAccount() {
     if (!manualName.trim() || !manualInstitution.trim()) return;
     setCreatingAccount(true);
@@ -433,6 +461,7 @@ export function AccountsManager({
                     nativeDrifts={nativeDrifts}
                     onAssign={assignGroup}
                     onAssignSpace={assignSpace}
+                    onAssignCurrency={assignCurrency}
                     onToggleExcluded={toggleExcluded}
                     onDelete={deleteAccount}
                     onSetAnchor={setAnchorAccount}
@@ -461,6 +490,7 @@ export function AccountsManager({
                 nativeDrifts={nativeDrifts}
                 onAssign={assignGroup}
                 onAssignSpace={assignSpace}
+                onAssignCurrency={assignCurrency}
                 onToggleExcluded={toggleExcluded}
                 onDelete={deleteAccount}
                 onSetAnchor={setAnchorAccount}
@@ -527,6 +557,8 @@ export function AccountsManager({
   );
 }
 
+const CURRENCY_OPTIONS = ["EUR", "USD", "GBP", "CHF", "SEK", "NOK", "DKK", "CZK", "PLN"];
+
 function AccountList({
   items,
   groups,
@@ -537,6 +569,7 @@ function AccountList({
   nativeDrifts,
   onAssign,
   onAssignSpace,
+  onAssignCurrency,
   onToggleExcluded,
   onDelete,
   onSetAnchor,
@@ -553,6 +586,7 @@ function AccountList({
   nativeDrifts: Record<string, number>;
   onAssign: (accountId: string, groupId: string) => void;
   onAssignSpace: (accountId: string, spaceId: string) => void;
+  onAssignCurrency: (accountId: string, currency: string) => void;
   onToggleExcluded: (accountId: string, excluded: boolean) => void;
   onDelete: (id: string) => void;
   onSetAnchor: (a: Account) => void;
@@ -659,6 +693,21 @@ function AccountList({
               </Button>
             </>
           )}
+          <Select
+            value={CURRENCY_OPTIONS.includes(a.currency) ? a.currency : "EUR"}
+            onValueChange={(v) => onAssignCurrency(a.id, v)}
+          >
+            <SelectTrigger className="w-[80px]" aria-label="Currency">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CURRENCY_OPTIONS.map((c) => (
+                <SelectItem key={c} value={c}>
+                  {c}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select
             value={a.spaceId ?? defaultSpaceId}
             onValueChange={(v) => onAssignSpace(a.id, v)}

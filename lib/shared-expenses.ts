@@ -330,6 +330,8 @@ export async function findCandidateReimbursements(
     gte(transactions.bookedAt, windowStart),
     lte(transactions.bookedAt, windowEnd),
     spaceFilter,
+    eq(accounts.excluded, false),
+    eq(accounts.archived, false),
   );
   const needle = "%" + query.toLowerCase() + "%";
   const filters = query
@@ -389,6 +391,8 @@ export async function findCandidateRefundedExpenses(
     gte(transactions.bookedAt, windowStart),
     lte(transactions.bookedAt, windowEnd),
     spaceFilter,
+    eq(accounts.excluded, false),
+    eq(accounts.archived, false),
   );
   const needle = "%" + query.toLowerCase() + "%";
   const filters = query

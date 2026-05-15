@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   accounts,
@@ -23,10 +23,38 @@ import {
   type EbTransaction,
 } from "@/lib/enablebanking";
 import { applyRulesToTransactions } from "@/lib/categorize";
-import { detectTransfers } from "@/lib/transfers";
+import { detectTransfers, repairTransferGroups } from "@/lib/transfers";
 import { backfillTransactionEurAmounts } from "@/lib/fx";
 import { applyTransferRoutes } from "@/lib/transfer-routes";
 import { getDefaultSpaceId } from "@/lib/spaces";
+
+const STALE_RUN_MS = 10 * 60 * 1000;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidUid(uid: unknown): uid is string {
+  if (typeof uid !== "string") return false;
+  if (uid.length === 0) return false;
+  if (uid === "undefined" || uid === "null") return false;
+  return UUID_RE.test(uid);
+}
+
+async function reapStaleSyncRuns(): Promise<void> {
+  const threshold = new Date(Date.now() - STALE_RUN_MS);
+  await db
+    .update(syncRuns)
+    .set({
+      status: "error",
+      finishedAt: new Date(),
+      error: "abandoned",
+    })
+    .where(
+      and(
+        eq(syncRuns.status, "running"),
+        lt(syncRuns.startedAt, threshold),
+        isNull(syncRuns.finishedAt),
+      ),
+    );
+}
 
 export interface SyncResult {
   connectionId: string;
@@ -69,6 +97,8 @@ export async function syncEnableBankingConnection(
     transactionsInserted: 0,
     errors: [],
   };
+
+  await reapStaleSyncRuns();
 
   const [conn] = await db
     .select()
@@ -120,9 +150,16 @@ export async function syncEnableBankingConnection(
     const sessionAccounts = sessionAccountsOf(session);
     result.accountsTouched = sessionAccounts.length;
 
+    const ebConnectionIds = (
+      await db
+        .select({ id: connections.id })
+        .from(connections)
+        .where(eq(connections.connector, "enablebanking"))
+    ).map((r) => r.id);
+
     for (const sessionAccount of sessionAccounts) {
       try {
-        if (typeof sessionAccount.uid !== "string" || sessionAccount.uid.length === 0) {
+        if (!isValidUid(sessionAccount.uid)) {
           await db
             .update(connections)
             .set({
@@ -133,9 +170,10 @@ export async function syncEnableBankingConnection(
               },
             })
             .where(eq(connections.id, connectionId));
-          throw new Error(
-            `Enable Banking returned an account with no uid for ${conn.institutionName ?? conn.institutionId ?? "this connection"}. Re-authorize the connection.`,
+          result.errors.push(
+            `bad-uid: Enable Banking returned an account with an invalid uid (${JSON.stringify(sessionAccount.uid)}). Re-authorize the connection.`,
           );
+          continue;
         }
         const details = await client.getAccountDetails(sessionAccount.uid);
         const balancesResp = await client.getAccountBalances(sessionAccount.uid);
@@ -150,7 +188,7 @@ export async function syncEnableBankingConnection(
           normalizeCurrency(interim?.balance_amount.currency) ??
           "EUR";
 
-        const accountValues: NewAccount = {
+        const baseAccountValues: NewAccount = {
           connectionId,
           externalId: sessionAccount.uid,
           type: "bank",
@@ -173,48 +211,158 @@ export async function syncEnableBankingConnection(
           },
         };
 
-        const existingByIban = iban
+        const [existingByExternal] = await db
+          .select()
+          .from(accounts)
+          .where(
+            and(
+              eq(accounts.connectionId, connectionId),
+              eq(accounts.externalId, sessionAccount.uid),
+            ),
+          );
+
+        const existingByIban = iban && !existingByExternal
           ? await db
               .select()
               .from(accounts)
-              .where(and(eq(accounts.connectionId, connectionId), eq(accounts.iban, iban)))
+              .where(
+                and(
+                  inArray(accounts.connectionId, ebConnectionIds),
+                  eq(accounts.iban, iban),
+                ),
+              )
           : [];
 
+        if (existingByIban.length > 1) {
+          result.errors.push(
+            `iban-ambiguous: ${iban} matches ${existingByIban.length} accounts across connections; refusing to re-point automatically. Resolve manually before continuing.`,
+          );
+          continue;
+        }
+
+        let resolved = existingByExternal ?? existingByIban[0] ?? null;
+
+        if (
+          resolved &&
+          (resolved.connectionId !== connectionId ||
+            resolved.externalId !== sessionAccount.uid)
+        ) {
+          const collision =
+            resolved.connectionId === connectionId
+              ? null
+              : (
+                  await db
+                    .select({ id: accounts.id })
+                    .from(accounts)
+                    .where(
+                      and(
+                        eq(accounts.connectionId, connectionId),
+                        eq(accounts.externalId, sessionAccount.uid),
+                      ),
+                    )
+                )[0] ?? null;
+          if (collision && collision.id !== resolved.id) {
+            result.errors.push(
+              `merge-conflict: ${iban ?? sessionAccount.uid} already exists on this connection under a different account row; skipping cross-connection merge.`,
+            );
+            continue;
+          }
+          const previousConnectionId = resolved.connectionId;
+          const repointed = await db
+            .update(accounts)
+            .set({
+              connectionId,
+              externalId: sessionAccount.uid,
+            })
+            .where(eq(accounts.id, resolved.id))
+            .returning();
+          resolved = repointed[0] ?? resolved;
+          if (previousConnectionId && previousConnectionId !== connectionId) {
+            const [oldConn] = await db
+              .select()
+              .from(connections)
+              .where(eq(connections.id, previousConnectionId));
+            if (oldConn) {
+              await db
+                .update(connections)
+                .set({
+                  status: "revoked",
+                  metadata: {
+                    ...((oldConn.metadata as Record<string, unknown> | null) ?? {}),
+                    replacedBy: connectionId,
+                    replacedAt: new Date().toISOString(),
+                  },
+                  updatedAt: new Date(),
+                })
+                .where(eq(connections.id, previousConnectionId));
+            }
+          }
+        }
+
+        if (resolved?.archived) {
+          await db
+            .update(accounts)
+            .set({
+              metadata: {
+                ...((resolved.metadata as Record<string, unknown> | null) ?? {}),
+                lastDiscoveredAt: new Date().toISOString(),
+              },
+            })
+            .where(eq(accounts.id, resolved.id));
+          continue;
+        }
+
         let accountId: string;
-        if (existingByIban.length > 0 && existingByIban[0].externalId !== sessionAccount.uid) {
+        let fullSyncForThisAccount = false;
+        if (!resolved) {
+          await db
+            .insert(accounts)
+            .values({
+              ...baseAccountValues,
+              archived: true,
+              balance: null,
+              balanceUpdatedAt: null,
+              metadata: {
+                ...(baseAccountValues.metadata ?? {}),
+                discoveredAt: new Date().toISOString(),
+                pendingApproval: true,
+              },
+            })
+            .onConflictDoNothing({
+              target: [accounts.connectionId, accounts.externalId],
+            });
+          continue;
+        } else {
+          const prevMeta =
+            (resolved.metadata as Record<string, unknown> | null) ?? {};
+          fullSyncForThisAccount = prevMeta.fullSyncRequested === true;
+          const currencyOverridden = prevMeta.currencyOverride === true;
+          const mergedMetadata: Record<string, unknown> = {
+            ...prevMeta,
+            ...(baseAccountValues.metadata ?? {}),
+          };
+          if (fullSyncForThisAccount) delete mergedMetadata.fullSyncRequested;
+          if (currencyOverridden) mergedMetadata.currencyOverride = true;
           const updated = await db
             .update(accounts)
             .set({
-              externalId: sessionAccount.uid,
-              name: accountValues.name,
-              currency: accountValues.currency,
-              balance: accountValues.balance,
-              balanceUpdatedAt: accountValues.balanceUpdatedAt,
-              metadata: accountValues.metadata,
+              name: baseAccountValues.name,
+              currency: currencyOverridden
+                ? resolved.currency
+                : baseAccountValues.currency,
+              iban: baseAccountValues.iban,
+              balance: baseAccountValues.balance,
+              balanceUpdatedAt: baseAccountValues.balanceUpdatedAt,
+              metadata: mergedMetadata,
             })
-            .where(eq(accounts.id, existingByIban[0].id))
+            .where(eq(accounts.id, resolved.id))
             .returning();
           accountId = updated[0].id;
-        } else {
-          const upserted = await db
-            .insert(accounts)
-            .values(accountValues)
-            .onConflictDoUpdate({
-              target: [accounts.connectionId, accounts.externalId],
-              set: {
-                name: accountValues.name,
-                currency: accountValues.currency,
-                iban: accountValues.iban,
-                balance: accountValues.balance,
-                balanceUpdatedAt: accountValues.balanceUpdatedAt,
-                metadata: accountValues.metadata,
-              },
-            })
-            .returning();
-          accountId = upserted[0].id;
         }
 
-        const dateFrom = computeDateFrom(conn.lastSyncAt);
+        const dateFrom = fullSyncForThisAccount
+          ? toIsoDate(new Date(Date.now() - TX_LOOKBACK_DAYS * 86_400_000))
+          : computeDateFrom(conn.lastSyncAt);
         let continuationKey: string | undefined;
         let pages = 0;
         do {
@@ -224,11 +372,11 @@ export async function syncEnableBankingConnection(
             strategy: "longest",
             continuationKey,
           });
-          for (const t of resp.transactions) {
-            const externalId = pickExternalId(
-              t,
-              `${sessionAccount.uid}:${t.booking_date ?? t.value_date ?? ""}:${t.transaction_amount.amount}:${t.credit_debit_indicator}`,
-            );
+          for (let txIndex = 0; txIndex < resp.transactions.length; txIndex++) {
+            const t = resp.transactions[txIndex];
+            if (Number(t.transaction_amount.amount) === 0) continue;
+            const fallbackId = `${sessionAccount.uid}:${t.booking_date ?? t.value_date ?? ""}:${t.transaction_amount.amount}:${t.credit_debit_indicator}:${t.entry_reference ?? `p${pages}-i${txIndex}`}`;
+            const externalId = pickExternalId(t, fallbackId);
             const txValues: NewTransaction = {
               accountId,
               externalId,
@@ -304,6 +452,11 @@ export async function syncEnableBankingConnection(
       } catch (err) {
         result.errors.push(`transfers: ${err instanceof Error ? err.message : String(err)}`);
       }
+    }
+    try {
+      await repairTransferGroups();
+    } catch (err) {
+      result.errors.push(`repair: ${err instanceof Error ? err.message : String(err)}`);
     }
     result.postProcess = { fxBackfilled, fxSkipped, categorized, routedMirrors, transfersMatched };
 

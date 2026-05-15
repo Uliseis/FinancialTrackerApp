@@ -11,11 +11,7 @@ const createSchema = z.object({
   accountId: z.string().uuid(),
   asOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   marketValueEur: z.string().regex(/^\d+(\.\d{1,2})?$/),
-  cashValueEur: z
-    .string()
-    .regex(/^\d+(\.\d{1,2})?$/)
-    .optional()
-    .nullable(),
+  cashValueEur: z.string().regex(/^\d+(\.\d{1,2})?$/),
   notes: z.string().trim().max(500).optional().nullable(),
 });
 
@@ -46,9 +42,9 @@ export async function POST(req: Request) {
 
   const asOf = new Date(parsed.data.asOf + "T00:00:00.000Z");
   const notes = parsed.data.notes?.trim() ? parsed.data.notes.trim() : null;
-  const cashValueEur = parsed.data.cashValueEur ?? null;
+  const cashValueEur = parsed.data.cashValueEur;
 
-  if (cashValueEur != null && Number(cashValueEur) > Number(parsed.data.marketValueEur)) {
+  if (Number(cashValueEur) > Number(parsed.data.marketValueEur)) {
     return NextResponse.json(
       { error: "cash portion cannot exceed total market value" },
       { status: 400 },

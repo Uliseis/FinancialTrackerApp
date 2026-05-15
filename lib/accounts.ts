@@ -1,4 +1,4 @@
-import { and, eq, gt, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
 import { sharedExpenseGroups, transactions, type Account } from "@/db/schema";
@@ -63,7 +63,7 @@ async function sumSinceByAccount(
         total: sql<string>`coalesce(sum(${col}), 0)`,
       })
       .from(transactions)
-      .where(and(eq(transactions.accountId, accountId), gt(transactions.bookedAt, since)));
+      .where(and(eq(transactions.accountId, accountId), gte(transactions.bookedAt, since)));
     out.set(accountId, Number(rows[0]?.total ?? 0));
   }
   return out;
@@ -210,7 +210,7 @@ export async function computeBalanceDrifts(
     const [row] = await db
       .select({ total: sql<string>`coalesce(sum(${transactions.amount}), 0)` })
       .from(transactions)
-      .where(and(eq(transactions.accountId, p.id), gt(transactions.bookedAt, p.since)));
+      .where(and(eq(transactions.accountId, p.id), gte(transactions.bookedAt, p.since)));
     const computed = p.anchor + Number(row?.total ?? 0);
     out.set(p.id, p.bank - computed);
   }

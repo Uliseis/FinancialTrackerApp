@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { connections } from "@/db/schema";
-import { desc } from "drizzle-orm";
+import { accounts, connections } from "@/db/schema";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { AlertCircle, CheckCircle2, HelpCircle, Plug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +16,7 @@ import {
 import { PageHeader } from "@/components/page-header";
 import { formatDate } from "@/lib/utils";
 import { ConnectionRowActions } from "./row-actions";
+import { PendingApprovalBanner, type PendingAccount } from "./pending-approval-banner";
 
 export const dynamic = "force-dynamic";
 
@@ -92,6 +93,39 @@ export default async function ConnectionsPage({
     .from(connections)
     .orderBy(desc(connections.createdAt));
 
+  const pendingRows = await db
+    .select({
+      id: accounts.id,
+      name: accounts.name,
+      iban: accounts.iban,
+      type: accounts.type,
+      metadata: accounts.metadata,
+      connectionId: accounts.connectionId,
+      institutionName: connections.institutionName,
+    })
+    .from(accounts)
+    .leftJoin(connections, eq(connections.id, accounts.connectionId))
+    .where(
+      and(
+        eq(accounts.archived, true),
+        sql`${accounts.metadata}->>'pendingApproval' = 'true'`,
+      ),
+    );
+
+  const pendingAccounts: PendingAccount[] = pendingRows.map((r) => {
+    const meta = (r.metadata as Record<string, unknown> | null) ?? {};
+    return {
+      id: r.id,
+      name: r.name,
+      iban: r.iban,
+      type: r.type,
+      discoveredAt:
+        typeof meta.discoveredAt === "string" ? meta.discoveredAt : null,
+      connectionId: r.connectionId,
+      institutionName: r.institutionName,
+    };
+  });
+
   return (
     <>
       <PageHeader
@@ -124,6 +158,8 @@ export default async function ConnectionsPage({
             description={error}
           />
         ) : null}
+
+        <PendingApprovalBanner accounts={pendingAccounts} />
 
         {rows.length === 0 ? (
           <div className="rounded-lg border border-dashed border-[var(--color-border)] p-10 text-center">
