@@ -178,6 +178,8 @@ export function TransactionsTable({
   const [showTransfers, setShowTransfers] = useState(initialShowTransfers);
   const [showSharedAs, setShowSharedAs] = useState<"net" | "gross">("net");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [pairing, setPairing] = useState(false);
   const [linkTarget, setLinkTarget] = useState<TransactionsTableRow | null>(null);
   const [refundTarget, setRefundTarget] = useState<TransactionsTableRow | null>(null);
   const [classifyTarget, setClassifyTarget] = useState<TransactionsTableRow | null>(null);
@@ -210,6 +212,7 @@ export function TransactionsTable({
   useEffect(() => setDirection(initialDirection), [initialDirection]);
   useEffect(() => setFrom(initialFrom), [initialFrom]);
   useEffect(() => setTo(initialTo), [initialTo]);
+  useEffect(() => setSelectedIds(new Set()), [rows]);
 
   const catById = useMemo(
     () => new Map(categories.map((c) => [c.id, c])),
@@ -377,6 +380,59 @@ export function TransactionsTable({
       await p;
       startTransition(() => router.refresh());
     } catch {}
+  }
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const rowById = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
+  const selectedRows = useMemo(
+    () =>
+      Array.from(selectedIds)
+        .map((id) => rowById.get(id))
+        .filter((r): r is TransactionsTableRow => !!r),
+    [selectedIds, rowById],
+  );
+
+  const pairValidation = useMemo(() => {
+    if (selectedRows.length !== 2) return { ok: false, reason: "" } as const;
+    const [a, b] = selectedRows;
+    if (a.direction === b.direction)
+      return { ok: false, reason: "Need one debit + one credit" } as const;
+    if (a.amountEur == null || b.amountEur == null)
+      return { ok: false, reason: "EUR amount not yet computed" } as const;
+    if (Math.abs(Math.abs(Number(a.amountEur)) - Math.abs(Number(b.amountEur))) > 0.01)
+      return { ok: false, reason: "Amounts differ" } as const;
+    if (a.sharedExpenseGroupId || b.sharedExpenseGroupId)
+      return { ok: false, reason: "Already in a shared expense" } as const;
+    return { ok: true, reason: "" } as const;
+  }, [selectedRows]);
+
+  async function pairSelected() {
+    if (selectedRows.length !== 2) return;
+    setPairing(true);
+    try {
+      const res = await fetch("/api/transactions/pair-transfer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ txIds: selectedRows.map((r) => r.id) }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof data?.error === "string" ? data.error : "Failed");
+      toast.success("Paired as transfer — excluded from monthly cash flow");
+      setSelectedIds(new Set());
+      startTransition(() => router.refresh());
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed");
+    } finally {
+      setPairing(false);
+    }
   }
 
   async function runRules() {
@@ -561,10 +617,45 @@ export function TransactionsTable({
         ) : null}
       </div>
 
+      {selectedIds.size > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+          <span className="text-muted-foreground">
+            {selectedIds.size} selected
+            {selectedIds.size === 2 && !pairValidation.ok && pairValidation.reason
+              ? ` · ${pairValidation.reason}`
+              : null}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={pairSelected}
+              disabled={!pairValidation.ok || pairing}
+              title={
+                selectedIds.size === 2 && !pairValidation.ok
+                  ? pairValidation.reason
+                  : "Pair the two selected rows into a single transfer group (excluded from cash flow)"
+              }
+            >
+              <ArrowLeftRight className="h-4 w-4" />
+              {pairing ? "Pairing…" : "Mark as transfer pair"}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setSelectedIds(new Set())}
+              disabled={pairing}
+            >
+              Clear
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="rounded-lg border border-border">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
+              <TableHead className="w-[36px]" aria-label="Select" />
               <TableHead className="w-[110px]">Date</TableHead>
               <TableHead>Account</TableHead>
               <TableHead>Description</TableHead>
@@ -577,7 +668,7 @@ export function TransactionsTable({
             {rows.length === 0 ? (
               <TableRow className="hover:bg-transparent">
                 <TableCell
-                  colSpan={6}
+                  colSpan={7}
                   className="py-10 text-center text-sm text-muted-foreground"
                 >
                   Nothing matches.
@@ -597,6 +688,15 @@ export function TransactionsTable({
                   group && isPrimary && showSharedAs === "net";
                 return (
                   <TableRow key={r.id} className={r.isTransfer ? "opacity-70" : ""}>
+                    <TableCell className="w-[36px]">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-current"
+                        checked={selectedIds.has(r.id)}
+                        onChange={() => toggleSelected(r.id)}
+                        aria-label="Select row"
+                      />
+                    </TableCell>
                     <TableCell className="tabular text-sm text-muted-foreground">
                       {formatDate(r.bookedAt)}
                     </TableCell>
