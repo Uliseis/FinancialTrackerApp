@@ -16,3 +16,17 @@ dist
 next-env.d.ts
 *.tsbuildinfo
 .next/types
+
+# Xcode
+*.xcodeproj
+*.xcworkspace
+DerivedData/
+.swiftpm/
+xcuserdata/
+*.xcuserstate
+.build/
+Packages/
+
+# macOS
+.AppleDouble
+.LSOverride
