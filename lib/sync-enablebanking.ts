@@ -27,6 +27,10 @@ import { detectTransfers, repairTransferGroups } from "@/lib/transfers";
 import { backfillTransactionEurAmounts } from "@/lib/fx";
 import { applyTransferRoutes } from "@/lib/transfer-routes";
 import { getDefaultSpaceId } from "@/lib/spaces";
+import {
+  assertTransferInvariants,
+  formatInvariantViolations,
+} from "@/lib/transfer-invariants";
 
 const STALE_RUN_MS = 10 * 60 * 1000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -457,6 +461,16 @@ export async function syncEnableBankingConnection(
       await repairTransferGroups();
     } catch (err) {
       result.errors.push(`repair: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    try {
+      const violations = await assertTransferInvariants();
+      if (violations.length > 0) {
+        result.errors.push(`invariants: ${formatInvariantViolations(violations)}`);
+      }
+    } catch (err) {
+      result.errors.push(
+        `invariants-check: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
     result.postProcess = { fxBackfilled, fxSkipped, categorized, routedMirrors, transfersMatched };
 

@@ -2,6 +2,7 @@ import { and, eq, gte, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
 import { accounts, transactions } from "@/db/schema";
+import { isUsableForTransfers } from "@/lib/account-status";
 
 const DEFAULT_LOOKBACK_DAYS = 30;
 const PAIR_WINDOW_DAYS = 3;
@@ -119,12 +120,6 @@ export interface RepairResult {
   orphansFixed: number;
 }
 
-function isInvalid(
-  a: { spaceId: string | null; excluded: boolean; archived: boolean } | undefined,
-): boolean {
-  return !a || a.excluded || a.archived;
-}
-
 export async function repairTransferGroups(
   opts: { accountId?: string } = {},
 ): Promise<RepairResult> {
@@ -161,7 +156,6 @@ export async function repairTransferGroups(
         groupId: transactions.transferGroupId,
         accountId: transactions.accountId,
         spaceId: accounts.spaceId,
-        excluded: accounts.excluded,
         archived: accounts.archived,
         routedFromTxId: transactions.routedFromTxId,
       })
@@ -175,7 +169,6 @@ export async function repairTransferGroups(
         id: string;
         accountId: string;
         spaceId: string | null;
-        excluded: boolean;
         archived: boolean;
         routedFromTxId: string | null;
       }>
@@ -187,7 +180,6 @@ export async function repairTransferGroups(
         id: m.id,
         accountId: m.accountId,
         spaceId: m.spaceId,
-        excluded: m.excluded ?? false,
         archived: m.archived ?? false,
         routedFromTxId: m.routedFromTxId,
       });
@@ -197,7 +189,7 @@ export async function repairTransferGroups(
     const orphansToReset: string[] = [];
     for (const [, group] of byGroup) {
       const spaces = new Set(group.map((g) => g.spaceId));
-      const anyBad = group.some((g) => g.excluded || g.archived);
+      const anyBad = group.some((g) => g.archived);
       const hasMirror = group.some((g) => g.routedFromTxId != null);
       if (spaces.size > 1 || anyBad) {
         for (const m of group) txsToUnflag.push(m.id);
@@ -245,10 +237,8 @@ export async function repairTransferGroups(
       mirrorId: transactions.id,
       sourceId: sourceTx.id,
       mirrorSpace: accounts.spaceId,
-      mirrorExcluded: accounts.excluded,
       mirrorArchived: accounts.archived,
       sourceSpace: sourceAcc.spaceId,
-      sourceExcluded: sourceAcc.excluded,
       sourceArchived: sourceAcc.archived,
     })
     .from(transactions)
@@ -262,17 +252,15 @@ export async function repairTransferGroups(
   for (const m of mirrors) {
     if (!m.sourceId) continue;
     const mirrorAcc = {
-      spaceId: m.mirrorSpace,
-      excluded: m.mirrorExcluded ?? false,
+      excluded: false,
       archived: m.mirrorArchived ?? false,
     };
     const srcAcc = {
-      spaceId: m.sourceSpace,
-      excluded: m.sourceExcluded ?? false,
+      excluded: false,
       archived: m.sourceArchived ?? false,
     };
-    const crossSpace = mirrorAcc.spaceId !== srcAcc.spaceId;
-    if (crossSpace || isInvalid(mirrorAcc) || isInvalid(srcAcc)) {
+    const crossSpace = m.mirrorSpace !== m.sourceSpace;
+    if (crossSpace || !isUsableForTransfers(mirrorAcc) || !isUsableForTransfers(srcAcc)) {
       mirrorIdsToDelete.push(m.mirrorId);
       sourceIdsToReset.push(m.sourceId);
     }

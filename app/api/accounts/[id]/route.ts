@@ -84,10 +84,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
   await db.update(accounts).set(updates).where(eq(accounts.id, id));
 
+  // `excluded` no longer matters for transfer integrity — see lib/account-status.ts.
   const triggersRepair =
-    "spaceId" in parsed.data ||
-    "excluded" in parsed.data ||
-    "archived" in parsed.data;
+    "spaceId" in parsed.data || "archived" in parsed.data;
   let repair: Awaited<ReturnType<typeof repairTransferGroups>> | null = null;
   if (triggersRepair) {
     repair = await repairTransferGroups({ accountId: id });
