@@ -149,6 +149,12 @@ public final class Account {
     @Relationship(deleteRule: .cascade, inverse: \PortfolioValuation.account)
     public var valuations: [PortfolioValuation] = []
 
+    @Relationship(deleteRule: .cascade, inverse: \TransferRoute.targetAccount)
+    public var incomingRoutes: [TransferRoute] = []
+
+    @Relationship(deleteRule: .cascade, inverse: \TransferRoute.sourceAccount)
+    public var outgoingRoutes: [TransferRoute] = []
+
     public init(
         id: UUID = UUID(),
         connection: Connection? = nil,
@@ -411,6 +417,11 @@ public final class Transaction {
     @Relationship(deleteRule: .cascade, inverse: \Transaction.routedFromTx)
     public var mirrors: [Transaction] = []
 
+    @Relationship(deleteRule: .cascade, inverse: \SharedExpenseGroup.primaryTx)
+    public var primaryForGroup: SharedExpenseGroup?
+
+    public var desc: String? { transactionDescription }
+
     public init(
         id: UUID = UUID(),
         account: Account? = nil,
@@ -526,7 +537,7 @@ public final class SyncRun {
     public var connection: Connection?
     public var startedAt: Date
     public var finishedAt: Date?
-    public var status: String
+    public var status: SyncRunStatus
     public var insertedTransactions: Int
     public var error: String?
     public var rawJSON: Data?
@@ -537,7 +548,7 @@ public final class SyncRun {
         connection: Connection? = nil,
         startedAt: Date = .now,
         finishedAt: Date? = nil,
-        status: String = "running",
+        status: SyncRunStatus = .running,
         insertedTransactions: Int = 0,
         error: String? = nil,
         rawJSON: Data? = nil

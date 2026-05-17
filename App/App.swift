@@ -1,7 +1,10 @@
 import SwiftUI
 import SwiftData
 import LocalAuthentication
+import BackgroundTasks
 import CoreModel
+
+private let bgRefreshTaskId = "com.uliseis.financialtracker.refresh"
 
 @main
 struct FinancialTrackerApp: App {
@@ -10,6 +13,9 @@ struct FinancialTrackerApp: App {
     init() {
         do {
             let schema = Schema(CoreModelSchema.allTypes)
+            // DO NOT change cloudKitDatabase. SwiftData drops @Attribute(.unique) the moment
+            // CloudKit mirroring is enabled, which would force a destructive migration on
+            // every model. Sync to iCloud is handled out-of-band by CoreSync (CKSyncEngine).
             let config = ModelConfiguration(
                 schema: schema,
                 isStoredInMemoryOnly: false,
@@ -18,6 +24,13 @@ struct FinancialTrackerApp: App {
             modelContainer = try ModelContainer(for: schema, configurations: [config])
         } catch {
             fatalError("ModelContainer init failed: \(error)")
+        }
+
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: bgRefreshTaskId,
+            using: nil
+        ) { task in
+            task.setTaskCompleted(success: true)
         }
     }
 
@@ -30,6 +43,7 @@ struct FinancialTrackerApp: App {
 }
 
 struct RootView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var unlocked = false
     @State private var authError: String?
 
@@ -42,10 +56,17 @@ struct RootView: View {
             }
         }
         .task { authenticate() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background {
+                unlocked = false
+                authError = nil
+            }
+        }
     }
 
     private func authenticate() {
         let context = LAContext()
+        context.localizedFallbackTitle = "Enter passcode"
         var error: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
             authError = error?.localizedDescription ?? "Biometrics unavailable"

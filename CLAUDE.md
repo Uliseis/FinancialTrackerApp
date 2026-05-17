@@ -65,7 +65,8 @@ swift test --package-path Core   # run Core package tests from CLI
 ## Conventions
 
 - **Inverse relationships explicit.** SwiftData wants the `@Relationship(inverse:)` declared on one side; pick the parent and own it there.
-- **Recursive cascades** (`Transaction.routedFromTx`, `Category.parent`) are real and intentional. Don't downgrade to `.nullify` without reason.
+- **Never call `ctx.delete(model)` directly on `Account`, `Transaction`, `SharedExpenseGroup`, or `Connection`.** SwiftData's `@Relationship(deleteRule: .cascade)` is unreliable — verified in tests. Go through `CoreLogic.delete*(_:in:)` helpers; they fetch related objects by predicate and delete explicitly. The `@Relationship` cascade declarations on the model file are documented intent only.
+- **Recursive cascades** (`Transaction.routedFromTx`, `Category.parent`) are real and intentional. Don't downgrade to `.nullify` without reason — the cascade helper is what actually enforces them.
 - **Composite uniqueness** (e.g. `Transaction(account.id, externalId)`) is enforced in code, not by SwiftData. Insert paths must check first or rely on `CKRecord.ID` name encoding.
 - **jsonb columns** become `Data?` Codable blobs. Anything load-bearing (like `routeId`) gets denormalized to a first-class column.
 - **All Core code is platform-agnostic** (iOS + macOS) so tests run on the Mac without booting a simulator.
@@ -73,7 +74,8 @@ swift test --package-path Core   # run Core package tests from CLI
 ## What's done vs pending
 
 - ✅ Step 0 — scaffold (xcodegen, Core package, 14 `@Model` types, App skeleton)
-- ⏳ Step 1 — port `lib/fx.ts` to `CoreLogic/FX` (ECB XML parser + EUR conversion). First green test.
+- ✅ Step 1 — port `lib/fx.ts` to `CoreLogic/FX` (ECB XML parser + EUR conversion). 10 tests passing.
+- ✅ Step 1.5 — explicit cascade helpers in `CoreLogic/Cascades.swift`. 4 tests passing.
 - ⏳ Step 2 — port `lib/categorize.ts` + `lib/rules.ts`
 - ⏳ Step 3 — port `lib/transfers.ts` + `lib/transfer-routes.ts` + `lib/transfer-invariants.ts` (5 invariants → 5 tests)
 - ⏳ Step 4 — port `lib/shared-expenses.ts`
