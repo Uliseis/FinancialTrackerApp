@@ -76,9 +76,9 @@ swift test --package-path Core   # run Core package tests from CLI
 - ✅ Step 0 — scaffold (xcodegen, Core package, 14 `@Model` types, App skeleton)
 - ✅ Step 1 — port `lib/fx.ts` to `CoreLogic/FX` (ECB XML parser + EUR conversion). 10 tests passing.
 - ✅ Step 1.5 — explicit cascade helpers in `CoreLogic/Cascades.swift`. 4 tests passing.
-- ⏳ Step 2 — port `lib/categorize.ts` + `lib/rules.ts`
-- ⏳ Step 3 — port `lib/transfers.ts` + `lib/transfer-routes.ts` + `lib/transfer-invariants.ts` (5 invariants → 5 tests)
-- ⏳ Step 4 — port `lib/shared-expenses.ts`
+- ✅ Step 2 — port `lib/categorize.ts` + `lib/rules.ts` to `CoreLogic/Categorize`. 17 tests passing.
+- ✅ Step 3 — port `lib/transfers.ts` + `lib/transfer-routes.ts` + `lib/transfer-invariants.ts` + `lib/account-status.ts`. 39 tests passing.
+- ✅ Step 4 — port `lib/shared-expenses.ts` to `CoreLogic/SharedExpenses`. 24 tests passing.
 - ⏳ Step 5 — port `lib/investments.ts` (baseline, cost basis, series)
 - ⏳ Step 6 — Tools/ImportFromPostgres
 - ⏳ Step 7 — CoreSync (CKSyncEngine + LWW-except-manual resolver + BGProcessingTask)

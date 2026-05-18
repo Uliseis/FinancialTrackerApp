@@ -315,7 +315,8 @@ public final class TransferRoute {
 @Model
 public final class TransferGroup {
     @Attribute(.unique) public var id: UUID
-    public var auto: Bool
+    // nil = manually grouped by the user; non-nil = auto-paired (route or heuristic).
+    public var pairedAt: Date?
     public var route: TransferRoute?
     public var createdAt: Date
 
@@ -324,12 +325,12 @@ public final class TransferGroup {
 
     public init(
         id: UUID = UUID(),
-        auto: Bool = true,
+        pairedAt: Date? = nil,
         route: TransferRoute? = nil,
         createdAt: Date = .now
     ) {
         self.id = id
-        self.auto = auto
+        self.pairedAt = pairedAt
         self.route = route
         self.createdAt = createdAt
     }
