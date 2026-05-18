@@ -79,7 +79,7 @@ swift test --package-path Core   # run Core package tests from CLI
 - ✅ Step 2 — port `lib/categorize.ts` + `lib/rules.ts` to `CoreLogic/Categorize`. 17 tests passing.
 - ✅ Step 3 — port `lib/transfers.ts` + `lib/transfer-routes.ts` + `lib/transfer-invariants.ts` + `lib/account-status.ts`. 39 tests passing.
 - ✅ Step 4 — port `lib/shared-expenses.ts` to `CoreLogic/SharedExpenses`. 24 tests passing.
-- ⏳ Step 5 — port `lib/investments.ts` (baseline, cost basis, series)
+- ✅ Step 5 — port `lib/investments.ts` to `CoreLogic/Investments`. 17 tests passing.
 - ⏳ Step 6 — Tools/ImportFromPostgres
 - ⏳ Step 7 — CoreSync (CKSyncEngine + LWW-except-manual resolver + BGProcessingTask)
 - ⏳ Step 8 — Vercel proxy for Enable Banking
