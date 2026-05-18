@@ -1,0 +1,15 @@
+{
+  "name": "export-from-postgres",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "export": "node export.mjs"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -48,7 +48,8 @@ Core/                   Swift package. Pure-Swift business logic + models.
     CoreSync/           CKSyncEngine, BGProcessingTask, conflict resolver.
   Tests/
 Tools/
-  ImportFromPostgres/   One-shot SwiftPM executable. Reads JSON dump → writes CloudKit.
+  ImportFromPostgres/   One-shot SwiftPM executable. Reads JSON dump → writes local SwiftData .store file.
+  ExportFromPostgres/   Node .mjs script. Reads Neon Postgres → emits the JSON dump.
 Vercel/                 Thin TS proxy for Enable Banking. RS256 JWT signing.
 Spec/                   ← READ-ONLY. Frozen Next.js app + lib/*.ts spec. Live web app builds from here.
 project.yml             xcodegen spec.
@@ -80,7 +81,7 @@ swift test --package-path Core   # run Core package tests from CLI
 - ✅ Step 3 — port `lib/transfers.ts` + `lib/transfer-routes.ts` + `lib/transfer-invariants.ts` + `lib/account-status.ts`. 39 tests passing.
 - ✅ Step 4 — port `lib/shared-expenses.ts` to `CoreLogic/SharedExpenses`. 24 tests passing.
 - ✅ Step 5 — port `lib/investments.ts` to `CoreLogic/Investments`. 17 tests passing.
-- ⏳ Step 6 — Tools/ImportFromPostgres
+- ✅ Step 6 — `Tools/ImportFromPostgres` (Swift CLI) + `Tools/ExportFromPostgres` (Node script). JSON-dump contract via `DumpDocument`. Backfills: `categorySource` NULL→`.bank` with `_legacyCategorySourceNull` marker in `rawJSON`; `attributionMonth` falls back to `primaryTx.bookedAt` month-start. TransferGroups synthesized by exporter (`pairedAt = MIN(bookedAt)`, `routeId = MAX(raw->>'routeId')`). 15 importer tests passing.
 - ⏳ Step 7 — CoreSync (CKSyncEngine + LWW-except-manual resolver + BGProcessingTask)
 - ⏳ Step 8 — Vercel proxy for Enable Banking
 - ⏳ Step 9 — SwiftUI views

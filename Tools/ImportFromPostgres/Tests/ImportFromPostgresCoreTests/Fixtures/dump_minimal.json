@@ -1,0 +1,299 @@
+{
+  "exportedAt": "2024-02-01T00:00:00Z",
+  "schemaVersion": 1,
+  "connections": [
+    {
+      "id": "11111111-0000-0000-0000-000000000001",
+      "connector": "enablebanking",
+      "institutionId": "BANK_INST",
+      "institutionName": "Test Bank",
+      "sessionId": null,
+      "accessTokenEnc": null,
+      "refreshTokenEnc": null,
+      "metadata": null,
+      "status": "active",
+      "expiresAt": "2024-12-31T23:59:59Z",
+      "lastSyncAt": "2024-01-30T08:00:00Z",
+      "lastError": null,
+      "createdAt": "2024-01-01T00:00:00Z",
+      "updatedAt": "2024-01-30T08:00:00Z"
+    }
+  ],
+  "accountGroups": [
+    {
+      "id": "22222222-0000-0000-0000-000000000001",
+      "name": "Daily",
+      "color": "#1f6feb",
+      "kind": "cash",
+      "sortOrder": 0,
+      "createdAt": "2024-01-01T00:00:00Z",
+      "updatedAt": "2024-01-01T00:00:00Z"
+    },
+    {
+      "id": "22222222-0000-0000-0000-000000000002",
+      "name": "Brokerage",
+      "color": null,
+      "kind": "investment",
+      "sortOrder": 1,
+      "createdAt": "2024-01-01T00:00:00Z",
+      "updatedAt": "2024-01-01T00:00:00Z"
+    }
+  ],
+  "accountSpaces": [
+    {
+      "id": "33333333-0000-0000-0000-000000000001",
+      "name": "Personal",
+      "color": null,
+      "isDefault": true,
+      "sortOrder": 0,
+      "createdAt": "2024-01-01T00:00:00Z",
+      "updatedAt": "2024-01-01T00:00:00Z"
+    }
+  ],
+  "accounts": [
+    {
+      "id": "44444444-0000-0000-0000-000000000001",
+      "connectionId": "11111111-0000-0000-0000-000000000001",
+      "groupId": "22222222-0000-0000-0000-000000000001",
+      "spaceId": "33333333-0000-0000-0000-000000000001",
+      "externalId": "BANK_ACC_1",
+      "type": "bank",
+      "institution": "Test Bank",
+      "name": "Checking",
+      "currency": "EUR",
+      "iban": "ES0000000000000000000000",
+      "balance": "1234.5678",
+      "balanceUpdatedAt": "2024-01-30T08:00:00Z",
+      "metadata": null,
+      "archived": false,
+      "excluded": false,
+      "manualOpeningBalance": null,
+      "balanceAnchor": null,
+      "balanceAnchorAt": null,
+      "createdAt": "2024-01-01T00:00:00Z"
+    },
+    {
+      "id": "44444444-0000-0000-0000-000000000002",
+      "connectionId": null,
+      "groupId": "22222222-0000-0000-0000-000000000002",
+      "spaceId": "33333333-0000-0000-0000-000000000001",
+      "externalId": "BROKER_ACC_1",
+      "type": "broker",
+      "institution": "Trading212",
+      "name": "Invest",
+      "currency": "EUR",
+      "iban": null,
+      "balance": "50000.0000",
+      "balanceUpdatedAt": "2024-01-30T08:00:00Z",
+      "metadata": null,
+      "archived": false,
+      "excluded": false,
+      "manualOpeningBalance": null,
+      "balanceAnchor": null,
+      "balanceAnchorAt": null,
+      "createdAt": "2024-01-01T00:00:00Z"
+    }
+  ],
+  "categories": [
+    {
+      "id": "55555555-0000-0000-0000-000000000001",
+      "name": "Food",
+      "parentId": null,
+      "kind": "expense",
+      "color": "#ff8800",
+      "createdAt": "2024-01-01T00:00:00Z"
+    },
+    {
+      "id": "55555555-0000-0000-0000-000000000002",
+      "name": "Groceries",
+      "parentId": "55555555-0000-0000-0000-000000000001",
+      "kind": "expense",
+      "color": null,
+      "createdAt": "2024-01-01T00:00:00Z"
+    }
+  ],
+  "categoryRules": [
+    {
+      "id": "66666666-0000-0000-0000-000000000001",
+      "pattern": "MERCADONA",
+      "field": "description",
+      "matchType": "contains",
+      "categoryId": "55555555-0000-0000-0000-000000000002",
+      "priority": 10,
+      "createdAt": "2024-01-01T00:00:00Z"
+    }
+  ],
+  "transferRoutes": [
+    {
+      "id": "77777777-0000-0000-0000-000000000001",
+      "pattern": "TRANSFER TO INVEST",
+      "field": "description",
+      "matchType": "contains",
+      "sourceAccountId": "44444444-0000-0000-0000-000000000001",
+      "targetAccountId": "44444444-0000-0000-0000-000000000002",
+      "direction": "debit",
+      "priority": 0,
+      "enabled": true,
+      "createdAt": "2024-01-01T00:00:00Z",
+      "updatedAt": "2024-01-01T00:00:00Z"
+    }
+  ],
+  "budgets": [
+    {
+      "id": "88888888-0000-0000-0000-000000000001",
+      "categoryId": "55555555-0000-0000-0000-000000000002",
+      "amountEur": "300.00",
+      "period": "month",
+      "startsOn": "2024-01-01",
+      "active": true,
+      "createdAt": "2024-01-01T00:00:00Z",
+      "updatedAt": "2024-01-01T00:00:00Z"
+    }
+  ],
+  "fxRates": [
+    {
+      "id": "99999999-0000-0000-0000-000000000001",
+      "date": "2024-01-15",
+      "currency": "USD",
+      "rate": "1.08123456",
+      "createdAt": "2024-01-16T00:00:00Z"
+    }
+  ],
+  "transferGroups": [
+    {
+      "id": "aaaaaaaa-0000-0000-0000-000000000001",
+      "pairedAt": "2024-01-20T09:00:00Z",
+      "routeId": "77777777-0000-0000-0000-000000000001",
+      "createdAt": "2024-01-20T09:00:00Z"
+    }
+  ],
+  "transactions": [
+    {
+      "id": "bbbbbbbb-0000-0000-0000-000000000001",
+      "accountId": "44444444-0000-0000-0000-000000000001",
+      "externalId": "TX_TRANSFER_OUT",
+      "bookedAt": "2024-01-20T09:00:00Z",
+      "valueAt": "2024-01-20T09:00:00Z",
+      "amount": "-500.00",
+      "currency": "EUR",
+      "amountEur": "-500.00",
+      "fxRateUsed": null,
+      "direction": "debit",
+      "description": "TRANSFER TO INVEST",
+      "counterparty": null,
+      "categoryId": null,
+      "categorySource": "rule",
+      "isTransfer": true,
+      "transferGroupId": "aaaaaaaa-0000-0000-0000-000000000001",
+      "routedFromTxId": null,
+      "routeId": "77777777-0000-0000-0000-000000000001",
+      "sharedExpenseGroupId": null,
+      "raw": { "source": "fixture" },
+      "createdAt": "2024-01-20T09:00:01Z"
+    },
+    {
+      "id": "bbbbbbbb-0000-0000-0000-000000000002",
+      "accountId": "44444444-0000-0000-0000-000000000002",
+      "externalId": "TX_TRANSFER_IN_MIRROR",
+      "bookedAt": "2024-01-20T09:00:00Z",
+      "valueAt": null,
+      "amount": "500.00",
+      "currency": "EUR",
+      "amountEur": "500.00",
+      "fxRateUsed": null,
+      "direction": "credit",
+      "description": "TRANSFER FROM CHECKING",
+      "counterparty": null,
+      "categoryId": null,
+      "categorySource": "rule",
+      "isTransfer": true,
+      "transferGroupId": "aaaaaaaa-0000-0000-0000-000000000001",
+      "routedFromTxId": "bbbbbbbb-0000-0000-0000-000000000001",
+      "routeId": "77777777-0000-0000-0000-000000000001",
+      "sharedExpenseGroupId": null,
+      "raw": null,
+      "createdAt": "2024-01-20T09:00:02Z"
+    },
+    {
+      "id": "bbbbbbbb-0000-0000-0000-000000000003",
+      "accountId": "44444444-0000-0000-0000-000000000001",
+      "externalId": "TX_GROCERIES",
+      "bookedAt": "2024-01-22T17:30:00Z",
+      "valueAt": null,
+      "amount": "-87.45",
+      "currency": "EUR",
+      "amountEur": "-87.45",
+      "fxRateUsed": null,
+      "direction": "debit",
+      "description": "MERCADONA",
+      "counterparty": "Mercadona SA",
+      "categoryId": "55555555-0000-0000-0000-000000000002",
+      "categorySource": null,
+      "isTransfer": false,
+      "transferGroupId": null,
+      "routedFromTxId": null,
+      "routeId": null,
+      "sharedExpenseGroupId": "cccccccc-0000-0000-0000-000000000001",
+      "raw": { "bookkeeper": "test" },
+      "createdAt": "2024-01-22T17:30:01Z"
+    },
+    {
+      "id": "bbbbbbbb-0000-0000-0000-000000000004",
+      "accountId": "44444444-0000-0000-0000-000000000001",
+      "externalId": "TX_GROCERIES_SHARE",
+      "bookedAt": "2024-01-22T17:30:00Z",
+      "valueAt": null,
+      "amount": "43.72",
+      "currency": "EUR",
+      "amountEur": "43.72",
+      "fxRateUsed": null,
+      "direction": "credit",
+      "description": "REIMBURSEMENT",
+      "counterparty": null,
+      "categoryId": "55555555-0000-0000-0000-000000000002",
+      "categorySource": "manual",
+      "isTransfer": false,
+      "transferGroupId": null,
+      "routedFromTxId": null,
+      "routeId": null,
+      "sharedExpenseGroupId": "cccccccc-0000-0000-0000-000000000001",
+      "raw": null,
+      "createdAt": "2024-01-22T17:30:02Z"
+    }
+  ],
+  "sharedExpenseGroups": [
+    {
+      "id": "cccccccc-0000-0000-0000-000000000001",
+      "label": "Groceries split",
+      "primaryTxId": "bbbbbbbb-0000-0000-0000-000000000003",
+      "attributionMonth": "2024-01-01",
+      "createdAt": "2024-01-22T17:30:00Z",
+      "updatedAt": "2024-01-22T17:30:00Z"
+    }
+  ],
+  "portfolioValuations": [
+    {
+      "id": "dddddddd-0000-0000-0000-000000000001",
+      "accountId": "44444444-0000-0000-0000-000000000002",
+      "asOf": "2024-01-31T22:00:00Z",
+      "marketValueEur": "51234.56",
+      "cashValueEur": "1234.56",
+      "notes": null,
+      "createdAt": "2024-02-01T00:00:00Z",
+      "updatedAt": "2024-02-01T00:00:00Z"
+    }
+  ],
+  "syncRuns": [
+    {
+      "id": "eeeeeeee-0000-0000-0000-000000000001",
+      "connector": "enablebanking",
+      "connectionId": "11111111-0000-0000-0000-000000000001",
+      "startedAt": "2024-01-30T08:00:00Z",
+      "finishedAt": "2024-01-30T08:00:30Z",
+      "status": "success",
+      "insertedTransactions": 4,
+      "error": null,
+      "raw": null
+    }
+  ]
+}
