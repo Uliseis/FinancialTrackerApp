@@ -87,8 +87,11 @@ private struct AccountRow: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 12)
-            Text(eur.map { Money.format($0, currency: "EUR") } ?? "—")
-                .font(.body.monospacedDigit())
+            if let eur {
+                MoneyText(amount: eur)
+            } else {
+                Text("—").font(.body.monospacedDigit()).foregroundStyle(.secondary)
+            }
         }
         .opacity(account.excluded ? 0.55 : 1)
     }

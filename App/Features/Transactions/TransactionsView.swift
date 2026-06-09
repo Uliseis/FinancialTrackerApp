@@ -121,7 +121,7 @@ private struct TransactionRow: View {
 
     private var color: Color {
         let value = tx.amountEur ?? tx.amount
-        if value > 0 { return .green }
+        if value > 0 { return .positiveAmount }
         if value < 0 { return .primary }
         return .secondary
     }

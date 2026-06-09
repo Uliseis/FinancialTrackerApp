@@ -52,7 +52,7 @@ private struct ConnectionRow: View {
                 StatusBadge(status: connection.status)
                 if let hint = ExpiryHint.make(connection.expiresAt) {
                     Text(hint.label)
-                        .font(.caption2)
+                        .font(.caption)
                         .foregroundStyle(hint.warn ? .orange : .secondary)
                 }
             }
@@ -64,21 +64,16 @@ struct StatusBadge: View {
     let status: ConnectionStatus
 
     var body: some View {
-        Text(status.rawValue.capitalized)
-            .font(.caption2.weight(.medium))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(status.tint.opacity(0.18), in: Capsule())
-            .foregroundStyle(status.tint)
+        TagChip(text: status.rawValue.capitalized, tint: status.tint)
     }
 }
 
 extension ConnectionStatus {
     var tint: Color {
         switch self {
-        case .active: .green
+        case .active: .positiveAmount
         case .pending: .orange
-        case .expired, .error, .revoked: .red
+        case .expired, .error, .revoked: .negativeAmount
         }
     }
 }

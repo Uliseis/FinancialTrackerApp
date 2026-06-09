@@ -71,18 +71,17 @@ private struct SummaryCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Portfolio value").font(.caption).foregroundStyle(.secondary)
-                Text(Money.format(vm.totalValue, currency: "EUR"))
-                    .font(.largeTitle.weight(.semibold).monospacedDigit())
+                StatHeader(title: "Portfolio value", amount: vm.totalValue)
                 if vm.totalPositions > 0 || vm.totalCash > 0 {
                     Text("\(Money.format(vm.totalPositions, currency: "EUR")) pos · \(Money.format(vm.totalCash, currency: "EUR")) cash")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
             HStack {
-                metric("Invested", vm.totalCost.map { Money.format($0, currency: "EUR") } ?? "—")
+                MetricView(label: "Invested",
+                           value: vm.totalCost.map { Money.format($0, currency: "EUR") } ?? "—")
                 Spacer()
-                metric("P&L", pnlText, color: pnlColor)
+                MetricView(label: "P&L", value: pnlText, color: pnlColor)
             }
         }
         .padding(.vertical, 4)
@@ -97,14 +96,7 @@ private struct SummaryCard: View {
 
     private var pnlColor: Color {
         guard let pnl = vm.totalPnl else { return .secondary }
-        return pnl > 0 ? .green : (pnl < 0 ? .red : .primary)
-    }
-
-    private func metric(_ label: String, _ value: String, color: Color = .primary) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.caption).foregroundStyle(.secondary)
-            Text(value).font(.callout.monospacedDigit()).foregroundStyle(color)
-        }
+        return Theme.amountColor(pnl)
     }
 }
 
@@ -119,12 +111,15 @@ private struct AccountMetricRow: View {
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 2) {
-                Text(row.latestEur.map { Money.format($0, currency: "EUR") } ?? "—")
-                    .font(.body.monospacedDigit())
+                if let v = row.latestEur {
+                    MoneyText(amount: v)
+                } else {
+                    Text("—").font(.body.monospacedDigit()).foregroundStyle(.secondary)
+                }
                 if let pnl = row.pnlEur {
                     Text(pnlLabel(pnl, row.pnlPct))
                         .font(.caption.monospacedDigit())
-                        .foregroundStyle(pnl > 0 ? .green : (pnl < 0 ? .red : .secondary))
+                        .foregroundStyle(Theme.amountColor(pnl))
                 }
             }
         }
@@ -165,10 +160,6 @@ private struct PortfolioChart: View {
         .frame(height: 200)
         .padding(.vertical, 4)
     }
-}
-
-private extension Decimal {
-    var doubleValue: Double { NSDecimalNumber(decimal: self).doubleValue }
 }
 
 #if DEBUG

@@ -82,10 +82,18 @@ struct FinancialTrackerApp: App {
     }
 }
 
+// DEBUG-only screenshot/UI-test hook: launch with UITEST_DISABLE_AUTH=1 to skip the
+// biometric gate. Never compiled into release builds.
+#if DEBUG
+let authGateBypassed = ProcessInfo.processInfo.environment["UITEST_DISABLE_AUTH"] == "1"
+#else
+let authGateBypassed = false
+#endif
+
 struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(CloudKitSyncEngine.self) private var syncEngine
-    @State private var unlocked = false
+    @State private var unlocked = authGateBypassed
     @State private var authError: String?
 
     var body: some View {
@@ -99,9 +107,9 @@ struct RootView: View {
                 LockScreen(error: authError, onUnlock: authenticate)
             }
         }
-        .task { authenticate() }
+        .task { if !authGateBypassed { authenticate() } }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background {
+            if phase == .background, !authGateBypassed {
                 unlocked = false
                 authError = nil
             }

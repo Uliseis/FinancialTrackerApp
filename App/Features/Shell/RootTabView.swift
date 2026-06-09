@@ -1,21 +1,23 @@
 import SwiftUI
 
 struct RootTabView: View {
+    @State private var selection: AppTab = .initial
+
     var body: some View {
-        TabView {
-            Tab("Dashboard", systemImage: "rectangle.3.group") {
+        TabView(selection: $selection) {
+            Tab("Dashboard", systemImage: "rectangle.3.group", value: .dashboard) {
                 DashboardView()
             }
-            Tab("Accounts", systemImage: "creditcard") {
+            Tab("Accounts", systemImage: "creditcard", value: .accounts) {
                 AccountsView()
             }
-            Tab("Transactions", systemImage: "list.bullet.rectangle") {
+            Tab("Transactions", systemImage: "list.bullet.rectangle", value: .transactions) {
                 TransactionsView()
             }
-            Tab("Investments", systemImage: "chart.line.uptrend.xyaxis") {
+            Tab("Investments", systemImage: "chart.line.uptrend.xyaxis", value: .investments) {
                 InvestmentsView()
             }
-            Tab("Connections", systemImage: "link") {
+            Tab("Connections", systemImage: "link", value: .connections) {
                 ConnectionsView()
             }
         }

@@ -158,7 +158,3 @@ struct DashboardModel {
         return f
     }()
 }
-
-private extension Decimal {
-    var doubleValue: Double { NSDecimalNumber(decimal: self).doubleValue }
-}

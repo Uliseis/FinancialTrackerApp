@@ -26,7 +26,7 @@ struct ConnectionDetailView: View {
                     .map { $0.formatted(.relative(presentation: .named)) } ?? "Never")
                 if let err = connection.lastError, !err.isEmpty {
                     LabeledContent("Last error", value: err)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Color.negativeAmount)
                 }
             }
 
@@ -59,7 +59,7 @@ struct ConnectionDetailView: View {
                             if run.insertedTransactions > 0 {
                                 Text("+\(run.insertedTransactions)")
                                     .font(.callout.monospacedDigit())
-                                    .foregroundStyle(.green)
+                                    .foregroundStyle(Color.positiveAmount)
                             }
                         }
                     }
