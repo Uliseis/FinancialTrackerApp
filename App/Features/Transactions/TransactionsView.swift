@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import CoreModel
+import CoreLogic
 
 struct TransactionsView: View {
     @Query(sort: [SortDescriptor(\CoreModel.Transaction.bookedAt, order: .reverse),
@@ -12,9 +13,12 @@ struct TransactionsView: View {
     private var spaces: [AccountSpace]
 
     @AppStorage(SpaceSelection.key) private var currentSpaceId = ""
+    @Environment(\.modelContext) private var ctx
     @State private var search = ""
     @State private var showTransfers = false
     @State private var rows: [CoreModel.Transaction] = []
+    @State private var categorizing: CoreModel.Transaction?
+    @State private var managingCategories = false
 
     // Web parity: current space only, hide mirror legs (routedFromTx != nil) and
     // transfers (unless toggled). Cached in @State so filtering runs only when an
@@ -45,6 +49,14 @@ struct TransactionsView: View {
                     } label: {
                         TransactionRow(tx: tx)
                     }
+                    .swipeActions(edge: .leading) {
+                        Button {
+                            categorizing = tx
+                        } label: {
+                            Label("Categorize", systemImage: "tag")
+                        }
+                        .tint(.indigo)
+                    }
                 }
             }
             .scrollEdgeEffectStyle(.soft, for: .all)
@@ -59,7 +71,24 @@ struct TransactionsView: View {
                     .toggleStyle(.button)
                     .sensoryFeedback(.selection, trigger: showTransfers)
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button {
+                            managingCategories = true
+                        } label: {
+                            Label("Manage Categories", systemImage: "tag")
+                        }
+                    } label: {
+                        Label("More", systemImage: "ellipsis.circle")
+                    }
+                }
             }
+            .sheet(item: $categorizing) { tx in
+                CategoryPickerView(selectedId: tx.category?.id) { category in
+                    try? CoreLogic.Categories.recategorize(tx, to: category, in: ctx)
+                }
+            }
+            .sheet(isPresented: $managingCategories) { ManageCategoriesView() }
             .overlay {
                 if rows.isEmpty {
                     ContentUnavailableView(
@@ -69,7 +98,16 @@ struct TransactionsView: View {
                 }
             }
         }
-        .task { recompute() }
+        .task {
+            recompute()
+            #if DEBUG
+            switch UITestHooks.presentSheet {
+            case "categories", "category-edit": managingCategories = true
+            case "categorize": categorizing = rows.first
+            default: break
+            }
+            #endif
+        }
         .onChange(of: search) { recompute() }
         .onChange(of: showTransfers) { recompute() }
         .onChange(of: currentSpaceId) { recompute() }

@@ -51,6 +51,15 @@ public enum CategorySource: String, Codable, CaseIterable, Sendable {
     case manual
 }
 
+// Category.kind is stored as a String on the model; this is the typed view of the four
+// valid kinds (lib/income.ts CATEGORY_KINDS). "income" is load-bearing in Dashboard cash-flow.
+public enum CategoryKind: String, Codable, CaseIterable, Sendable {
+    case expense
+    case income
+    case reimbursement
+    case refund
+}
+
 public enum RuleField: String, Codable, CaseIterable, Sendable {
     case description
     case counterparty

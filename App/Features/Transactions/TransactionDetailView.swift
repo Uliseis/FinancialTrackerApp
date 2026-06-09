@@ -1,9 +1,12 @@
 import SwiftUI
 import SwiftData
 import CoreModel
+import CoreLogic
 
 struct TransactionDetailView: View {
     let tx: CoreModel.Transaction
+    @Environment(\.modelContext) private var ctx
+    @State private var picking = false
 
     var body: some View {
         Form {
@@ -30,7 +33,18 @@ struct TransactionDetailView: View {
             }
 
             Section("Classification") {
-                row("Category", tx.category?.name ?? "Uncategorized")
+                Button { picking = true } label: {
+                    LabeledContent("Category") {
+                        HStack(spacing: 8) {
+                            Text(tx.category?.name ?? "Uncategorized")
+                                .foregroundStyle(tx.category == nil ? .secondary : .primary)
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+                .tint(.primary)
                 row("Source", tx.categorySource.rawValue.capitalized)
                 if let cp = tx.counterparty, !cp.isEmpty {
                     row("Counterparty", cp)
@@ -73,6 +87,11 @@ struct TransactionDetailView: View {
         }
         .navigationTitle(tx.amountEur.map { Money.format($0, currency: "EUR") } ?? "Transaction")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $picking) {
+            CategoryPickerView(selectedId: tx.category?.id) { category in
+                try? CoreLogic.Categories.recategorize(tx, to: category, in: ctx)
+            }
+        }
     }
 
     private func row(_ label: String, _ value: String) -> some View {
