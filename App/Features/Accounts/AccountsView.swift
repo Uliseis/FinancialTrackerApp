@@ -20,6 +20,8 @@ struct AccountsView: View {
     @State private var sections: [GroupSection] = []
     @State private var spaceTotal: Decimal = 0
     @State private var managingSpaces = false
+    @State private var managingGroups = false
+    @State private var editingAccount: AccountEdit?
 
     // Cached current-space layout: non-archived accounts grouped by AccountGroup
     // (sortOrder), nil ⇒ Other. Built in rebuild() so grouping runs only on input or
@@ -40,7 +42,14 @@ struct AccountsView: View {
                 }
                 ForEach(sections) { section in
                     Section(section.title) {
-                        ForEach(section.accounts) { AccountRow(account: $0, eur: eurBalances[$0.id]) }
+                        ForEach(section.accounts) { account in
+                            Button {
+                                editingAccount = AccountEdit(account)
+                            } label: {
+                                AccountRow(account: account, eur: eurBalances[account.id])
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
             }
@@ -50,7 +59,17 @@ struct AccountsView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { SpacePicker() }
                 ToolbarItem(placement: .topBarTrailing) {
+                    Button { editingAccount = AccountEdit() } label: {
+                        Label("New Account", systemImage: "plus")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Menu {
+                        Button {
+                            managingGroups = true
+                        } label: {
+                            Label("Manage Groups", systemImage: "square.stack.3d.up")
+                        }
                         Button {
                             managingSpaces = true
                         } label: {
@@ -62,6 +81,8 @@ struct AccountsView: View {
                 }
             }
             .sheet(isPresented: $managingSpaces) { ManageSpacesView() }
+            .sheet(isPresented: $managingGroups) { ManageGroupsView() }
+            .sheet(item: $editingAccount, content: AccountFormView.init)
             .overlay {
                 if sections.isEmpty {
                     ContentUnavailableView("No Accounts", systemImage: "creditcard")
@@ -72,6 +93,12 @@ struct AccountsView: View {
             reload()
             #if DEBUG
             if UITestHooks.presentSheet?.hasPrefix("space") == true { managingSpaces = true }
+            if UITestHooks.presentSheet?.hasPrefix("group") == true { managingGroups = true }
+            if UITestHooks.presentSheet == "account-new" { editingAccount = AccountEdit() }
+            if UITestHooks.presentSheet == "account-edit",
+               let first = accounts.first(where: { !$0.archived }) {
+                editingAccount = AccountEdit(first)
+            }
             #endif
         }
         .onChange(of: currentSpaceId) { rebuild() }
