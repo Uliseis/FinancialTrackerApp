@@ -32,6 +32,23 @@ enum PreviewData {
         add("Revolut X", "Revolut", .crypto, "USD", 420.00, individual, excluded: true)
         add("Joint Account", "Revolut", .bank, "EUR", 27.00, shared)
 
+        let invGroup = AccountGroup(name: "Investment Accounts", kind: .investment)
+        ctx.insert(invGroup)
+        let broker = Account(
+            group: invGroup, space: individual, externalId: UUID().uuidString,
+            type: .broker, institution: "Trading212", name: "Trading212 Brokerage",
+            currency: "EUR"
+        )
+        ctx.insert(broker)
+        ctx.insert(PortfolioValuation(
+            account: broker, asOf: Date(timeIntervalSinceNow: -120 * 86_400),
+            marketValueEur: 8000, cashValueEur: 500
+        ))
+        ctx.insert(PortfolioValuation(
+            account: broker, asOf: Date(timeIntervalSinceNow: -2 * 86_400),
+            marketValueEur: 9450, cashValueEur: 300
+        ))
+
         let groceries = CoreModel.Category(name: "Groceries")
         ctx.insert(groceries)
         let checking = (try? ctx.fetch(FetchDescriptor<Account>(
