@@ -59,6 +59,7 @@ struct InvestmentsView: View {
         }
         .task { reload() }
         .onChange(of: currentSpaceId) { reload() }
+        .reloadOnModelChange { reload() }
     }
 
     private func filteredSeries(_ vm: InvestmentsModel) -> [CoreLogic.Investments.PortfolioSeriesPoint] {

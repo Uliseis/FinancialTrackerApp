@@ -68,6 +68,7 @@ struct AccountsView: View {
             }
         }
         .task { reload() }
+        .reloadOnModelChange { reload() }
     }
 
     private func reload() {

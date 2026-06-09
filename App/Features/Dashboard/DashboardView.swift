@@ -47,6 +47,7 @@ struct DashboardView: View {
         }
         .task { reload() }
         .onChange(of: currentSpaceId) { reload() }
+        .reloadOnModelChange { reload() }
     }
 }
 
@@ -98,6 +99,7 @@ private struct CashFlowSection: View {
 
     private struct FlowPoint: Identifiable {
         let id = UUID()
+        let date: Date
         let label: String
         let flow: String
         let value: Double
@@ -105,8 +107,8 @@ private struct CashFlowSection: View {
 
     private var points: [FlowPoint] {
         months.flatMap { m in
-            [FlowPoint(label: m.label, flow: "Income", value: m.income.doubleValue),
-             FlowPoint(label: m.label, flow: "Expense", value: m.expense.doubleValue)]
+            [FlowPoint(date: m.id, label: m.label, flow: "Income", value: m.income.doubleValue),
+             FlowPoint(date: m.id, label: m.label, flow: "Expense", value: m.expense.doubleValue)]
         }
     }
 
@@ -114,7 +116,7 @@ private struct CashFlowSection: View {
         Section("Cash flow") {
             Chart(points) { p in
                 BarMark(
-                    x: .value("Month", p.label),
+                    x: .value("Month", p.date, unit: .month),
                     y: .value("EUR", p.value)
                 )
                 .foregroundStyle(by: .value("Flow", p.flow))
@@ -122,8 +124,13 @@ private struct CashFlowSection: View {
                 .accessibilityLabel("\(p.label), \(p.flow)")
                 .accessibilityValue(Money.format(Decimal(p.value), currency: "EUR"))
             }
-            .chartXScale(domain: months.map { $0.label })
             .chartForegroundStyleScale(["Income": Color.positiveAmount, "Expense": Color.secondary])
+            .chartXAxis {
+                AxisMarks(values: .stride(by: .month)) { _ in
+                    AxisGridLine()
+                    AxisValueLabel(format: .dateTime.month(.abbreviated))
+                }
+            }
             .chartLegend(.visible)
             .frame(height: 200)
             .padding(.vertical, 4)

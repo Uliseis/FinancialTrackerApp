@@ -162,6 +162,33 @@ final class DashboardTests: XCTestCase {
         XCTAssertEqual(rows[0].total, 30)
     }
 
+    func testCategoryBreakdownOmitsNetZeroSegGroup() throws {
+        let ctx = try S.makeContext()
+        let a = S.makeAccount(ctx, name: "Checking")
+        let groceries = CoreModel.Category(name: "Groceries")
+        let dining = CoreModel.Category(name: "Dining")
+        ctx.insert(groceries)
+        ctx.insert(dining)
+        let g1 = S.makeTx(ctx, account: a, amount: -100, amountEur: -100, direction: .debit, bookedAt: now2606)
+        g1.category = groceries
+        // Fully reimbursed shared dinner: gross 50 − reimbursed 50 = net 0.
+        let primary = S.makeTx(ctx, account: a, amount: -50, amountEur: -50, direction: .debit, bookedAt: now2606)
+        primary.category = dining
+        let reimb = S.makeTx(ctx, account: a, amount: 50, amountEur: 50, direction: .credit, bookedAt: now2606)
+        let group = SharedExpenseGroup(label: "Split dinner", primaryTx: primary,
+                                       attributionMonth: D.monthStart(now2606))
+        ctx.insert(group)
+        primary.sharedExpenseGroup = group
+        reimb.sharedExpenseGroup = group
+        let rows = try D.categoryBreakdown(accountIds: [a.id], now: now2606, in: ctx)
+        // iOS divergence: a net-zero SEG group is omitted (the web spec emits a 0-total
+        // row). Only the standalone groceries spend remains.
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows[0].categoryId, groceries.id)
+        XCTAssertEqual(rows[0].total, 100)
+        XCTAssertFalse(rows.contains { $0.categoryId == dining.id })
+    }
+
     func testCategoryBreakdownExcludesOtherMonthsAndTransfers() throws {
         let ctx = try S.makeContext()
         let a = S.makeAccount(ctx, name: "Checking")
