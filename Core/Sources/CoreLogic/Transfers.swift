@@ -204,7 +204,7 @@ extension CoreLogic {
                 }
             }
             for m in toDelete {
-                CoreLogic.deleteTransaction(m, in: ctx)
+                ctx.delete(m)
                 result.mirrorsDeleted += 1
             }
             for s in sourcesToReset {

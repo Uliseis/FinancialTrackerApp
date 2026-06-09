@@ -173,7 +173,7 @@ extension CoreLogic {
 
         @MainActor
         public static func deleteGroup(_ group: SharedExpenseGroup, in ctx: ModelContext) throws {
-            CoreLogic.deleteSharedExpenseGroup(group, in: ctx)
+            ctx.delete(group)
             try ctx.save()
         }
 

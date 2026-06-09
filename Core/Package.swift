@@ -1,8 +1,6 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
-let swift5: [SwiftSetting] = [.swiftLanguageMode(.v5)]
-
 let package = Package(
     name: "Core",
     platforms: [.iOS("26.0"), .macOS("26.0")],
@@ -13,19 +11,18 @@ let package = Package(
         .library(name: "CoreSync", targets: ["CoreSync"]),
     ],
     targets: [
-        .target(name: "CoreModel", swiftSettings: swift5),
-        .target(name: "CoreLogic", dependencies: ["CoreModel"], swiftSettings: swift5),
-        .target(name: "CoreIntegrations", dependencies: ["CoreModel"], swiftSettings: swift5),
-        .target(name: "CoreSync", dependencies: ["CoreModel", "CoreLogic", "CoreIntegrations"], swiftSettings: swift5),
+        .target(name: "CoreModel"),
+        .target(name: "CoreLogic", dependencies: ["CoreModel"]),
+        .target(name: "CoreIntegrations", dependencies: ["CoreModel"]),
+        .target(name: "CoreSync", dependencies: ["CoreModel", "CoreLogic", "CoreIntegrations"]),
 
-        .testTarget(name: "CoreModelTests", dependencies: ["CoreModel"], swiftSettings: swift5),
+        .testTarget(name: "CoreModelTests", dependencies: ["CoreModel"]),
         .testTarget(
             name: "CoreLogicTests",
             dependencies: ["CoreLogic", "CoreModel"],
-            resources: [.copy("Fixtures")],
-            swiftSettings: swift5
+            resources: [.copy("Fixtures")]
         ),
-        .testTarget(name: "CoreIntegrationsTests", dependencies: ["CoreIntegrations", "CoreModel"], swiftSettings: swift5),
-        .testTarget(name: "CoreSyncTests", dependencies: ["CoreSync", "CoreModel", "CoreLogic"], swiftSettings: swift5),
+        .testTarget(name: "CoreIntegrationsTests", dependencies: ["CoreIntegrations", "CoreModel"]),
+        .testTarget(name: "CoreSyncTests", dependencies: ["CoreSync", "CoreModel", "CoreLogic"]),
     ]
 )

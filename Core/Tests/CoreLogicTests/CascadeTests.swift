@@ -3,6 +3,10 @@ import SwiftData
 @testable import CoreLogic
 @testable import CoreModel
 
+// Regression guard: on iOS 26 / macOS 26, SwiftData's @Relationship deleteRules
+// (.cascade and .nullify) fire reliably on a bare `ctx.delete` + save. This is what
+// lets us drive deletes straight through the model graph instead of hand-rolled
+// cascade helpers. If any of these fail on a future SDK, restore explicit helpers.
 @MainActor
 final class CascadeTests: XCTestCase {
     private func makeContext() throws -> ModelContext {
@@ -46,6 +50,8 @@ final class CascadeTests: XCTestCase {
         return tx
     }
 
+    // MARK: - .cascade
+
     func testDeletingSourceCascadesToMirrors() throws {
         let ctx = try makeContext()
         let src = makeAccount(ctx, name: "Source")
@@ -56,8 +62,7 @@ final class CascadeTests: XCTestCase {
         try ctx.save()
 
         let mirrorID = mirror.persistentModelID
-
-        CoreLogic.deleteTransaction(source, in: ctx)
+        ctx.delete(source)
         try ctx.save()
 
         let remaining = try ctx.fetch(FetchDescriptor<Transaction>())
@@ -73,11 +78,7 @@ final class CascadeTests: XCTestCase {
         let primary = makeTx(ctx, account: account, amount: 100, direction: .debit)
         let reimbursement = makeTx(ctx, account: account, amount: 30, direction: .credit)
 
-        let group = SharedExpenseGroup(
-            label: "Dinner",
-            primaryTx: primary,
-            attributionMonth: .now
-        )
+        let group = SharedExpenseGroup(label: "Dinner", primaryTx: primary, attributionMonth: .now)
         ctx.insert(group)
         primary.primaryForGroup = group
         reimbursement.sharedExpenseGroup = group
@@ -86,7 +87,7 @@ final class CascadeTests: XCTestCase {
         let groupID = group.persistentModelID
         let reimbursementID = reimbursement.persistentModelID
 
-        CoreLogic.deleteTransaction(primary, in: ctx)
+        ctx.delete(primary)
         try ctx.save()
 
         let groups = try ctx.fetch(FetchDescriptor<SharedExpenseGroup>())
@@ -106,17 +107,12 @@ final class CascadeTests: XCTestCase {
         let source = makeAccount(ctx, name: "Source")
         let target = makeAccount(ctx, name: "Target")
 
-        let route = TransferRoute(
-            pattern: "rent",
-            sourceAccount: source,
-            targetAccount: target
-        )
+        let route = TransferRoute(pattern: "rent", sourceAccount: source, targetAccount: target)
         ctx.insert(route)
         try ctx.save()
 
         let routeID = route.persistentModelID
-
-        CoreLogic.deleteAccount(target, in: ctx)
+        ctx.delete(target)
         try ctx.save()
 
         let remaining = try ctx.fetch(FetchDescriptor<TransferRoute>())
@@ -133,11 +129,87 @@ final class CascadeTests: XCTestCase {
         try ctx.save()
 
         let txID = tx.persistentModelID
-
-        CoreLogic.deleteAccount(account, in: ctx)
+        ctx.delete(account)
         try ctx.save()
 
         let remaining = try ctx.fetch(FetchDescriptor<Transaction>())
         XCTAssertFalse(remaining.contains { $0.persistentModelID == txID })
+    }
+
+    func testDeletingAccountCascadesToValuations() throws {
+        let ctx = try makeContext()
+        let account = makeAccount(ctx)
+        let v = PortfolioValuation(account: account, asOf: .now, marketValueEur: 1000)
+        ctx.insert(v)
+        try ctx.save()
+
+        let vID = v.persistentModelID
+        ctx.delete(account)
+        try ctx.save()
+
+        let remaining = try ctx.fetch(FetchDescriptor<PortfolioValuation>())
+        XCTAssertFalse(remaining.contains { $0.persistentModelID == vID })
+    }
+
+    // Connection → Accounts → Transactions, transitively, in one delete.
+    func testDeletingConnectionCascadesTransitively() throws {
+        let ctx = try makeContext()
+        let conn = Connection(connector: .enablebanking)
+        ctx.insert(conn)
+        let account = makeAccount(ctx)
+        account.connection = conn
+        let tx = makeTx(ctx, account: account)
+        try ctx.save()
+
+        let accountID = account.persistentModelID
+        let txID = tx.persistentModelID
+        ctx.delete(conn)
+        try ctx.save()
+
+        let accounts = try ctx.fetch(FetchDescriptor<Account>())
+        XCTAssertFalse(accounts.contains { $0.persistentModelID == accountID },
+                       "Account should cascade-delete with its connection")
+        let txs = try ctx.fetch(FetchDescriptor<Transaction>())
+        XCTAssertFalse(txs.contains { $0.persistentModelID == txID },
+                       "Transaction should cascade-delete transitively through its account")
+    }
+
+    // MARK: - .nullify
+
+    func testDeletingSharedExpenseGroupNullifiesMembers() throws {
+        let ctx = try makeContext()
+        let account = makeAccount(ctx)
+        let member = makeTx(ctx, account: account, amount: 30, direction: .credit)
+        let group = SharedExpenseGroup(label: "Trip", attributionMonth: .now)
+        ctx.insert(group)
+        member.sharedExpenseGroup = group
+        try ctx.save()
+
+        let memberID = member.persistentModelID
+        ctx.delete(group)
+        try ctx.save()
+
+        let txs = try ctx.fetch(FetchDescriptor<Transaction>())
+        let survivor = txs.first { $0.persistentModelID == memberID }
+        XCTAssertNotNil(survivor, "Member tx should survive group deletion")
+        XCTAssertNil(survivor?.sharedExpenseGroup, "Member's group ref should be nullified, not dangling")
+    }
+
+    func testDeletingConnectionNullifiesSyncRuns() throws {
+        let ctx = try makeContext()
+        let conn = Connection(connector: .enablebanking)
+        ctx.insert(conn)
+        let run = SyncRun(connector: .enablebanking, connection: conn)
+        ctx.insert(run)
+        try ctx.save()
+
+        let runID = run.persistentModelID
+        ctx.delete(conn)
+        try ctx.save()
+
+        let runs = try ctx.fetch(FetchDescriptor<SyncRun>())
+        let survivor = runs.first { $0.persistentModelID == runID }
+        XCTAssertNotNil(survivor, "SyncRun should survive connection deletion")
+        XCTAssertNil(survivor?.connection, "SyncRun's connection ref should be nullified, not dangling")
     }
 }

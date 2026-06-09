@@ -13,6 +13,7 @@ public final class CloudKitSyncEngine {
 
     private var engine: CKSyncEngine?
     private let ctx: ModelContext
+    private var saveObserver: SaveObserver?
 
     public private(set) var lastPullReport: PullReport?
     public private(set) var lastError: Error?
@@ -40,6 +41,16 @@ public final class CloudKitSyncEngine {
         let engine = CKSyncEngine(configuration)
         self.engine = engine
         enqueueZoneIfNeeded(engine: engine)
+        observeSaves(on: modelContainer.mainContext)
+    }
+
+    // Installs a single save observer so UI saves push automatically. Observes the
+    // main context only — the engine's own `ctx` holds pulled remote writes and must
+    // not be observed, or remote changes would echo back as local pushes.
+    public func observeSaves(on context: ModelContext) {
+        saveObserver = SaveObserver(observing: context) { [weak self] changes in
+            self?.engine?.state.add(pendingRecordZoneChanges: changes)
+        }
     }
 
     public func fetchOnLaunch() async {

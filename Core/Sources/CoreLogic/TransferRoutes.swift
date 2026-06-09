@@ -129,7 +129,7 @@ extension CoreLogic {
                 predicate: #Predicate { $0.routedFromTx?.id == sourceTxId }
             ))
             for m in mirrors {
-                CoreLogic.deleteTransaction(m, in: ctx)
+                ctx.delete(m)
             }
             if let source = try ctx.fetch(FetchDescriptor<Transaction>(
                 predicate: #Predicate { $0.id == sourceTxId }
@@ -162,7 +162,7 @@ extension CoreLogic {
             let sourceIds = mirrors.compactMap { $0.routedFromTx?.id }
             let deleted = mirrors.count
             for m in mirrors {
-                CoreLogic.deleteTransaction(m, in: ctx)
+                ctx.delete(m)
             }
             var sourcesReset = 0
             for sourceID in sourceIds {

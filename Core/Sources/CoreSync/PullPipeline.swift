@@ -113,19 +113,19 @@ public enum PullPipeline {
         switch d.recordType {
         case RecordType.connection:
             if let m = ModelSnapshots.find(connection: uuid, in: ctx) {
-                CoreLogic.deleteConnection(m, in: ctx); report.deleted += 1
+                ctx.delete(m); report.deleted += 1
             }
         case RecordType.account:
             if let m = ModelSnapshots.find(account: uuid, in: ctx) {
-                CoreLogic.deleteAccount(m, in: ctx); report.deleted += 1
+                ctx.delete(m); report.deleted += 1
             }
         case RecordType.transaction:
             if let m = ModelSnapshots.find(transaction: uuid, in: ctx) {
-                CoreLogic.deleteTransaction(m, in: ctx); report.deleted += 1
+                ctx.delete(m); report.deleted += 1
             }
         case RecordType.sharedExpenseGroup:
             if let m = ModelSnapshots.find(sharedExpenseGroup: uuid, in: ctx) {
-                CoreLogic.deleteSharedExpenseGroup(m, in: ctx); report.deleted += 1
+                ctx.delete(m); report.deleted += 1
             }
         case RecordType.accountGroup:
             if let m = ModelSnapshots.find(accountGroup: uuid, in: ctx) {
@@ -380,7 +380,7 @@ public enum PullPipeline {
             case .duplicate(let winnerId, _):
                 report.duplicatesResolved += 1
                 if winnerId == snap.id {
-                    CoreLogic.deleteTransaction(dup, in: ctx)
+                    ctx.delete(dup)
                     _ = ModelSnapshots.insertOrUpdate(snap, in: ctx)
                     report.inserted += 1
                 }
