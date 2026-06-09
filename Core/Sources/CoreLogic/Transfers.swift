@@ -220,5 +220,93 @@ extension CoreLogic {
             let tx: Transaction
             let amountAbs: Decimal
         }
+
+        // MARK: - Manual pair / unpair (ports pair-transfer + the tx PATCH isTransfer paths)
+
+        public enum PairError: Swift.Error, Equatable {
+            case sameTransaction
+            case notOneDebitOneCredit
+            case accountArchived
+            case differentSpace
+            case inSharedExpenseGroup
+            case isRoutedMirror
+            case missingEurAmount
+            case amountsDiffer
+        }
+
+        // Manually pair exactly one debit + one credit into a transfer group. The group's
+        // pairedAt stays nil (nil = manually grouped; auto-paired groups carry a timestamp).
+        @MainActor @discardableResult
+        public static func pairManual(
+            _ first: Transaction, _ second: Transaction, in ctx: ModelContext
+        ) throws -> TransferGroup {
+            guard first.id != second.id else { throw PairError.sameTransaction }
+            let pair = [first, second]
+            guard let debit = pair.first(where: { $0.direction == .debit }),
+                  let credit = pair.first(where: { $0.direction == .credit }) else {
+                throw PairError.notOneDebitOneCredit
+            }
+            guard !(debit.account?.archived ?? false), !(credit.account?.archived ?? false) else {
+                throw PairError.accountArchived
+            }
+            guard debit.account?.space?.id == credit.account?.space?.id else {
+                throw PairError.differentSpace
+            }
+            guard debit.sharedExpenseGroup == nil, credit.sharedExpenseGroup == nil else {
+                throw PairError.inSharedExpenseGroup
+            }
+            guard debit.routedFromTx == nil, credit.routedFromTx == nil else {
+                throw PairError.isRoutedMirror
+            }
+            guard let debitEur = debit.amountEur, let creditEur = credit.amountEur else {
+                throw PairError.missingEurAmount
+            }
+            guard abs(abs(debitEur) - abs(creditEur)) <= eurTolerance else {
+                throw PairError.amountsDiffer
+            }
+
+            let group: TransferGroup
+            if let existing = first.transferGroup ?? second.transferGroup {
+                group = existing
+            } else {
+                group = TransferGroup()
+                ctx.insert(group)
+            }
+            for tx in [debit, credit] {
+                tx.isTransfer = true
+                tx.transferGroup = group
+            }
+            try ctx.save()
+            return group
+        }
+
+        // Undo a transfer: delete routed mirrors from the source side; otherwise clear the
+        // whole group (or just this row if it stands alone).
+        @MainActor
+        public static func unpair(_ tx: Transaction, in ctx: ModelContext) throws {
+            if !tx.mirrors.isEmpty {
+                _ = try TransferRoutes.removeMirror(forSource: tx.id, in: ctx)
+                return
+            }
+            if let source = tx.routedFromTx {
+                _ = try TransferRoutes.removeMirror(forSource: source.id, in: ctx)
+                return
+            }
+            if let group = tx.transferGroup {
+                let gid = group.id
+                let members = try ctx.fetch(FetchDescriptor<Transaction>(
+                    predicate: #Predicate { $0.transferGroup?.id == gid }
+                ))
+                for m in members {
+                    m.isTransfer = false
+                    m.transferGroup = nil
+                }
+                try ctx.save()
+                return
+            }
+            tx.isTransfer = false
+            tx.transferGroup = nil
+            try ctx.save()
+        }
     }
 }

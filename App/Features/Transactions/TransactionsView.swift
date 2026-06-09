@@ -20,6 +20,11 @@ struct TransactionsView: View {
     @State private var categorizing: CoreModel.Transaction?
     @State private var managingCategories = false
     @State private var managingRules = false
+    @State private var managingRoutes = false
+    @State private var path: [CoreModel.Transaction] = []
+    #if DEBUG
+    @State private var debugPartnerTx: CoreModel.Transaction?
+    #endif
 
     // Web parity: current space only, hide mirror legs (routedFromTx != nil) and
     // transfers (unless toggled). Cached in @State so filtering runs only when an
@@ -42,12 +47,10 @@ struct TransactionsView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 ForEach(rows) { tx in
-                    NavigationLink {
-                        TransactionDetailView(tx: tx)
-                    } label: {
+                    NavigationLink(value: tx) {
                         TransactionRow(tx: tx)
                     }
                     .swipeActions(edge: .leading) {
@@ -60,6 +63,7 @@ struct TransactionsView: View {
                     }
                 }
             }
+            .navigationDestination(for: CoreModel.Transaction.self) { TransactionDetailView(tx: $0) }
             .scrollEdgeEffectStyle(.soft, for: .all)
             .navigationTitle("Transactions")
             .searchable(text: $search, prompt: "Description or counterparty")
@@ -84,6 +88,11 @@ struct TransactionsView: View {
                         } label: {
                             Label("Manage Rules", systemImage: "wand.and.stars")
                         }
+                        Button {
+                            managingRoutes = true
+                        } label: {
+                            Label("Transfer Routes", systemImage: "arrow.triangle.branch")
+                        }
                     } label: {
                         Label("More", systemImage: "ellipsis.circle")
                     }
@@ -96,6 +105,12 @@ struct TransactionsView: View {
             }
             .sheet(isPresented: $managingCategories) { ManageCategoriesView() }
             .sheet(isPresented: $managingRules) { ManageRulesView() }
+            .sheet(isPresented: $managingRoutes) { ManageTransferRoutesView() }
+            #if DEBUG
+            .sheet(item: $debugPartnerTx) { tx in
+                TransferPartnerPickerView(tx: tx) { _ in }
+            }
+            #endif
             .overlay {
                 if rows.isEmpty {
                     ContentUnavailableView(
@@ -112,6 +127,13 @@ struct TransactionsView: View {
             case "categories", "category-edit": managingCategories = true
             case "categorize": categorizing = rows.first
             case "rules", "rule-edit": managingRules = true
+            case "routes", "route-edit": managingRoutes = true
+            case "tx-detail":
+                if let t = rows.first(where: { !$0.isTransfer && $0.routedFromTx == nil }) { path = [t] }
+            case "tx-detail-transfer":
+                if let t = allTx.first(where: { $0.isTransfer && $0.routedFromTx == nil }) { path = [t] }
+            case "pair-partner":
+                debugPartnerTx = rows.first(where: { !$0.isTransfer && $0.routedFromTx == nil })
             default: break
             }
             #endif

@@ -257,5 +257,128 @@ extension CoreLogic {
                 predicate: #Predicate { $0.archived == false && $0.connection == nil }
             ))
         }
+
+        // MARK: - Route definition CRUD (ports transfer-routes API)
+
+        public enum RouteError: Swift.Error, Equatable {
+            case patternRequired
+            case sourceEqualsTarget
+        }
+
+        // 730-day lookback for backfill — parity with the web (`sinceDays: 730`).
+        public static let backfillLookbackDays = 730
+
+        public struct CreateRouteResult {
+            public let route: TransferRoute
+            public let applied: ApplyResult?
+        }
+
+        public struct UpdateRouteResult: Equatable, Sendable {
+            public let matchersChanged: Bool
+            public let mirrorsRemoved: RemoveRouteMirrorsResult?
+            public let reapplied: ApplyResult?
+        }
+
+        @MainActor @discardableResult
+        public static func createRoute(
+            pattern: String, target: Account, source: Account? = nil,
+            field: RuleField = .description, matchType: RuleMatch = .contains,
+            direction: TxDirection? = nil, priority: Int = 0, enabled: Bool = true,
+            in ctx: ModelContext, now: Date = .now
+        ) throws -> CreateRouteResult {
+            let trimmed = pattern.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { throw RouteError.patternRequired }
+            if let source, source.id == target.id { throw RouteError.sourceEqualsTarget }
+            let route = TransferRoute(
+                pattern: trimmed, field: field, matchType: matchType,
+                sourceAccount: source, targetAccount: target, direction: direction,
+                priority: priority, enabled: enabled, createdAt: now, updatedAt: now
+            )
+            ctx.insert(route)
+            try ctx.save()
+            var applied: ApplyResult?
+            if enabled {
+                applied = try apply(in: ctx, sinceDays: backfillLookbackDays, routeId: route.id)
+            }
+            return CreateRouteResult(route: route, applied: applied)
+        }
+
+        // Changing any matcher (pattern/accounts/field/matchType/direction) or disabling the
+        // route first removes the mirrors it spawned, then — if it stays enabled and a matcher
+        // changed — re-applies so the mirror set matches the new definition. This is the
+        // load-bearing wiring: stale mirrors must not survive a definition change.
+        @MainActor @discardableResult
+        public static func updateRoute(
+            _ route: TransferRoute, pattern: String, target: Account, source: Account?,
+            field: RuleField, matchType: RuleMatch, direction: TxDirection?, enabled: Bool,
+            in ctx: ModelContext, now: Date = .now
+        ) throws -> UpdateRouteResult {
+            let trimmed = pattern.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { throw RouteError.patternRequired }
+            if let source, source.id == target.id { throw RouteError.sourceEqualsTarget }
+
+            let matchersChanged =
+                route.pattern != trimmed ||
+                route.targetAccount?.id != target.id ||
+                route.sourceAccount?.id != source?.id ||
+                route.field != field ||
+                route.matchType != matchType ||
+                route.direction != direction
+
+            var mirrorsRemoved: RemoveRouteMirrorsResult?
+            if matchersChanged || !enabled {
+                mirrorsRemoved = try removeRouteMirrors(routeId: route.id, in: ctx)
+            }
+
+            route.pattern = trimmed
+            route.targetAccount = target
+            route.sourceAccount = source
+            route.field = field
+            route.matchType = matchType
+            route.direction = direction
+            route.enabled = enabled
+            route.updatedAt = now
+            try ctx.save()
+
+            var reapplied: ApplyResult?
+            if matchersChanged && enabled {
+                reapplied = try apply(in: ctx, sinceDays: backfillLookbackDays, routeId: route.id)
+            }
+            return UpdateRouteResult(
+                matchersChanged: matchersChanged, mirrorsRemoved: mirrorsRemoved, reapplied: reapplied
+            )
+        }
+
+        @MainActor @discardableResult
+        public static func deleteRoute(
+            _ route: TransferRoute, in ctx: ModelContext
+        ) throws -> RemoveRouteMirrorsResult {
+            let removed = try removeRouteMirrors(routeId: route.id, in: ctx)
+            ctx.delete(route)
+            try ctx.save()
+            return removed
+        }
+
+        // Top of the list = highest priority (parity with the apply sort, priority DESC).
+        @MainActor
+        public static func reorderRoutes(_ orderedIds: [UUID], in ctx: ModelContext, now: Date = .now) throws {
+            let byId = Dictionary(
+                (try ctx.fetch(FetchDescriptor<TransferRoute>())).map { ($0.id, $0) },
+                uniquingKeysWith: { a, _ in a }
+            )
+            let top = orderedIds.count - 1
+            for (index, id) in orderedIds.enumerated() {
+                let priority = top - index
+                guard let route = byId[id], route.priority != priority else { continue }
+                route.priority = priority
+                route.updatedAt = now
+            }
+            try ctx.save()
+        }
+
+        @MainActor @discardableResult
+        public static func backfillRoute(_ route: TransferRoute, in ctx: ModelContext) throws -> ApplyResult {
+            try apply(in: ctx, sinceDays: backfillLookbackDays, routeId: route.id)
+        }
     }
 }
