@@ -28,12 +28,12 @@ targets:
     info:
       path: App/Info.plist
       properties:
-        CFBundleDisplayName: FinancialTracker
+        CFBundleDisplayName: Odyssey Finance
         CFBundleShortVersionString: "0.1.0"
         CFBundleVersion: "1"
         UILaunchScreen:
           UIColorName: LaunchBackground
-        NSFaceIDUsageDescription: "Unlock FinancialTracker with Face ID."
+        NSFaceIDUsageDescription: "Unlock Odyssey Finance with Face ID."
         UIBackgroundModes:
           - processing
         BGTaskSchedulerPermittedIdentifiers:

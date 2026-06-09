@@ -129,7 +129,7 @@ struct RootView: View {
         }
         context.evaluatePolicy(
             .deviceOwnerAuthentication,
-            localizedReason: "Unlock FinancialTracker"
+            localizedReason: "Unlock Odyssey Finance"
         ) { success, evalError in
             Task { @MainActor in
                 if success {
@@ -153,7 +153,7 @@ struct LockScreen: View {
                 Image(systemName: "lock.shield")
                     .font(.system(size: 56))
                     .foregroundStyle(.tint)
-                Text("FinancialTracker")
+                Text("Odyssey Finance")
                     .font(.title2).bold()
                 if let error {
                     Text(error)

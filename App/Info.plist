@@ -9,7 +9,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>FinancialTracker</string>
+	<string>Odyssey Finance</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -25,7 +25,7 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>NSFaceIDUsageDescription</key>
-	<string>Unlock FinancialTracker with Face ID.</string>
+	<string>Unlock Odyssey Finance with Face ID.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>processing</string>
