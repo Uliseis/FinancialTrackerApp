@@ -23,6 +23,20 @@ final class SharedExpensesTests: XCTestCase {
 
     // MARK: - createGroup
 
+    func testRenameGroupTrimsAndRejectsBlank() throws {
+        let (ctx, _, joint, roommate) = try happyPathContext()
+        let dinner = S.makeTx(ctx, account: joint, amount: 100, amountEur: 100, direction: .debit)
+        let refund = S.makeTx(ctx, account: roommate, amount: 50, amountEur: 50, direction: .credit)
+        try ctx.save()
+        let group = try SE.createGroup(
+            .init(label: "Old", primaryTxId: dinner.id, reimbursementTxIds: [refund.id]), in: ctx)
+        try SE.renameGroup(group, label: "  New  ", in: ctx)
+        XCTAssertEqual(group.label, "New")
+        XCTAssertThrowsError(try SE.renameGroup(group, label: " ", in: ctx)) {
+            XCTAssertEqual($0 as? SE.Error, .labelRequired)
+        }
+    }
+
     func testCreateGroupHappyPath() throws {
         let (ctx, _, joint, roommate) = try happyPathContext()
         let dinner = S.makeTx(

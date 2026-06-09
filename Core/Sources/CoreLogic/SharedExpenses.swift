@@ -172,6 +172,17 @@ extension CoreLogic {
         }
 
         @MainActor
+        public static func renameGroup(
+            _ group: SharedExpenseGroup, label: String, in ctx: ModelContext, now: Date = .now
+        ) throws {
+            let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { throw Error.labelRequired }
+            group.label = trimmed
+            group.updatedAt = now
+            try ctx.save()
+        }
+
+        @MainActor
         public static func deleteGroup(_ group: SharedExpenseGroup, in ctx: ModelContext) throws {
             ctx.delete(group)
             try ctx.save()

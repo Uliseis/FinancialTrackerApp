@@ -9,15 +9,27 @@ struct TransactionDetailView: View {
     @Environment(\.modelContext) private var ctx
     @State private var picking = false
     @State private var pairing = false
+    @State private var trackingShared = false
+    @State private var confirmingUnpair = false
     @State private var errorMessage = ""
     @State private var showingError = false
+    @Environment(\.dismiss) private var dismiss
+
+    private var canBeSharedPrimary: Bool {
+        tx.direction == .debit && !tx.isTransfer && tx.routedFromTx == nil
+            && tx.sharedExpenseGroup == nil && tx.amountEur != nil
+    }
 
     private var isMirrorLeg: Bool { tx.routedFromTx != nil }
     private var hasTransfer: Bool {
         tx.isTransfer || tx.transferGroup != nil || !tx.mirrors.isEmpty
     }
+    // createMirror requires the target in the source's space; don't offer accounts it
+    // would reject.
     private var routeTargets: [Account] {
-        accounts.filter { !$0.archived && $0.id != tx.account?.id }
+        accounts.filter {
+            !$0.archived && $0.id != tx.account?.id && $0.space?.id == tx.account?.space?.id
+        }
     }
 
     var body: some View {
@@ -69,7 +81,7 @@ struct TransactionDetailView: View {
             Section("Transfer") {
                 if isMirrorLeg {
                     row("Routed from", tx.routedFromTx?.account?.name ?? "—")
-                    Button("Remove Transfer", role: .destructive, action: unpair)
+                    Button("Remove Transfer", role: .destructive) { confirmingUnpair = true }
                 } else if hasTransfer {
                     if let paired = tx.transferGroup?.pairedAt {
                         row("Paired", paired.formatted(date: .abbreviated, time: .omitted))
@@ -82,7 +94,7 @@ struct TransactionDetailView: View {
                     if !tx.mirrors.isEmpty {
                         row("Mirror legs", "\(tx.mirrors.count)")
                     }
-                    Button("Remove Transfer", role: .destructive, action: unpair)
+                    Button("Remove Transfer", role: .destructive) { confirmingUnpair = true }
                 } else if tx.sharedExpenseGroup == nil {
                     Menu("Route to Account") {
                         ForEach(routeTargets) { account in
@@ -97,6 +109,10 @@ struct TransactionDetailView: View {
                 Section("Shared expense") {
                     row("Group", seg.label)
                     row("Attribution", seg.attributionMonth.formatted(.dateTime.month(.wide).year()))
+                }
+            } else if canBeSharedPrimary {
+                Section("Shared expense") {
+                    Button("Track as Shared Expense") { trackingShared = true }
                 }
             }
 
@@ -115,6 +131,17 @@ struct TransactionDetailView: View {
         .sheet(isPresented: $pairing) {
             TransferPartnerPickerView(tx: tx) { partner in pair(with: partner) }
         }
+        .sheet(isPresented: $trackingShared) {
+            SharedExpenseCreateView(primaryTx: tx)
+        }
+        .confirmationDialog("Remove this transfer?", isPresented: $confirmingUnpair,
+                            titleVisibility: .visible) {
+            Button("Remove Transfer", role: .destructive, action: unpair)
+        } message: {
+            Text(isMirrorLeg || !tx.mirrors.isEmpty
+                 ? "The mirrored transaction is deleted. Backfill the route to recreate it."
+                 : "The transactions stay; only the pairing is removed.")
+        }
         .alert("Couldn’t Complete", isPresented: $showingError) {} message: {
             Text(errorMessage)
         }
@@ -125,7 +152,15 @@ struct TransactionDetailView: View {
     }
 
     private func unpair() {
-        try? CoreLogic.Transfers.unpair(tx, in: ctx)
+        // Unpairing a mirror leg deletes tx itself — pop before the deleted model can
+        // be re-read by this view's body.
+        let popAfter = isMirrorLeg
+        do {
+            try CoreLogic.Transfers.unpair(tx, in: ctx)
+            if popAfter { dismiss() }
+        } catch {
+            showError("Couldn’t remove this transfer.")
+        }
     }
 
     private func route(to account: Account) {
