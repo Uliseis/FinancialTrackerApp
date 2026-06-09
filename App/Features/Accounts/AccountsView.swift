@@ -17,19 +17,16 @@ struct AccountsView: View {
     @AppStorage(SpaceSelection.key) private var currentSpaceId = ""
     @Environment(\.modelContext) private var ctx
     @State private var eurBalances: [UUID: Decimal] = [:]
+    @State private var sections: [GroupSection] = []
+    @State private var spaceTotal: Decimal = 0
 
-    private var scope: SpaceScope {
-        SpaceScope.resolve(rawCurrentId: currentSpaceId, spaces: spaces)
-    }
-
-    // In the current space, non-archived; grouped by AccountGroup (sortOrder), nil ⇒ Other.
-    private var visible: [Account] {
-        accounts.filter { !$0.archived && scope.includes($0) }
-    }
-
-    private var spaceTotal: Decimal {
-        visible.filter { CoreLogic.AccountStatus.isCountedInCashNetWorth($0) }
-            .reduce(Decimal(0)) { $0 + (eurBalances[$1.id] ?? 0) }
+    // Cached current-space layout: non-archived accounts grouped by AccountGroup
+    // (sortOrder), nil ⇒ Other. Built in rebuild() so grouping runs only on input or
+    // store changes — not on every body render.
+    private struct GroupSection: Identifiable {
+        let id: String
+        let title: String
+        let accounts: [Account]
     }
 
     var body: some View {
@@ -40,18 +37,9 @@ struct AccountsView: View {
                                    value: Money.format(spaceTotal, currency: "EUR"))
                         .font(.headline)
                 }
-                ForEach(groups) { group in
-                    let rows = visible.filter { $0.group?.id == group.id }
-                    if !rows.isEmpty {
-                        Section(group.name) {
-                            ForEach(rows) { AccountRow(account: $0, eur: eurBalances[$0.id]) }
-                        }
-                    }
-                }
-                let ungrouped = visible.filter { $0.group == nil }
-                if !ungrouped.isEmpty {
-                    Section("Other") {
-                        ForEach(ungrouped) { AccountRow(account: $0, eur: eurBalances[$0.id]) }
+                ForEach(sections) { section in
+                    Section(section.title) {
+                        ForEach(section.accounts) { AccountRow(account: $0, eur: eurBalances[$0.id]) }
                     }
                 }
             }
@@ -62,17 +50,40 @@ struct AccountsView: View {
                 ToolbarItem(placement: .topBarTrailing) { SpacePicker() }
             }
             .overlay {
-                if visible.isEmpty {
+                if sections.isEmpty {
                     ContentUnavailableView("No Accounts", systemImage: "creditcard")
                 }
             }
         }
         .task { reload() }
+        .onChange(of: currentSpaceId) { rebuild() }
         .reloadOnModelChange { reload() }
     }
 
     private func reload() {
         eurBalances = (try? CoreLogic.Accounts.computeEurBalances(accounts, in: ctx)) ?? [:]
+        rebuild()
+    }
+
+    private func rebuild() {
+        let scope = SpaceScope.resolve(rawCurrentId: currentSpaceId, spaces: spaces)
+        let visible = accounts.filter { !$0.archived && scope.includes($0) }
+        spaceTotal = visible
+            .filter { CoreLogic.AccountStatus.isCountedInCashNetWorth($0) }
+            .reduce(Decimal(0)) { $0 + (eurBalances[$1.id] ?? 0) }
+
+        var built: [GroupSection] = []
+        for group in groups {
+            let rows = visible.filter { $0.group?.id == group.id }
+            if !rows.isEmpty {
+                built.append(GroupSection(id: group.id.uuidString, title: group.name, accounts: rows))
+            }
+        }
+        let ungrouped = visible.filter { $0.group == nil }
+        if !ungrouped.isEmpty {
+            built.append(GroupSection(id: "ungrouped", title: "Other", accounts: ungrouped))
+        }
+        sections = built
     }
 }
 

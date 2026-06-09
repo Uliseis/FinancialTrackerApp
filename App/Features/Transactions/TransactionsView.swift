@@ -14,15 +14,14 @@ struct TransactionsView: View {
     @AppStorage(SpaceSelection.key) private var currentSpaceId = ""
     @State private var search = ""
     @State private var showTransfers = false
-
-    private var scope: SpaceScope {
-        SpaceScope.resolve(rawCurrentId: currentSpaceId, spaces: spaces)
-    }
+    @State private var rows: [CoreModel.Transaction] = []
 
     // Web parity: current space only, hide mirror legs (routedFromTx != nil) and
-    // transfers (unless toggled).
-    private var rows: [CoreModel.Transaction] {
-        allTx.filter { tx in
+    // transfers (unless toggled). Cached in @State so filtering runs only when an
+    // input or the store changes — not on every body render.
+    private func recompute() {
+        let scope = SpaceScope.resolve(rawCurrentId: currentSpaceId, spaces: spaces)
+        rows = allTx.filter { tx in
             guard scope.includes(tx.account) else { return false }
             guard tx.routedFromTx == nil else { return false }
             if !showTransfers && tx.isTransfer { return false }
@@ -70,6 +69,11 @@ struct TransactionsView: View {
                 }
             }
         }
+        .task { recompute() }
+        .onChange(of: search) { recompute() }
+        .onChange(of: showTransfers) { recompute() }
+        .onChange(of: currentSpaceId) { recompute() }
+        .reloadOnModelChange { recompute() }
     }
 }
 
