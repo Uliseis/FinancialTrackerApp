@@ -3,6 +3,9 @@ import SwiftUI
 struct RootTabView: View {
     var body: some View {
         TabView {
+            Tab("Dashboard", systemImage: "rectangle.3.group") {
+                DashboardView()
+            }
             Tab("Accounts", systemImage: "creditcard") {
                 AccountsView()
             }

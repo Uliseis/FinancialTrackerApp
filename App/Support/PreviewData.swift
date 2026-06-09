@@ -37,7 +37,7 @@ enum PreviewData {
         let broker = Account(
             group: invGroup, space: individual, externalId: UUID().uuidString,
             type: .broker, institution: "Trading212", name: "Trading212 Brokerage",
-            currency: "EUR"
+            currency: "EUR", excluded: true
         )
         ctx.insert(broker)
         ctx.insert(PortfolioValuation(
@@ -70,8 +70,13 @@ enum PreviewData {
             status: .ok, insertedTransactions: 12
         ))
 
-        let groceries = CoreModel.Category(name: "Groceries")
+        let groceries = CoreModel.Category(name: "Groceries", color: "#22c55e")
         ctx.insert(groceries)
+        ctx.insert(Budget(
+            category: groceries, amountEur: 300, period: .month,
+            startsOn: Calendar(identifier: .iso8601).date(
+                from: DateComponents(year: 2026, month: 6, day: 1))!
+        ))
         let checking = (try? ctx.fetch(FetchDescriptor<Account>(
             predicate: #Predicate { $0.name == "Checking" }
         )))?.first
