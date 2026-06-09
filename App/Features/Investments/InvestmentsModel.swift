@@ -28,17 +28,10 @@ struct InvestmentsModel {
         totalCash: 0, totalPositions: 0, lastUpdated: nil, rows: [], series: []
     )
 
-    // Scoped to the default space for now (all investment accounts live there); a
-    // cross-app space picker will parameterize this later.
     @MainActor
-    static func load(in ctx: ModelContext) -> InvestmentsModel {
-        guard let def = (try? ctx.fetch(FetchDescriptor<AccountSpace>(
-            predicate: #Predicate { $0.isDefault }
-        )))?.first else { return empty }
-        let defId = def.id
-
+    static func load(spaceId: UUID, defaultId: UUID, in ctx: ModelContext) -> InvestmentsModel {
         guard let invRows = try? CoreLogic.Investments.listAccountsInSpace(
-            spaceId: defId, defaultSpaceId: defId, in: ctx
+            spaceId: spaceId, defaultSpaceId: defaultId, in: ctx
         ), !invRows.isEmpty else { return empty }
 
         let ids = invRows.map { $0.account.id }

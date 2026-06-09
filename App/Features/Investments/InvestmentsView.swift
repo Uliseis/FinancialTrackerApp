@@ -6,8 +6,20 @@ import CoreLogic
 
 struct InvestmentsView: View {
     @Environment(\.modelContext) private var ctx
+    @Query(sort: [SortDescriptor(\AccountSpace.sortOrder),
+                  SortDescriptor(\AccountSpace.createdAt)])
+    private var spaces: [AccountSpace]
+    @AppStorage(SpaceSelection.key) private var currentSpaceId = ""
     @State private var vm: InvestmentsModel?
     @State private var period: CoreLogic.Investments.Period = .all
+
+    private func reload() {
+        let scope = SpaceScope.resolve(rawCurrentId: currentSpaceId, spaces: spaces)
+        guard let current = scope.currentId, let def = scope.defaultId else {
+            vm = .empty; return
+        }
+        vm = InvestmentsModel.load(spaceId: current, defaultId: def, in: ctx)
+    }
 
     var body: some View {
         NavigationStack {
@@ -39,8 +51,12 @@ struct InvestmentsView: View {
                 }
             }
             .navigationTitle("Investments")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) { SpacePicker() }
+            }
         }
-        .task { vm = InvestmentsModel.load(in: ctx) }
+        .task { reload() }
+        .onChange(of: currentSpaceId) { reload() }
     }
 
     private func filteredSeries(_ vm: InvestmentsModel) -> [CoreLogic.Investments.PortfolioSeriesPoint] {

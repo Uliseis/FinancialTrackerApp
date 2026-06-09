@@ -7,12 +7,23 @@ struct TransactionsView: View {
                   SortDescriptor(\CoreModel.Transaction.createdAt, order: .reverse)])
     private var allTx: [CoreModel.Transaction]
 
+    @Query(sort: [SortDescriptor(\AccountSpace.sortOrder),
+                  SortDescriptor(\AccountSpace.createdAt)])
+    private var spaces: [AccountSpace]
+
+    @AppStorage(SpaceSelection.key) private var currentSpaceId = ""
     @State private var search = ""
     @State private var showTransfers = false
 
-    // Web parity: hide mirror legs (routedFromTx != nil) and transfers (unless toggled).
+    private var scope: SpaceScope {
+        SpaceScope.resolve(rawCurrentId: currentSpaceId, spaces: spaces)
+    }
+
+    // Web parity: current space only, hide mirror legs (routedFromTx != nil) and
+    // transfers (unless toggled).
     private var rows: [CoreModel.Transaction] {
         allTx.filter { tx in
+            guard scope.includes(tx.account) else { return false }
             guard tx.routedFromTx == nil else { return false }
             if !showTransfers && tx.isTransfer { return false }
             return matches(tx)
@@ -40,6 +51,7 @@ struct TransactionsView: View {
             .navigationTitle("Transactions")
             .searchable(text: $search, prompt: "Description or counterparty")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) { SpacePicker() }
                 ToolbarItem(placement: .topBarTrailing) {
                     Toggle(isOn: $showTransfers) {
                         Label("Transfers", systemImage: "arrow.left.arrow.right")

@@ -1,47 +1,81 @@
 import SwiftUI
 import SwiftData
 import CoreModel
+import CoreLogic
 
 struct AccountsView: View {
-    @Query(sort: [SortDescriptor(\AccountSpace.sortOrder)])
+    @Query(sort: [SortDescriptor(\AccountSpace.sortOrder),
+                  SortDescriptor(\AccountSpace.createdAt)])
     private var spaces: [AccountSpace]
+
+    @Query(sort: [SortDescriptor(\AccountGroup.sortOrder)])
+    private var groups: [AccountGroup]
 
     @Query(sort: [SortDescriptor(\Account.name)])
     private var accounts: [Account]
 
-    private var visible: [Account] { accounts.filter { !$0.archived } }
-    private var orphaned: [Account] { visible.filter { $0.space == nil } }
+    @AppStorage(SpaceSelection.key) private var currentSpaceId = ""
+    @Environment(\.modelContext) private var ctx
+    @State private var eurBalances: [UUID: Decimal] = [:]
+
+    private var scope: SpaceScope {
+        SpaceScope.resolve(rawCurrentId: currentSpaceId, spaces: spaces)
+    }
+
+    // In the current space, non-archived; grouped by AccountGroup (sortOrder), nil ⇒ Other.
+    private var visible: [Account] {
+        accounts.filter { !$0.archived && scope.includes($0) }
+    }
+
+    private var spaceTotal: Decimal {
+        visible.filter { CoreLogic.AccountStatus.isCountedInCashNetWorth($0) }
+            .reduce(Decimal(0)) { $0 + (eurBalances[$1.id] ?? 0) }
+    }
 
     var body: some View {
         NavigationStack {
             List {
-                ForEach(spaces) { space in
-                    let rows = visible.filter { $0.space?.id == space.id }
+                Section {
+                    LabeledContent("Cash net worth",
+                                   value: Money.format(spaceTotal, currency: "EUR"))
+                        .font(.headline)
+                }
+                ForEach(groups) { group in
+                    let rows = visible.filter { $0.group?.id == group.id }
                     if !rows.isEmpty {
-                        Section(space.name) {
-                            ForEach(rows) { AccountRow(account: $0) }
+                        Section(group.name) {
+                            ForEach(rows) { AccountRow(account: $0, eur: eurBalances[$0.id]) }
                         }
                     }
                 }
-                if !orphaned.isEmpty {
-                    Section("No Space") {
-                        ForEach(orphaned) { AccountRow(account: $0) }
+                let ungrouped = visible.filter { $0.group == nil }
+                if !ungrouped.isEmpty {
+                    Section("Other") {
+                        ForEach(ungrouped) { AccountRow(account: $0, eur: eurBalances[$0.id]) }
                     }
                 }
             }
             .navigationTitle("Accounts")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) { SpacePicker() }
+            }
             .overlay {
                 if visible.isEmpty {
                     ContentUnavailableView("No Accounts", systemImage: "creditcard")
                 }
             }
         }
+        .task { reload() }
+    }
+
+    private func reload() {
+        eurBalances = (try? CoreLogic.Accounts.computeEurBalances(accounts, in: ctx)) ?? [:]
     }
 }
 
 private struct AccountRow: View {
-    @Environment(\.modelContext) private var ctx
     let account: Account
+    let eur: Decimal?
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
@@ -53,30 +87,10 @@ private struct AccountRow: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 12)
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(nativeBalance)
-                    .font(.body.monospacedDigit())
-                if let eur = eurLine {
-                    Text(eur)
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-            }
+            Text(eur.map { Money.format($0, currency: "EUR") } ?? "—")
+                .font(.body.monospacedDigit())
         }
         .opacity(account.excluded ? 0.55 : 1)
-    }
-
-    private var nativeBalance: String {
-        guard let bal = account.balance else { return "—" }
-        return Money.format(bal, currency: account.currency)
-    }
-
-    // Shown only for non-EUR accounts; for EUR it's identical to the native line.
-    private var eurLine: String? {
-        guard account.currency.uppercased() != "EUR",
-              let eur = Money.eurBalance(of: account, in: ctx)
-        else { return nil }
-        return "≈ " + Money.format(eur, currency: "EUR")
     }
 }
 
