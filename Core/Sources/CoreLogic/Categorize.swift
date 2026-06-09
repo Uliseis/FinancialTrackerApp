@@ -38,6 +38,27 @@ extension CoreLogic {
             }
         }
 
+        public struct Preview: Equatable, Sendable {
+            public var count: Int
+            public var sampleIds: [UUID]
+        }
+
+        // Ports the category-rules/preview route: how many transactions a (pattern, field,
+        // matchType) would match, plus the most recent sample ids. Uses an unsaved rule.
+        @MainActor
+        public static func preview(
+            pattern: String, field: RuleField = .description, matchType: RuleMatch = .contains,
+            in ctx: ModelContext, sampleLimit: Int = 5
+        ) throws -> Preview {
+            let trimmed = pattern.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return Preview(count: 0, sampleIds: []) }
+            let probe = CategoryRule(pattern: trimmed, field: field, matchType: matchType)
+            let matched = try ctx.fetch(FetchDescriptor<Transaction>(
+                sortBy: [SortDescriptor(\.bookedAt, order: .reverse)]
+            )).filter { matches(rule: probe, tx: $0) }
+            return Preview(count: matched.count, sampleIds: matched.prefix(sampleLimit).map(\.id))
+        }
+
         // Tie-break on equal priorities: createdAt ASC (older rule wins).
         // The TS source orders only by priority DESC; with ties undefined.
         @MainActor

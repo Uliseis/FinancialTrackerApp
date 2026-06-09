@@ -19,6 +19,7 @@ struct TransactionsView: View {
     @State private var rows: [CoreModel.Transaction] = []
     @State private var categorizing: CoreModel.Transaction?
     @State private var managingCategories = false
+    @State private var managingRules = false
 
     // Web parity: current space only, hide mirror legs (routedFromTx != nil) and
     // transfers (unless toggled). Cached in @State so filtering runs only when an
@@ -78,6 +79,11 @@ struct TransactionsView: View {
                         } label: {
                             Label("Manage Categories", systemImage: "tag")
                         }
+                        Button {
+                            managingRules = true
+                        } label: {
+                            Label("Manage Rules", systemImage: "wand.and.stars")
+                        }
                     } label: {
                         Label("More", systemImage: "ellipsis.circle")
                     }
@@ -89,6 +95,7 @@ struct TransactionsView: View {
                 }
             }
             .sheet(isPresented: $managingCategories) { ManageCategoriesView() }
+            .sheet(isPresented: $managingRules) { ManageRulesView() }
             .overlay {
                 if rows.isEmpty {
                     ContentUnavailableView(
@@ -104,6 +111,7 @@ struct TransactionsView: View {
             switch UITestHooks.presentSheet {
             case "categories", "category-edit": managingCategories = true
             case "categorize": categorizing = rows.first
+            case "rules", "rule-edit": managingRules = true
             default: break
             }
             #endif
