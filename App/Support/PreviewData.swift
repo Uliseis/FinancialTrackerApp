@@ -32,8 +32,42 @@ enum PreviewData {
         add("Revolut X", "Revolut", .crypto, "USD", 420.00, individual, excluded: true)
         add("Joint Account", "Revolut", .bank, "EUR", 27.00, shared)
 
+        let groceries = CoreModel.Category(name: "Groceries")
+        ctx.insert(groceries)
+        let checking = (try? ctx.fetch(FetchDescriptor<Account>(
+            predicate: #Predicate { $0.name == "Checking" }
+        )))?.first
+
+        func tx(_ desc: String, _ amount: Decimal, _ dir: TxDirection,
+                _ days: Int, category: CoreModel.Category? = nil, transfer: Bool = false) {
+            let when = Date(timeIntervalSinceNow: -Double(days) * 86_400)
+            ctx.insert(CoreModel.Transaction(
+                account: checking, externalId: UUID().uuidString,
+                bookedAt: when, amount: amount, currency: "EUR", amountEur: amount,
+                direction: dir, description: desc, counterparty: desc,
+                category: category, categorySource: category == nil ? .bank : .manual,
+                isTransfer: transfer
+            ))
+        }
+
+        tx("Mercadona", -42.18, .debit, 1, category: groceries)
+        tx("Payroll", 2100.00, .credit, 3)
+        tx("Transfer to Savings", -200.00, .debit, 5, transfer: true)
+        tx("Netflix", -13.99, .debit, 8)
+
         try? ctx.save()
         return container
     }()
+
+    static var sampleTransaction: CoreModel.Transaction {
+        let ctx = container.mainContext
+        var d = FetchDescriptor<CoreModel.Transaction>(
+            sortBy: [SortDescriptor(\.bookedAt, order: .reverse)]
+        )
+        d.fetchLimit = 1
+        return (try? ctx.fetch(d))?.first
+            ?? CoreModel.Transaction(externalId: "preview", bookedAt: .now,
+                                     amount: 0, currency: "EUR", direction: .debit)
+    }
 }
 #endif

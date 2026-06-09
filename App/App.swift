@@ -53,7 +53,10 @@ struct FinancialTrackerApp: App {
 
         // BGTaskScheduler.register MUST be called exactly once per identifier before the
         // app finishes launching. Done here, in init, before Scene body is evaluated.
-        BackgroundSync.register(engine: engine)
+        // Skip when CloudKit is unavailable (unsigned dev build) — see CloudKitGate.
+        if CloudKitGate.isAvailable {
+            BackgroundSync.register(engine: engine)
+        }
     }
 
     var body: some Scene {
@@ -61,6 +64,10 @@ struct FinancialTrackerApp: App {
             RootView()
                 .environment(syncEngine)
                 .task {
+                    // CKContainer init traps without the iCloud entitlement (unsigned dev
+                    // builds). Only start sync when CloudKit is actually provisioned; the app
+                    // runs fully locally otherwise.
+                    guard CloudKitGate.isAvailable else { return }
                     do {
                         try syncEngine.start()
                     } catch {

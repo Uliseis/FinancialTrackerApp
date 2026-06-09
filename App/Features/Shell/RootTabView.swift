@@ -7,7 +7,7 @@ struct RootTabView: View {
                 AccountsView()
             }
             Tab("Transactions", systemImage: "list.bullet.rectangle") {
-                PlaceholderView(title: "Transactions", systemImage: "list.bullet.rectangle")
+                TransactionsView()
             }
             Tab("Investments", systemImage: "chart.line.uptrend.xyaxis") {
                 PlaceholderView(title: "Investments", systemImage: "chart.line.uptrend.xyaxis")
