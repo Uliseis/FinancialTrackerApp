@@ -102,6 +102,15 @@ enum PreviewData {
         return container
     }()
 
+    static var sampleAccount: Account {
+        let ctx = container.mainContext
+        var d = FetchDescriptor<Account>()
+        d.fetchLimit = 1
+        return (try? ctx.fetch(d))?.first
+            ?? Account(externalId: "preview", type: .bank, institution: "Bank",
+                       name: "Account", currency: "EUR")
+    }
+
     static var sampleConnection: Connection {
         let ctx = container.mainContext
         var d = FetchDescriptor<Connection>()

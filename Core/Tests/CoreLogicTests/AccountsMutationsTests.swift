@@ -114,6 +114,35 @@ final class AccountsMutationsTests: XCTestCase {
         XCTAssertTrue(a.archived)
     }
 
+    func testSetAndClearAnchorTogether() throws {
+        let ctx = try S.makeContext()
+        let a = try A.createManual(name: "Cash", institution: "Wallet", in: ctx)
+        let when = Date(timeIntervalSince1970: 1_700_000_000)
+        try A.setAnchor(a, balance: 500, at: when, in: ctx)
+        XCTAssertEqual(a.balanceAnchor, 500)
+        XCTAssertEqual(a.balanceAnchorAt, when)
+        XCTAssertTrue(A.hasAnchor(a))
+        try A.clearAnchor(a, in: ctx)
+        XCTAssertNil(a.balanceAnchor)
+        XCTAssertNil(a.balanceAnchorAt)
+        XCTAssertFalse(A.hasAnchor(a))
+    }
+
+    func testAnchorDrivesComputedBalance() throws {
+        let ctx = try S.makeContext()
+        var cal = Calendar(identifier: .iso8601)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        let anchorAt = cal.date(from: DateComponents(year: 2026, month: 1, day: 1, hour: 12))!
+        let a = try A.createManual(name: "Cash", institution: "Wallet", openingBalance: 0, in: ctx)
+        _ = S.makeTx(ctx, account: a, amount: -10, amountEur: -10, direction: .debit,
+                     bookedAt: cal.date(from: DateComponents(year: 2025, month: 12, day: 31))!)
+        _ = S.makeTx(ctx, account: a, amount: 25, amountEur: 25, direction: .credit,
+                     bookedAt: cal.date(from: DateComponents(year: 2026, month: 1, day: 2))!)
+        try A.setAnchor(a, balance: 200, at: anchorAt, in: ctx)
+        let native = A.computeNativeBalances([a], in: ctx)
+        XCTAssertEqual(native[a.id], 225) // 200 anchor + 25 (tx after anchor); -10 before excluded
+    }
+
     func testDeleteCascadesTransactions() throws {
         let ctx = try S.makeContext()
         let a = try A.createManual(name: "Cash", institution: "Wallet", in: ctx)

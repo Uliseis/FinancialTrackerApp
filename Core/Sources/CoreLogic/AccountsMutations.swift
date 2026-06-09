@@ -109,6 +109,25 @@ extension CoreLogic.Accounts {
         try ctx.save()
     }
 
+    // Balance anchor: "as of `date`, the real balance was `balance`". The displayed balance
+    // then becomes anchor + Σ(tx after date) — see computeEurBalances/computeNativeBalances.
+    // anchor and anchorAt are always set/cleared together (the web's PATCH refinement).
+    @MainActor
+    public static func setAnchor(
+        _ account: Account, balance: Decimal, at date: Date, in ctx: ModelContext
+    ) throws {
+        account.balanceAnchor = balance
+        account.balanceAnchorAt = date
+        try ctx.save()
+    }
+
+    @MainActor
+    public static func clearAnchor(_ account: Account, in ctx: ModelContext) throws {
+        account.balanceAnchor = nil
+        account.balanceAnchorAt = nil
+        try ctx.save()
+    }
+
     // MARK: - Helpers
 
     private static func requireText(_ value: String, or error: MutationError) throws -> String {

@@ -22,6 +22,7 @@ struct AccountsView: View {
     @State private var managingSpaces = false
     @State private var managingGroups = false
     @State private var editingAccount: AccountEdit?
+    @State private var anchoringAccount: Account?
 
     // Cached current-space layout: non-archived accounts grouped by AccountGroup
     // (sortOrder), nil ⇒ Other. Built in rebuild() so grouping runs only on input or
@@ -49,6 +50,14 @@ struct AccountsView: View {
                                 AccountRow(account: account, eur: eurBalances[account.id])
                             }
                             .buttonStyle(.plain)
+                            .swipeActions(edge: .leading) {
+                                Button {
+                                    anchoringAccount = account
+                                } label: {
+                                    Label("Set Balance", systemImage: "scalemass")
+                                }
+                                .tint(.blue)
+                            }
                         }
                     }
                 }
@@ -83,6 +92,7 @@ struct AccountsView: View {
             .sheet(isPresented: $managingSpaces) { ManageSpacesView() }
             .sheet(isPresented: $managingGroups) { ManageGroupsView() }
             .sheet(item: $editingAccount, content: AccountFormView.init)
+            .sheet(item: $anchoringAccount, content: BalanceAnchorView.init)
             .overlay {
                 if sections.isEmpty {
                     ContentUnavailableView("No Accounts", systemImage: "creditcard")
@@ -98,6 +108,10 @@ struct AccountsView: View {
             if UITestHooks.presentSheet == "account-edit",
                let first = accounts.first(where: { !$0.archived }) {
                 editingAccount = AccountEdit(first)
+            }
+            if UITestHooks.presentSheet == "anchor",
+               let first = accounts.first(where: { !$0.archived }) {
+                anchoringAccount = first
             }
             #endif
         }
