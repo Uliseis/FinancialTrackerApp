@@ -13,7 +13,7 @@ struct RootTabView: View {
                 InvestmentsView()
             }
             Tab("Connections", systemImage: "link") {
-                PlaceholderView(title: "Connections", systemImage: "link")
+                ConnectionsView()
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)

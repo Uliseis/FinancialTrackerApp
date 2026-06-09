@@ -49,6 +49,27 @@ enum PreviewData {
             marketValueEur: 9450, cashValueEur: 300
         ))
 
+        let connection = Connection(
+            connector: .enablebanking, institutionId: "abanca",
+            institutionName: "Abanca", status: .active,
+            expiresAt: Date(timeIntervalSinceNow: 60 * 86_400),
+            lastSyncAt: Date(timeIntervalSinceNow: -3_600)
+        )
+        ctx.insert(connection)
+        for name in ["PABLO HERNANDEZ", "ULISES BERTOLO"] {
+            ctx.insert(Account(
+                connection: connection, space: individual,
+                externalId: UUID().uuidString, type: .bank,
+                institution: "Abanca", name: name, currency: "EUR", balance: 100
+            ))
+        }
+        ctx.insert(SyncRun(
+            connector: .enablebanking, connection: connection,
+            startedAt: Date(timeIntervalSinceNow: -3_650),
+            finishedAt: Date(timeIntervalSinceNow: -3_600),
+            status: .ok, insertedTransactions: 12
+        ))
+
         let groceries = CoreModel.Category(name: "Groceries")
         ctx.insert(groceries)
         let checking = (try? ctx.fetch(FetchDescriptor<Account>(
@@ -75,6 +96,14 @@ enum PreviewData {
         try? ctx.save()
         return container
     }()
+
+    static var sampleConnection: Connection {
+        let ctx = container.mainContext
+        var d = FetchDescriptor<Connection>()
+        d.fetchLimit = 1
+        return (try? ctx.fetch(d))?.first
+            ?? Connection(connector: .enablebanking, status: .active)
+    }
 
     static var sampleTransaction: CoreModel.Transaction {
         let ctx = container.mainContext
