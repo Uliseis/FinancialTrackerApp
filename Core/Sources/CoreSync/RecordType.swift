@@ -1,0 +1,16 @@
+public enum RecordType {
+    public static let connection = "Connection"
+    public static let accountGroup = "AccountGroup"
+    public static let accountSpace = "AccountSpace"
+    public static let account = "Account"
+    public static let category = "Category"
+    public static let categoryRule = "CategoryRule"
+    public static let transferRoute = "TransferRoute"
+    public static let transferGroup = "TransferGroup"
+    public static let budget = "Budget"
+    public static let fxRate = "FxRate"
+    public static let transaction = "Transaction"
+    public static let sharedExpenseGroup = "SharedExpenseGroup"
+    public static let portfolioValuation = "PortfolioValuation"
+    public static let syncRun = "SyncRun"
+}

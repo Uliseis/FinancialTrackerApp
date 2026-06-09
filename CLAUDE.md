@@ -82,6 +82,7 @@ swift test --package-path Core   # run Core package tests from CLI
 - ✅ Step 4 — port `lib/shared-expenses.ts` to `CoreLogic/SharedExpenses`. 24 tests passing.
 - ✅ Step 5 — port `lib/investments.ts` to `CoreLogic/Investments`. 17 tests passing.
 - ✅ Step 6 — `Tools/ImportFromPostgres` (Swift CLI) + `Tools/ExportFromPostgres` (Node script). JSON-dump contract via `DumpDocument`. Backfills: `categorySource` NULL→`.bank` with `_legacyCategorySourceNull` marker in `rawJSON`; `attributionMonth` falls back to `primaryTx.bookedAt` month-start. TransferGroups synthesized by exporter (`pairedAt = MIN(bookedAt)`, `routeId = MAX(raw->>'routeId')`). 15 importer tests passing.
-- ⏳ Step 7 — CoreSync (CKSyncEngine + LWW-except-manual resolver + BGProcessingTask)
+- 🟨 Step 7a — `CoreSync` pure core: `Sendable` `*Snapshot` structs for all 14 models, `CKRecord` ↔ Snapshot round-trip encoding (Decimals as strings, UUIDs as strings, enums as rawValue, relations as referenced-UUID strings — no `CKReference`), LWW conflict resolver with `categorySource == .manual` override for `Transaction`, composite-uniqueness dedupe for `Transaction(accountId, externalId)` (S5) and `FxRate(date, currency)` (N6). 38 CoreSync tests passing. **7b deferred**: `CKSyncEngine` delegate wiring, BGProcessingTask handler, app-open fetch trigger, state serialization — landed only on-device.
+- ⏳ Step 7b — CoreSync integration (CKSyncEngine + BGProcessingTask + state serialization)
 - ⏳ Step 8 — Vercel proxy for Enable Banking
 - ⏳ Step 9 — SwiftUI views
