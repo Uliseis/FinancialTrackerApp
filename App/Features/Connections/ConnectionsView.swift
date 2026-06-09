@@ -17,6 +17,7 @@ struct ConnectionsView: View {
                     }
                 }
             }
+            .scrollEdgeEffectStyle(.soft, for: .all)
             .navigationTitle("Connections")
             .overlay {
                 if connections.isEmpty {

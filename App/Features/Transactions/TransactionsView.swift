@@ -48,6 +48,7 @@ struct TransactionsView: View {
                     }
                 }
             }
+            .scrollEdgeEffectStyle(.soft, for: .all)
             .navigationTitle("Transactions")
             .searchable(text: $search, prompt: "Description or counterparty")
             .toolbar {

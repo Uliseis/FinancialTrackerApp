@@ -86,8 +86,11 @@ struct FinancialTrackerApp: App {
 // biometric gate. Never compiled into release builds.
 #if DEBUG
 let authGateBypassed = ProcessInfo.processInfo.environment["UITEST_DISABLE_AUTH"] == "1"
+// Show the locked screen without firing biometrics, so the lock UI can be captured.
+let authShowLockOnly = ProcessInfo.processInfo.environment["UITEST_SHOW_LOCK"] == "1"
 #else
 let authGateBypassed = false
+let authShowLockOnly = false
 #endif
 
 struct RootView: View {
@@ -107,7 +110,7 @@ struct RootView: View {
                 LockScreen(error: authError, onUnlock: authenticate)
             }
         }
-        .task { if !authGateBypassed { authenticate() } }
+        .task { if !authGateBypassed && !authShowLockOnly { authenticate() } }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background, !authGateBypassed {
                 unlocked = false
@@ -145,22 +148,27 @@ struct LockScreen: View {
     let onUnlock: () -> Void
 
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "lock.shield")
-                .font(.system(size: 56))
-                .foregroundStyle(.tint)
-            Text("FinancialTracker")
-                .font(.title2.weight(.semibold))
-            if let error {
-                Text(error)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+        GlassEffectContainer {
+            VStack(spacing: 16) {
+                Image(systemName: "lock.shield")
+                    .font(.system(size: 56))
+                    .foregroundStyle(.tint)
+                Text("FinancialTracker")
+                    .font(.title2).bold()
+                if let error {
+                    Text(error)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                Button("Unlock", systemImage: "faceid", action: onUnlock)
+                    .buttonStyle(.glassProminent)
             }
-            Button("Unlock", action: onUnlock)
-                .buttonStyle(.borderedProminent)
+            .padding(28)
+            .glassEffect(.regular, in: .rect(cornerRadius: 28))
         }
         .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

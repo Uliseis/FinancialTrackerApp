@@ -50,6 +50,7 @@ struct InvestmentsView: View {
                     )
                 }
             }
+            .scrollEdgeEffectStyle(.soft, for: .all)
             .navigationTitle("Investments")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { SpacePicker() }

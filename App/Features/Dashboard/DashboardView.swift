@@ -30,6 +30,7 @@ struct DashboardView: View {
                         if !model.topCategories.isEmpty { TopCategoriesSection(categories: model.topCategories) }
                         if !model.budgets.isEmpty { BudgetsSection(budgets: model.budgets) }
                     }
+                    .scrollEdgeEffectStyle(.soft, for: .all)
                 } else {
                     ContentUnavailableView(
                         "Nothing to show",
