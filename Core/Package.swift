@@ -16,7 +16,7 @@ let package = Package(
         .target(name: "CoreModel", swiftSettings: swift5),
         .target(name: "CoreLogic", dependencies: ["CoreModel"], swiftSettings: swift5),
         .target(name: "CoreIntegrations", dependencies: ["CoreModel"], swiftSettings: swift5),
-        .target(name: "CoreSync", dependencies: ["CoreModel", "CoreIntegrations"], swiftSettings: swift5),
+        .target(name: "CoreSync", dependencies: ["CoreModel", "CoreLogic", "CoreIntegrations"], swiftSettings: swift5),
 
         .testTarget(name: "CoreModelTests", dependencies: ["CoreModel"], swiftSettings: swift5),
         .testTarget(
@@ -26,6 +26,6 @@ let package = Package(
             swiftSettings: swift5
         ),
         .testTarget(name: "CoreIntegrationsTests", dependencies: ["CoreIntegrations", "CoreModel"], swiftSettings: swift5),
-        .testTarget(name: "CoreSyncTests", dependencies: ["CoreSync", "CoreModel"], swiftSettings: swift5),
+        .testTarget(name: "CoreSyncTests", dependencies: ["CoreSync", "CoreModel", "CoreLogic"], swiftSettings: swift5),
     ]
 )

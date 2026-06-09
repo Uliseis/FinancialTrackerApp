@@ -1,16 +1,18 @@
 import SwiftUI
 import SwiftData
 import LocalAuthentication
-import BackgroundTasks
 import CoreModel
+import CoreSync
 
-private let bgRefreshTaskId = "com.uliseis.financialtracker.refresh"
+private let iCloudContainerID = "iCloud.com.uliseis.financialtracker"
 
 @main
 struct FinancialTrackerApp: App {
     let modelContainer: ModelContainer
+    @State private var syncEngine: CloudKitSyncEngine
 
     init() {
+        let container: ModelContainer
         do {
             let schema = Schema(CoreModelSchema.allTypes)
             // DO NOT change cloudKitDatabase. SwiftData drops @Attribute(.unique) the moment
@@ -21,22 +23,44 @@ struct FinancialTrackerApp: App {
                 isStoredInMemoryOnly: false,
                 cloudKitDatabase: .none
             )
-            modelContainer = try ModelContainer(for: schema, configurations: [config])
+            container = try ModelContainer(for: schema, configurations: [config])
         } catch {
             fatalError("ModelContainer init failed: \(error)")
         }
+        self.modelContainer = container
 
-        BGTaskScheduler.shared.register(
-            forTaskWithIdentifier: bgRefreshTaskId,
-            using: nil
-        ) { task in
-            task.setTaskCompleted(success: true)
+        let store: SyncStateStore
+        do {
+            store = SyncStateStore(fileURL: try SyncStateStore.defaultLocation())
+        } catch {
+            fatalError("CoreSync state store init failed: \(error)")
         }
+        let engine = CloudKitSyncEngine(
+            containerIdentifier: iCloudContainerID,
+            modelContainer: container,
+            stateStore: store
+        )
+        _syncEngine = State(initialValue: engine)
+
+        // BGTaskScheduler.register MUST be called exactly once per identifier before the
+        // app finishes launching. Done here, in init, before Scene body is evaluated.
+        BackgroundSync.register(engine: engine)
     }
 
     var body: some Scene {
         WindowGroup {
             RootView()
+                .environment(syncEngine)
+                .task {
+                    do {
+                        try syncEngine.start()
+                    } catch {
+                        // Engine may fail to start if iCloud isn't available; the app still works
+                        // locally. Log and carry on; next launch retries.
+                        print("CoreSync start failed: \(error)")
+                    }
+                    BackgroundSync.schedule()
+                }
         }
         .modelContainer(modelContainer)
     }
@@ -44,6 +68,7 @@ struct FinancialTrackerApp: App {
 
 struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(CloudKitSyncEngine.self) private var syncEngine
     @State private var unlocked = false
     @State private var authError: String?
 
@@ -51,6 +76,9 @@ struct RootView: View {
         Group {
             if unlocked {
                 ContentView()
+                    .task {
+                        await syncEngine.fetchOnLaunch()
+                    }
             } else {
                 LockScreen(error: authError, onUnlock: authenticate)
             }
