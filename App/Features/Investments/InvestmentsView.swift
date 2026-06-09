@@ -51,6 +51,7 @@ struct InvestmentsView: View {
                 }
             }
             .scrollEdgeEffectStyle(.soft, for: .all)
+            .refreshable { reload() }
             .navigationTitle("Investments")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { SpacePicker() }
@@ -155,6 +156,8 @@ private struct PortfolioChart: View {
             LineMark(x: .value("Date", p.date), y: .value("EUR", p.value))
                 .foregroundStyle(by: .value("Series", p.kind))
                 .interpolationMethod(.monotone)
+                .accessibilityLabel("\(p.kind), \(p.date.formatted(date: .abbreviated, time: .omitted))")
+                .accessibilityValue(Money.format(Decimal(p.value), currency: "EUR"))
         }
         .chartForegroundStyleScale(["Market value": Color.accentColor, "Cost basis": Color.secondary])
         .chartLegend(.visible)

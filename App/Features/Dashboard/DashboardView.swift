@@ -31,6 +31,7 @@ struct DashboardView: View {
                         if !model.budgets.isEmpty { BudgetsSection(budgets: model.budgets) }
                     }
                     .scrollEdgeEffectStyle(.soft, for: .all)
+                    .refreshable { reload() }
                 } else {
                     ContentUnavailableView(
                         "Nothing to show",
@@ -118,6 +119,8 @@ private struct CashFlowSection: View {
                 )
                 .foregroundStyle(by: .value("Flow", p.flow))
                 .position(by: .value("Flow", p.flow))
+                .accessibilityLabel("\(p.label), \(p.flow)")
+                .accessibilityValue(Money.format(Decimal(p.value), currency: "EUR"))
             }
             .chartXScale(domain: months.map { $0.label })
             .chartForegroundStyleScale(["Income": Color.positiveAmount, "Expense": Color.secondary])
@@ -171,6 +174,12 @@ private struct BudgetsSection: View {
                     tint: b.over ? .negativeAmount : .accentColor,
                     valueColor: b.over ? .negativeAmount : .primary
                 ) {
+                    if b.over {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(Color.negativeAmount)
+                            .accessibilityLabel("Over budget")
+                    }
                     Text(b.name)
                     TagChip(text: b.period.rawValue)
                 }

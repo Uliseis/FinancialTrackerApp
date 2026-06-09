@@ -32,6 +32,7 @@ struct SpacePicker: View {
             } label: {
                 Label(selected?.name ?? "Space", systemImage: "rectangle.stack")
             }
+            .sensoryFeedback(.selection, trigger: currentSpaceId)
         }
     }
 }

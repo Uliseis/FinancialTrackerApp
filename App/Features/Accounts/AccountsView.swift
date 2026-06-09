@@ -56,6 +56,7 @@ struct AccountsView: View {
                 }
             }
             .scrollEdgeEffectStyle(.soft, for: .all)
+            .refreshable { reload() }
             .navigationTitle("Accounts")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { SpacePicker() }
@@ -95,6 +96,7 @@ private struct AccountRow: View {
             }
         }
         .opacity(account.excluded ? 0.55 : 1)
+        .accessibilityElement(children: .combine)
     }
 }
 

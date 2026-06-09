@@ -58,6 +58,7 @@ struct TransactionsView: View {
                         Label("Transfers", systemImage: "arrow.left.arrow.right")
                     }
                     .toggleStyle(.button)
+                    .sensoryFeedback(.selection, trigger: showTransfers)
                 }
             }
             .overlay {
@@ -113,6 +114,7 @@ private struct TransactionRow: View {
                 .foregroundStyle(color)
                 .lineLimit(1)
         }
+        .accessibilityElement(children: .combine)
     }
 
     private var amount: String {
