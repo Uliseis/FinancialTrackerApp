@@ -191,7 +191,7 @@ enum Build {
             id: id, connector: .enablebanking,
             connectionId: UUID(),
             startedAt: startedAt, finishedAt: startedAt.addingTimeInterval(30),
-            status: .success, insertedTransactions: 12,
+            status: .ok, insertedTransactions: 12,
             error: nil, rawJSON: nil
         )
     }

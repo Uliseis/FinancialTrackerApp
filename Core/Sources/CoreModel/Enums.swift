@@ -66,6 +66,7 @@ public enum RuleMatch: String, Codable, CaseIterable, Sendable {
 
 public enum SyncRunStatus: String, Codable, CaseIterable, Sendable {
     case running
-    case success
+    case ok
+    case partial
     case error
 }

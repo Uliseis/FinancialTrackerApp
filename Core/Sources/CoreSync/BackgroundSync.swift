@@ -23,17 +23,20 @@ public enum BackgroundSync {
         try? BGTaskScheduler.shared.submit(request)
     }
 
+    // BGTask is non-Sendable but its methods are safe to call across threads; carry it
+    // over the actor hop explicitly. setTaskCompleted is reported from a single MainActor
+    // site (exactly once); expirationHandler captures only the Sendable work handle.
+    private struct TaskBox: @unchecked Sendable { let task: BGTask }
+
     private static func handle(task: BGTask, engine: CloudKitSyncEngine) {
+        let box = TaskBox(task: task)
         let work = Task { @MainActor in
             await engine.fetchOnLaunch()
             await engine.sendPendingChanges()
             schedule()
-            task.setTaskCompleted(success: true)
+            box.task.setTaskCompleted(success: !Task.isCancelled)
         }
-        task.expirationHandler = {
-            work.cancel()
-            task.setTaskCompleted(success: false)
-        }
+        task.expirationHandler = { work.cancel() }
     }
 }
 

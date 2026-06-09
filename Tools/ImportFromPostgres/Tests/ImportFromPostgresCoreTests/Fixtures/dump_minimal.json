@@ -290,7 +290,7 @@
       "connectionId": "11111111-0000-0000-0000-000000000001",
       "startedAt": "2024-01-30T08:00:00Z",
       "finishedAt": "2024-01-30T08:00:30Z",
-      "status": "success",
+      "status": "ok",
       "insertedTransactions": 4,
       "error": null,
       "raw": null

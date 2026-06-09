@@ -18,11 +18,20 @@ struct FinancialTrackerApp: App {
             // DO NOT change cloudKitDatabase. SwiftData drops @Attribute(.unique) the moment
             // CloudKit mirroring is enabled, which would force a destructive migration on
             // every model. Sync to iCloud is handled out-of-band by CoreSync (CKSyncEngine).
-            let config = ModelConfiguration(
-                schema: schema,
-                isStoredInMemoryOnly: false,
-                cloudKitDatabase: .none
+            let config: ModelConfiguration
+            #if DEBUG
+            if let dev = DevStore.url {
+                config = ModelConfiguration(schema: schema, url: dev, cloudKitDatabase: .none)
+            } else {
+                config = ModelConfiguration(
+                    schema: schema, isStoredInMemoryOnly: false, cloudKitDatabase: .none
+                )
+            }
+            #else
+            config = ModelConfiguration(
+                schema: schema, isStoredInMemoryOnly: false, cloudKitDatabase: .none
             )
+            #endif
             container = try ModelContainer(for: schema, configurations: [config])
         } catch {
             fatalError("ModelContainer init failed: \(error)")
@@ -75,7 +84,7 @@ struct RootView: View {
     var body: some View {
         Group {
             if unlocked {
-                ContentView()
+                RootTabView()
                     .task {
                         await syncEngine.fetchOnLaunch()
                     }
@@ -140,19 +149,3 @@ struct LockScreen: View {
     }
 }
 
-struct ContentView: View {
-    var body: some View {
-        NavigationStack {
-            List {
-                Section("Coming soon") {
-                    Text("Accounts")
-                    Text("Transactions")
-                    Text("Transfers")
-                    Text("Investments")
-                    Text("Budgets")
-                }
-            }
-            .navigationTitle("FinancialTracker")
-        }
-    }
-}

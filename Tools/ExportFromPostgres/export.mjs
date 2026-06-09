@@ -189,7 +189,7 @@ async function exportFxRates() {
   }));
 }
 
-async function exportTransferGroups() {
+async function exportTransferGroups(routeIds) {
   const rows = await sql`
     SELECT
       transfer_group_id AS id,
@@ -203,12 +203,13 @@ async function exportTransferGroups() {
   return rows.map((r) => ({
     id: r.id,
     pairedAt: toISO(r.paired_at),
-    routeId: r.route_id,
+    // raw->>'routeId' can be a stale ref to a since-deleted route; drop it if unresolved.
+    routeId: r.route_id != null && routeIds.has(r.route_id) ? r.route_id : null,
     createdAt: toISO(r.created_at),
   }));
 }
 
-async function exportTransactions() {
+async function exportTransactions(routeIds) {
   const rows = await sql`
     SELECT *, raw->>'routeId' AS route_id_extracted
     FROM transactions
@@ -232,7 +233,10 @@ async function exportTransactions() {
     isTransfer: r.is_transfer,
     transferGroupId: r.transfer_group_id,
     routedFromTxId: r.routed_from_tx_id,
-    routeId: r.route_id_extracted,
+    routeId:
+      r.route_id_extracted != null && routeIds.has(r.route_id_extracted)
+        ? r.route_id_extracted
+        : null,
     sharedExpenseGroupId: r.shared_expense_group_id,
     raw: toJSON(r.raw),
     createdAt: toISO(r.created_at),
@@ -281,6 +285,11 @@ async function exportSyncRuns() {
 }
 
 async function main() {
+  // Live route ids — used to drop stale denormalized routeId refs from raw blobs.
+  const routeIds = new Set(
+    (await sql`SELECT id FROM transfer_routes`).map((r) => r.id)
+  );
+
   const [
     connections,
     accountGroups,
@@ -306,8 +315,8 @@ async function main() {
     exportTransferRoutes(),
     exportBudgets(),
     exportFxRates(),
-    exportTransferGroups(),
-    exportTransactions(),
+    exportTransferGroups(routeIds),
+    exportTransactions(routeIds),
     exportSharedExpenseGroups(),
     exportPortfolioValuations(),
     exportSyncRuns(),

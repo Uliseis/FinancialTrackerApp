@@ -30,3 +30,12 @@ Packages/
 # macOS
 .AppleDouble
 .LSOverride
+
+# Real Neon dump + imported dev store — live financial data + encrypted tokens. Never commit.
+/dump.json
+/dump*.json
+*.store
+*.store-shm
+*.store-wal
+Tools/ExportFromPostgres/export.stderr
+DevData/

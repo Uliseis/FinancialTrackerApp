@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:FinancialTrackerApp}/Tools/ImportFromPostgres",
+            "name": "Debug ImportFromPostgres (Tools/ImportFromPostgres)",
+            "target": "ImportFromPostgres",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug ImportFromPostgres (Tools/ImportFromPostgres)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:FinancialTrackerApp}/Tools/ImportFromPostgres",
+            "name": "Release ImportFromPostgres (Tools/ImportFromPostgres)",
+            "target": "ImportFromPostgres",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release ImportFromPostgres (Tools/ImportFromPostgres)"
+        }
+    ]
+}
