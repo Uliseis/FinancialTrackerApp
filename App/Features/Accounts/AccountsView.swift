@@ -19,6 +19,7 @@ struct AccountsView: View {
     @State private var eurBalances: [UUID: Decimal] = [:]
     @State private var sections: [GroupSection] = []
     @State private var spaceTotal: Decimal = 0
+    @State private var managingSpaces = false
 
     // Cached current-space layout: non-archived accounts grouped by AccountGroup
     // (sortOrder), nil ⇒ Other. Built in rebuild() so grouping runs only on input or
@@ -48,14 +49,31 @@ struct AccountsView: View {
             .navigationTitle("Accounts")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { SpacePicker() }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button {
+                            managingSpaces = true
+                        } label: {
+                            Label("Manage Spaces", systemImage: "rectangle.stack")
+                        }
+                    } label: {
+                        Label("More", systemImage: "ellipsis.circle")
+                    }
+                }
             }
+            .sheet(isPresented: $managingSpaces) { ManageSpacesView() }
             .overlay {
                 if sections.isEmpty {
                     ContentUnavailableView("No Accounts", systemImage: "creditcard")
                 }
             }
         }
-        .task { reload() }
+        .task {
+            reload()
+            #if DEBUG
+            if UITestHooks.presentSheet?.hasPrefix("space") == true { managingSpaces = true }
+            #endif
+        }
         .onChange(of: currentSpaceId) { rebuild() }
         .reloadOnModelChange { reload() }
     }
