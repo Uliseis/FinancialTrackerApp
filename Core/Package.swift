@@ -5,7 +5,7 @@ let swift5: [SwiftSetting] = [.swiftLanguageMode(.v5)]
 
 let package = Package(
     name: "Core",
-    platforms: [.iOS(.v18), .macOS(.v14)],
+    platforms: [.iOS("26.0"), .macOS("26.0")],
     products: [
         .library(name: "CoreModel", targets: ["CoreModel"]),
         .library(name: "CoreLogic", targets: ["CoreLogic"]),

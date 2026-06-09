@@ -4,7 +4,7 @@ Native SwiftUI rewrite of the Next.js web app. Single-user EU/Spain personal fin
 
 ## Stack
 
-- **SwiftUI + Swift Charts**, iOS 18+ minimum.
+- **SwiftUI + Swift Charts**, iOS 26+ minimum (iPhone 17 family — iPhone 17 Pro Max for dev). macOS 26+ for Core package + Tools (so `swift test` runs on the dev Mac).
 - **SwiftData** `@Model` types as the local store.
 - **CloudKit private DB via `CKSyncEngine`** (hand-rolled sync layer, not `NSPersistentCloudKitContainer`).
 - **Face ID** on app open via `LocalAuthentication`. No account system — the iCloud account is the boundary.

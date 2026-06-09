@@ -5,7 +5,7 @@ let swift5: [SwiftSetting] = [.swiftLanguageMode(.v5)]
 
 let package = Package(
     name: "ImportFromPostgres",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS("26.0")],
     products: [
         .executable(name: "ImportFromPostgres", targets: ["ImportFromPostgres"]),
         .library(name: "ImportFromPostgresCore", targets: ["ImportFromPostgresCore"]),
