@@ -301,6 +301,9 @@ extension CoreLogic {
                     m.isTransfer = false
                     m.transferGroup = nil
                 }
+                // Unlike the web (bare UUID column), the group is a real synced record —
+                // leaving it orphaned would accumulate CloudKit rows forever.
+                ctx.delete(group)
                 try ctx.save()
                 return
             }

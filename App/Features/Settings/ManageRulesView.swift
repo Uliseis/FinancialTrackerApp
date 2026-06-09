@@ -159,6 +159,7 @@ struct RuleEdit: Identifiable {
 private struct RuleEditView: View {
     @State private var edit: RuleEdit
     @State private var previewCount: Int?
+    @State private var saveError: String?
     @Query(sort: [SortDescriptor(\CoreModel.Category.name)])
     private var categories: [CoreModel.Category]
     @Environment(\.modelContext) private var ctx
@@ -206,30 +207,37 @@ private struct RuleEditView: View {
                     Button("Save") { save() }.disabled(!isValid)
                 }
             }
-            .task(id: previewKey) { refreshPreview() }
+            .task(id: previewKey) { await refreshPreview() }
+            .saveErrorAlert($saveError)
         }
     }
 
     private var previewKey: String { "\(edit.pattern)|\(edit.field.rawValue)|\(edit.matchType.rawValue)" }
 
-    private func refreshPreview() {
+    // Debounced: preview scans every transaction, so don't run it on each keystroke.
+    private func refreshPreview() async {
+        guard (try? await Task.sleep(for: .milliseconds(300))) != nil else { return }
         previewCount = (try? CoreLogic.Categorize.preview(
             pattern: edit.pattern, field: edit.field, matchType: edit.matchType, in: ctx))?.count
     }
 
     private func save() {
         guard let category = categories.first(where: { $0.id == edit.categoryId }) else { return }
-        if let existing = edit.existing {
-            try? CoreLogic.CategoryRules.update(
-                existing, pattern: edit.pattern, category: category,
-                field: edit.field, matchType: edit.matchType, in: ctx)
-        } else {
-            try? CoreLogic.CategoryRules.create(
-                pattern: edit.pattern, category: category,
-                field: edit.field, matchType: edit.matchType,
-                priority: nextPriority(), in: ctx)
+        do {
+            if let existing = edit.existing {
+                try CoreLogic.CategoryRules.update(
+                    existing, pattern: edit.pattern, category: category,
+                    field: edit.field, matchType: edit.matchType, in: ctx)
+            } else {
+                try CoreLogic.CategoryRules.create(
+                    pattern: edit.pattern, category: category,
+                    field: edit.field, matchType: edit.matchType,
+                    priority: nextPriority(), in: ctx)
+            }
+            dismiss()
+        } catch {
+            saveError = "The rule wasn’t saved."
         }
-        dismiss()
     }
 
     private func nextPriority() -> Int {

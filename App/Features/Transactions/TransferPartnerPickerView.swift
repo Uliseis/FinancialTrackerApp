@@ -13,12 +13,15 @@ struct TransferPartnerPickerView: View {
     private var allTx: [CoreModel.Transaction]
     @Environment(\.dismiss) private var dismiss
     @State private var search = ""
+    // Cached: the filter+sort walks every transaction, so run it per input change
+    // (task below), never per body render.
+    @State private var candidates: [CoreModel.Transaction] = []
 
-    private var candidates: [CoreModel.Transaction] {
+    private func rebuildCandidates() {
         let wantDirection: TxDirection = tx.direction == .debit ? .credit : .debit
         let spaceId = tx.account?.space?.id
         let target = tx.amountEur.map { abs($0) }
-        return allTx
+        candidates = allTx
             .filter { c in
                 c.id != tx.id
                     && c.direction == wantDirection
@@ -60,14 +63,14 @@ struct TransferPartnerPickerView: View {
                     Button("Cancel") { dismiss() }
                 }
             }
+            .task(id: search) { rebuildCandidates() }
         }
     }
 
     private func matchesSearch(_ c: CoreModel.Transaction) -> Bool {
         guard !search.isEmpty else { return true }
-        let needle = search.lowercased()
-        return (c.transactionDescription?.lowercased().contains(needle) ?? false)
-            || (c.counterparty?.lowercased().contains(needle) ?? false)
+        return (c.transactionDescription?.localizedStandardContains(search) ?? false)
+            || (c.counterparty?.localizedStandardContains(search) ?? false)
     }
 
     private func choose(_ candidate: CoreModel.Transaction) {

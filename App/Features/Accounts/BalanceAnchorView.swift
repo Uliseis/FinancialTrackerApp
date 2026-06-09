@@ -8,6 +8,7 @@ struct BalanceAnchorView: View {
     @State private var amount: Decimal
     @State private var date: Date
     @State private var confirmingClear = false
+    @State private var saveError: String?
     @Environment(\.modelContext) private var ctx
     @Environment(\.dismiss) private var dismiss
 
@@ -55,17 +56,26 @@ struct BalanceAnchorView: View {
             } message: {
                 Text("The balance reverts to opening balance plus all transactions.")
             }
+            .saveErrorAlert($saveError)
         }
     }
 
     private func save() {
-        try? CoreLogic.Accounts.setAnchor(account, balance: amount, at: date, in: ctx)
-        dismiss()
+        do {
+            try CoreLogic.Accounts.setAnchor(account, balance: amount, at: date, in: ctx)
+            dismiss()
+        } catch {
+            saveError = "The anchor wasn’t saved."
+        }
     }
 
     private func clear() {
-        try? CoreLogic.Accounts.clearAnchor(account, in: ctx)
-        dismiss()
+        do {
+            try CoreLogic.Accounts.clearAnchor(account, in: ctx)
+            dismiss()
+        } catch {
+            saveError = "The anchor wasn’t cleared."
+        }
     }
 }
 

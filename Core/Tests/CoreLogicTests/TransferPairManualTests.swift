@@ -114,6 +114,7 @@ final class TransferPairManualTests: XCTestCase {
         XCTAssertFalse(credit.isTransfer)
         XCTAssertNil(debit.transferGroup)
         XCTAssertNil(credit.transferGroup)
+        XCTAssertTrue(try f.ctx.fetch(FetchDescriptor<TransferGroup>()).isEmpty)
     }
 
     func testUnpairRemovesRoutedMirrorFromSource() throws {

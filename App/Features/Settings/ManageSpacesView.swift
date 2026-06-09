@@ -81,6 +81,7 @@ struct ManageSpacesView: View {
 
 private struct SpaceEditView: View {
     @State private var edit: SpaceEdit
+    @State private var saveError: String?
     @Environment(\.modelContext) private var ctx
     @Environment(\.dismiss) private var dismiss
 
@@ -117,25 +118,28 @@ private struct SpaceEditView: View {
                     Button("Save") { save() }.disabled(!isValid)
                 }
             }
+            .saveErrorAlert($saveError)
         }
     }
 
     private func save() {
-        let space: AccountSpace
-        if let existing = edit.existing {
-            try? CoreLogic.Spaces.update(existing, name: edit.name, color: edit.color, in: ctx)
-            space = existing
-        } else {
-            guard let created = try? CoreLogic.Spaces.create(
-                name: edit.name, color: edit.color,
-                sortOrder: nextSortOrder(), in: ctx
-            ) else { dismiss(); return }
-            space = created
+        do {
+            let space: AccountSpace
+            if let existing = edit.existing {
+                try CoreLogic.Spaces.update(existing, name: edit.name, color: edit.color, in: ctx)
+                space = existing
+            } else {
+                space = try CoreLogic.Spaces.create(
+                    name: edit.name, color: edit.color,
+                    sortOrder: nextSortOrder(), in: ctx)
+            }
+            if edit.isDefault && !space.isDefault {
+                try CoreLogic.Spaces.setDefault(space, in: ctx)
+            }
+            dismiss()
+        } catch {
+            saveError = "The space wasn’t saved."
         }
-        if edit.isDefault && !space.isDefault {
-            try? CoreLogic.Spaces.setDefault(space, in: ctx)
-        }
-        dismiss()
     }
 
     private func nextSortOrder() -> Int {

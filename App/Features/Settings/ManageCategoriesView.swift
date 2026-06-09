@@ -131,6 +131,7 @@ struct CategoryEdit: Identifiable {
 
 private struct CategoryEditView: View {
     @State private var edit: CategoryEdit
+    @State private var saveError: String?
     @Query(sort: [SortDescriptor(\CoreModel.Category.name)])
     private var categories: [CoreModel.Category]
     @Environment(\.modelContext) private var ctx
@@ -174,20 +175,27 @@ private struct CategoryEditView: View {
                     Button("Save") { save() }.disabled(!isValid)
                 }
             }
+            .saveErrorAlert($saveError)
         }
     }
 
     private func save() {
         let parent = categories.first { $0.id == edit.parentId }
-        if let existing = edit.existing {
-            try? CoreLogic.Categories.update(
-                existing, name: edit.name, kind: edit.kind, parent: parent,
-                color: edit.color, in: ctx)
-        } else {
-            try? CoreLogic.Categories.create(
-                name: edit.name, kind: edit.kind, parent: parent, color: edit.color, in: ctx)
+        do {
+            if let existing = edit.existing {
+                try CoreLogic.Categories.update(
+                    existing, name: edit.name, kind: edit.kind, parent: parent,
+                    color: edit.color, in: ctx)
+            } else {
+                try CoreLogic.Categories.create(
+                    name: edit.name, kind: edit.kind, parent: parent, color: edit.color, in: ctx)
+            }
+            dismiss()
+        } catch CoreLogic.Categories.Error.parentCycle {
+            saveError = "That parent is a sub-category of this one — pick another."
+        } catch {
+            saveError = "The category wasn’t saved."
         }
-        dismiss()
     }
 }
 

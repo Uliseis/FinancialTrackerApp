@@ -131,6 +131,7 @@ struct GroupEdit: Identifiable {
 
 private struct GroupEditView: View {
     @State private var edit: GroupEdit
+    @State private var saveError: String?
     @Environment(\.modelContext) private var ctx
     @Environment(\.dismiss) private var dismiss
 
@@ -165,19 +166,24 @@ private struct GroupEditView: View {
                     Button("Save") { save() }.disabled(!isValid)
                 }
             }
+            .saveErrorAlert($saveError)
         }
     }
 
     private func save() {
-        if let existing = edit.existing {
-            try? CoreLogic.AccountGroups.update(
-                existing, name: edit.name, kind: edit.kind, color: edit.color, in: ctx)
-        } else {
-            try? CoreLogic.AccountGroups.create(
-                name: edit.name, kind: edit.kind, color: edit.color,
-                sortOrder: nextSortOrder(), in: ctx)
+        do {
+            if let existing = edit.existing {
+                try CoreLogic.AccountGroups.update(
+                    existing, name: edit.name, kind: edit.kind, color: edit.color, in: ctx)
+            } else {
+                try CoreLogic.AccountGroups.create(
+                    name: edit.name, kind: edit.kind, color: edit.color,
+                    sortOrder: nextSortOrder(), in: ctx)
+            }
+            dismiss()
+        } catch {
+            saveError = "The group wasn’t saved."
         }
-        dismiss()
     }
 
     private func nextSortOrder() -> Int {

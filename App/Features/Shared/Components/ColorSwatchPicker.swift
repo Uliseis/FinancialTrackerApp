@@ -6,12 +6,12 @@ import SwiftUI
 struct ColorSwatchPicker: View {
     @Binding var selection: String?
 
-    static let palette = [
+    nonisolated static let palette = [
         "#ef4444", "#f97316", "#eab308", "#22c55e", "#14b8a6",
         "#3b82f6", "#6366f1", "#a855f7", "#ec4899", "#64748b",
     ]
 
-    private let columns = [GridItem(.adaptive(minimum: 40), spacing: 12)]
+    private let columns = [GridItem(.adaptive(minimum: 44), spacing: 12)]
 
     var body: some View {
         LazyVGrid(columns: columns, spacing: 12) {
@@ -39,7 +39,7 @@ struct ColorSwatchPicker: View {
                         .frame(width: 40, height: 40)
                 }
             }
-            .frame(width: 40, height: 40)
+            .frame(width: 44, height: 44)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(hex == nil ? "No color" : "Color \(hex!)")

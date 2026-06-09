@@ -10,6 +10,7 @@ extension CoreLogic {
         public enum Error: Swift.Error, Equatable {
             case nameRequired
             case cannotParentToSelf
+            case parentCycle
         }
 
         @MainActor @discardableResult
@@ -36,6 +37,13 @@ extension CoreLogic {
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { throw Error.nameRequired }
             if let parent, parent.id == category.id { throw Error.cannotParentToSelf }
+            // Stricter than the web (which has no guard): a parent cycle would hang the
+            // planned ancestor-walking rollups.
+            var ancestor = parent?.parent
+            while let current = ancestor {
+                if current.id == category.id { throw Error.parentCycle }
+                ancestor = current.parent
+            }
             category.name = trimmed
             category.kind = kind.rawValue
             category.parent = parent

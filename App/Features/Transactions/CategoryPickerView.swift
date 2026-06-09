@@ -15,7 +15,7 @@ struct CategoryPickerView: View {
 
     private var filtered: [CoreModel.Category] {
         guard !search.isEmpty else { return categories }
-        return categories.filter { $0.name.localizedCaseInsensitiveContains(search) }
+        return categories.filter { $0.name.localizedStandardContains(search) }
     }
 
     var body: some View {

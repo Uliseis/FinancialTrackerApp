@@ -40,6 +40,16 @@ final class CategoriesTests: XCTestCase {
         }
     }
 
+    func testUpdateRejectsParentCycle() throws {
+        let ctx = try S.makeContext()
+        let a = try C.create(name: "A", in: ctx)
+        let b = try C.create(name: "B", parent: a, in: ctx)
+        let c = try C.create(name: "C", parent: b, in: ctx)
+        XCTAssertThrowsError(try C.update(a, name: "A", kind: .expense, parent: c, color: nil, in: ctx)) {
+            XCTAssertEqual($0 as? C.Error, .parentCycle)
+        }
+    }
+
     func testDeleteNullifiesTransactionCategoryAndDetachesChildren() throws {
         let ctx = try S.makeContext()
         let parent = try C.create(name: "Food", in: ctx)

@@ -183,6 +183,7 @@ struct RouteEdit: Identifiable {
 private struct TransferRouteEditView: View {
     @State private var edit: RouteEdit
     let onApplied: (String) -> Void
+    @State private var saveError: String?
     @Query(sort: [SortDescriptor(\Account.name)])
     private var accounts: [Account]
     @Environment(\.modelContext) private var ctx
@@ -197,10 +198,26 @@ private struct TransferRouteEditView: View {
         accounts.filter { !$0.archived }
     }
 
+    // createMirror's same-space guard means a cross-space route never matches; keep the
+    // To options in the From account's space so a dead route can't be built.
+    private var targetOptions: [Account] {
+        guard let source = accounts.first(where: { $0.id == edit.sourceId }) else {
+            return selectableAccounts
+        }
+        return selectableAccounts.filter { $0.space?.id == source.space?.id }
+    }
+
+    private var spacesCompatible: Bool {
+        guard let source = accounts.first(where: { $0.id == edit.sourceId }),
+              let target = accounts.first(where: { $0.id == edit.targetId }) else { return true }
+        return source.space?.id == target.space?.id
+    }
+
     private var isValid: Bool {
         !edit.pattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && edit.targetId != nil
             && edit.sourceId != edit.targetId
+            && spacesCompatible
     }
 
     var body: some View {
@@ -228,7 +245,7 @@ private struct TransferRouteEditView: View {
                     }
                     Picker("To", selection: $edit.targetId) {
                         Text("Choose…").tag(UUID?.none)
-                        ForEach(selectableAccounts) { Text($0.name).tag(UUID?.some($0.id)) }
+                        ForEach(targetOptions) { Text($0.name).tag(UUID?.some($0.id)) }
                     }
                 }
                 Section {
@@ -245,31 +262,36 @@ private struct TransferRouteEditView: View {
                     Button("Save") { save() }.disabled(!isValid)
                 }
             }
+            .saveErrorAlert($saveError)
         }
     }
 
     private func save() {
         guard let target = accounts.first(where: { $0.id == edit.targetId }) else { return }
         let source = accounts.first { $0.id == edit.sourceId }
-        if let existing = edit.existing {
-            let result = try? CoreLogic.TransferRoutes.updateRoute(
-                existing, pattern: edit.pattern, target: target, source: source,
-                field: edit.field, matchType: edit.matchType,
-                direction: edit.direction, enabled: edit.enabled, in: ctx)
-            onApplied(updateMessage(result))
-        } else {
-            let result = try? CoreLogic.TransferRoutes.createRoute(
-                pattern: edit.pattern, target: target, source: source,
-                field: edit.field, matchType: edit.matchType,
-                direction: edit.direction, priority: nextPriority(), enabled: edit.enabled, in: ctx)
-            onApplied("Created \(result?.applied?.mirroredCreated ?? 0) mirror transactions.")
+        do {
+            if let existing = edit.existing {
+                let result = try CoreLogic.TransferRoutes.updateRoute(
+                    existing, pattern: edit.pattern, target: target, source: source,
+                    field: edit.field, matchType: edit.matchType,
+                    direction: edit.direction, enabled: edit.enabled, in: ctx)
+                onApplied(updateMessage(result))
+            } else {
+                let result = try CoreLogic.TransferRoutes.createRoute(
+                    pattern: edit.pattern, target: target, source: source,
+                    field: edit.field, matchType: edit.matchType,
+                    direction: edit.direction, priority: nextPriority(), enabled: edit.enabled, in: ctx)
+                onApplied("Created \(result.applied?.mirroredCreated ?? 0) mirror transactions.")
+            }
+            dismiss()
+        } catch {
+            saveError = "The route wasn’t saved."
         }
-        dismiss()
     }
 
-    private func updateMessage(_ result: CoreLogic.TransferRoutes.UpdateRouteResult?) -> String {
-        let removed = result?.mirrorsRemoved?.deleted ?? 0
-        let created = result?.reapplied?.mirroredCreated ?? 0
+    private func updateMessage(_ result: CoreLogic.TransferRoutes.UpdateRouteResult) -> String {
+        let removed = result.mirrorsRemoved?.deleted ?? 0
+        let created = result.reapplied?.mirroredCreated ?? 0
         return "Removed \(removed), created \(created) mirror transactions."
     }
 

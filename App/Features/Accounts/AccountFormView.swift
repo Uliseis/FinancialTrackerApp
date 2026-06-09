@@ -12,13 +12,16 @@ struct AccountFormView: View {
     @Environment(\.modelContext) private var ctx
     @Environment(\.dismiss) private var dismiss
     @State private var confirmingDelete = false
+    @State private var saveError: String?
 
     init(edit: AccountEdit) { _edit = State(initialValue: edit) }
 
+    // Mirrors CoreLogic normalizedCurrency so Save can't enable on input the core rejects.
     private var isValid: Bool {
-        !edit.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        let currency = edit.currency.trimmingCharacters(in: .whitespaces)
+        return !edit.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !edit.institution.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        edit.currency.count == 3
+        currency.count == 3 && currency.allSatisfy { $0.isLetter && $0.isASCII }
     }
 
     var body: some View {
@@ -46,7 +49,7 @@ struct AccountFormView: View {
                 if edit.isManual {
                     Section("Opening balance") {
                         TextField("Opening balance", value: $edit.openingBalance, format: .number)
-                            .keyboardType(.decimalPad)
+                            .keyboardType(.numbersAndPunctuation)
                     }
                 }
                 Section {
@@ -79,6 +82,7 @@ struct AccountFormView: View {
                 Text("This permanently deletes the account and its transactions.")
             }
             .task { if edit.spaceId == nil { edit.spaceId = defaultSpaceId } }
+            .saveErrorAlert($saveError)
         }
     }
 
@@ -89,28 +93,36 @@ struct AccountFormView: View {
     private func save() {
         let group = groups.first { $0.id == edit.groupId }
         let space = spaces.first { $0.id == edit.spaceId }
-        if let existing = edit.existing {
-            _ = try? CoreLogic.Accounts.update(
-                existing, name: edit.name, type: edit.type, institution: edit.institution,
-                currency: edit.currency, group: group, space: space,
-                excluded: edit.excluded, openingBalance: edit.openingBalance, in: ctx)
-            if existing.archived != edit.archived {
-                _ = try? CoreLogic.Accounts.setArchived(existing, edit.archived, in: ctx)
+        do {
+            if let existing = edit.existing {
+                _ = try CoreLogic.Accounts.update(
+                    existing, name: edit.name, type: edit.type, institution: edit.institution,
+                    currency: edit.currency, group: group, space: space,
+                    excluded: edit.excluded, openingBalance: edit.openingBalance, in: ctx)
+                if existing.archived != edit.archived {
+                    _ = try CoreLogic.Accounts.setArchived(existing, edit.archived, in: ctx)
+                }
+            } else {
+                try CoreLogic.Accounts.createManual(
+                    name: edit.name, type: edit.type, institution: edit.institution,
+                    currency: edit.currency, group: group, space: space,
+                    openingBalance: edit.openingBalance, in: ctx)
             }
-        } else {
-            try? CoreLogic.Accounts.createManual(
-                name: edit.name, type: edit.type, institution: edit.institution,
-                currency: edit.currency, group: group, space: space,
-                openingBalance: edit.openingBalance, in: ctx)
+            dismiss()
+        } catch {
+            saveError = "The account wasn’t saved. Check the fields and try again."
         }
-        dismiss()
     }
 
     private func deleteAccount() {
-        if let existing = edit.existing {
-            try? CoreLogic.Accounts.delete(existing, in: ctx)
+        do {
+            if let existing = edit.existing {
+                try CoreLogic.Accounts.delete(existing, in: ctx)
+            }
+            dismiss()
+        } catch {
+            saveError = "The account wasn’t deleted."
         }
-        dismiss()
     }
 }
 
