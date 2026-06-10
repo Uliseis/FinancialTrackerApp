@@ -6,6 +6,7 @@ import CoreModel
 // menus). All navigationDestinations are registered here so DEBUG hooks can deep-push.
 struct SettingsView: View {
     @State private var path = NavigationPath()
+    @AppStorage(SecuritySettings.requireUnlockKey) private var requireUnlock = true
     #if DEBUG
     @Query(sort: [SortDescriptor(\SharedExpenseGroup.createdAt, order: .reverse)])
     private var debugGroups: [SharedExpenseGroup]
@@ -30,7 +31,15 @@ struct SettingsView: View {
                     link("Groups", systemImage: "square.stack.3d.up", to: .groups)
                 }
                 Section {
+                    Toggle("Require Face ID", isOn: $requireUnlock)
+                    LabeledContent("iCloud Sync", value: CloudKitGate.isAvailable ? "On" : "Unavailable")
                     LabeledContent("Version", value: Self.versionString)
+                } header: {
+                    Text("App")
+                } footer: {
+                    Text(CloudKitGate.isAvailable
+                         ? "Locks when the app goes to the background."
+                         : "Locks when the app goes to the background. Sync needs an iCloud-signed-in, entitled build.")
                 }
             }
             .scrollEdgeEffectStyle(.soft, for: .all)

@@ -96,7 +96,8 @@ let authShowLockOnly = false
 struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(CloudKitSyncEngine.self) private var syncEngine
-    @State private var unlocked = authGateBypassed
+    @AppStorage(SecuritySettings.requireUnlockKey) private var requireUnlock = true
+    @State private var unlocked = authGateBypassed || !SecuritySettings.requireUnlock
     @State private var authError: String?
 
     var body: some View {
@@ -110,9 +111,9 @@ struct RootView: View {
                 LockScreen(error: authError, onUnlock: authenticate)
             }
         }
-        .task { if !authGateBypassed && !authShowLockOnly { authenticate() } }
+        .task { if !unlocked && !authShowLockOnly { authenticate() } }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background, !authGateBypassed {
+            if phase == .background, requireUnlock, !authGateBypassed {
                 unlocked = false
                 authError = nil
             }
