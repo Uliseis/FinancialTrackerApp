@@ -107,22 +107,74 @@ public struct SessionAccount: Codable, Equatable, Sendable {
     public let productName: String?
 }
 
-public struct SessionResponse: Codable, Equatable, Sendable {
-    public struct Access: Codable, Equatable, Sendable {
-        public let validUntil: String?
-        public let balances: Bool?
-        public let transactions: Bool?
+public struct SessionAccess: Codable, Equatable, Sendable {
+    public let validUntil: String?
+    public let balances: Bool?
+    public let transactions: Bool?
+}
+
+public struct SessionAspsp: Codable, Equatable, Sendable {
+    public let name: String
+    public let country: String
+}
+
+// The `accounts` array has historically carried either bare uid strings or {uid: …}
+// objects — the web's sessionAccountsOf handles both, so the wire type does too.
+public struct SessionAccountRef: Codable, Equatable, Sendable {
+    public let uid: String?
+
+    private struct Boxed: Codable { let uid: String? }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let string = try? container.decode(String.self) {
+            uid = string
+        } else {
+            uid = (try? container.decode(Boxed.self))?.uid
+        }
     }
-    public struct Aspsp: Codable, Equatable, Sendable {
-        public let name: String
-        public let country: String
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(uid)
     }
+}
+
+// Shared shape of the two session payloads so helpers and the sync work on either.
+public protocol EBSessionPayload {
+    var status: String { get }
+    var accounts: [SessionAccountRef]? { get }
+    var accountsData: [SessionAccount]? { get }
+    var access: SessionAccess? { get }
+    var aspsp: SessionAspsp? { get }
+}
+
+// POST /sessions. The one response that carries session_id — and the one place it is
+// genuinely required: a created session without an id is unusable, so a missing key
+// must fail the decode loudly rather than limp on.
+public struct CreateSessionResponse: Codable, Equatable, Sendable, EBSessionPayload {
     public let sessionId: String
     public let status: String
-    public let accounts: [String]
+    public let accounts: [SessionAccountRef]?
     public let accountsData: [SessionAccount]?
-    public let access: Access
-    public let aspsp: Aspsp
+    public let access: SessionAccess?
+    public let aspsp: SessionAspsp?
+    public let psuType: String?
+    public let created: String?
+    public let authorized: String?
+    public let closed: String?
+}
+
+// GET /sessions/{id}. Verified against the live API 2026-06-10: there is NO session_id
+// in this payload (it's in the URL), and accounts_data entries are slim (uid +
+// identification hashes only). Modeled separately so the absence is a compile-time
+// fact, not an optional somebody forgets is always nil.
+public struct SessionResponse: Codable, Equatable, Sendable, EBSessionPayload {
+    public let status: String
+    public let accounts: [SessionAccountRef]?
+    public let accountsData: [SessionAccount]?
+    public let access: SessionAccess?
+    public let aspsp: SessionAspsp?
     public let psuType: String?
     public let created: String?
     public let authorized: String?

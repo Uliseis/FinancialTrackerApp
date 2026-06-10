@@ -84,6 +84,8 @@ struct ConnectionsListView: View {
             case "connect-bank":
                 try? await Task.sleep(for: .milliseconds(700))
                 linkingBank = true
+            case "eb-sync-all":
+                syncAll()
             default: break
             }
             #endif
@@ -105,8 +107,8 @@ struct ConnectionsListView: View {
                 let inserted = results.reduce(0) { $0 + $1.transactionsInserted }
                 let failed = results.filter { !$0.errors.isEmpty }.count
                 syncMessage = failed == 0
-                    ? "Synced ^[\(results.count) connection](inflect: true). ^[\(inserted) new transaction](inflect: true)."
-                    : "Synced with issues on ^[\(failed) connection](inflect: true). ^[\(inserted) new transaction](inflect: true)."
+                    ? "Synced \(pluralized(results.count, "connection")). \(pluralized(inserted, "new transaction"))."
+                    : "Synced with issues on \(pluralized(failed, "connection")). \(pluralized(inserted, "new transaction"))."
             } catch {
                 syncMessage = "Sync failed — check the Enable Banking key."
             }

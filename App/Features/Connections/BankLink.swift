@@ -46,7 +46,7 @@ enum BankLink {
             session, to: connection, expectedState: returnedState, in: ctx)
         return Outcome(
             authorized: session.status == "AUTHORIZED",
-            accountCount: session.accountsData?.count ?? session.accounts.count)
+            accountCount: EBHelpers.sessionAccounts(session).count)
     }
 }
 

@@ -116,7 +116,7 @@ struct ConnectionDetailView: View {
                 let result = try await CoreLogic.EBSync.sync(
                     connection: connection, api: EBClient(tokenProvider: signer), in: ctx)
                 resultMessage = result.errors.isEmpty
-                    ? "Synced. ^[\(result.transactionsInserted) new transaction](inflect: true) across ^[\(result.accountsTouched) account](inflect: true)."
+                    ? "Synced. \(pluralized(result.transactionsInserted, "new transaction")) across \(pluralized(result.accountsTouched, "account"))."
                     : "Synced with issues: \(result.errors.joined(separator: "; "))"
             } catch {
                 resultMessage = "Sync failed: \(connection.lastError ?? "unknown error")"
@@ -136,7 +136,7 @@ struct ConnectionDetailView: View {
                     aspspName: aspspName, country: country,
                     existing: connection, in: ctx)
                 resultMessage = outcome.authorized
-                    ? "Reconnected. ^[\(outcome.accountCount) account](inflect: true) authorized."
+                    ? "Reconnected. \(pluralized(outcome.accountCount, "account")) authorized."
                     : "Authorization is still pending at the bank."
                 showingResult = true
             } catch let error where error.isAuthCancellation {

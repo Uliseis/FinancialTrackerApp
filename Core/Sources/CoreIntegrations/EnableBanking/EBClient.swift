@@ -95,10 +95,10 @@ public struct EBClient: Sendable {
         return try await send(req, as: AuthResponse.self)
     }
 
-    public func createSession(code: String) async throws -> SessionResponse {
+    public func createSession(code: String) async throws -> CreateSessionResponse {
         let body = try JSONSerialization.data(withJSONObject: ["code": code])
         let req = try makeRequest(path: "/sessions", method: "POST", body: body)
-        return try await send(req, as: SessionResponse.self)
+        return try await send(req, as: CreateSessionResponse.self)
     }
 
     public func getSession(_ sessionId: String) async throws -> SessionResponse {

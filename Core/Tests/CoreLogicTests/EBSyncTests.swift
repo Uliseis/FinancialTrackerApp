@@ -50,15 +50,18 @@ final class EBSyncTests: XCTestCase {
 
     private func decode<T: Decodable>(_ json: String) -> T { Self.decode(json) }
 
+    // Mirrors the real GET /sessions/{id} shape: no session_id, slim accounts_data.
     private func makeSession(status: String = "AUTHORIZED",
                              uids: [String] = [EBSyncTests.uid]) -> SessionResponse {
         decode("""
         {
-          "session_id": "sess-1", "status": "\(status)",
-          "accounts": [],
-          "accounts_data": [\(uids.map { #"{"uid": "\#($0)", "currency": "EUR"}"# }.joined(separator: ","))],
-          "access": {"valid_until": "2026-09-08T10:00:00Z"},
-          "aspsp": {"name": "Revolut", "country": "ES"}
+          "status": "\(status)",
+          "accounts": [\(uids.map { #""\#($0)""# }.joined(separator: ","))],
+          "accounts_data": [\(uids.map { #"{"uid": "\#($0)", "identification_hash": "h"}"# }.joined(separator: ","))],
+          "access": {"accounts": null, "balances": true, "transactions": true,
+                     "valid_until": "2026-09-08T10:00:00Z"},
+          "aspsp": {"name": "Revolut", "country": "ES"},
+          "closed": null
         }
         """)
     }

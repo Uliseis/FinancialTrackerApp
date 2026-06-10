@@ -72,10 +72,12 @@ extension CoreLogic {
             return (code, state)
         }
 
-        // Mirrors the callback route's connection update from the created session.
+        // Mirrors the callback route's connection update from the created session. When
+        // access.valid_until is absent the expiry simply isn't updated — the web's
+        // optional-chained behavior, not a guess.
         @MainActor
         public static func applySession(
-            _ session: SessionResponse, to connection: Connection,
+            _ session: CreateSessionResponse, to connection: Connection,
             expectedState: String, in ctx: ModelContext, now: Date = .now
         ) throws {
             guard storedState(of: connection) == expectedState else {
@@ -83,15 +85,14 @@ extension CoreLogic {
             }
             connection.sessionId = session.sessionId
             connection.status = session.status == "AUTHORIZED" ? .active : .pending
-            if let valid = session.access.validUntil, let date = parseISO(valid) {
+            if let valid = session.access?.validUntil, let date = parseISO(valid) {
                 connection.expiresAt = date
             }
-            var meta: [String: Any] = [
-                "sessionStatus": session.status,
-                "aspsp": ["name": session.aspsp.name, "country": session.aspsp.country],
-            ]
-            let uids = (session.accountsData ?? []).compactMap(\.uid)
-            meta["accountUids"] = uids.isEmpty ? session.accounts : uids
+            var meta: [String: Any] = ["sessionStatus": session.status]
+            if let aspsp = session.aspsp {
+                meta["aspsp"] = ["name": aspsp.name, "country": aspsp.country]
+            }
+            meta["accountUids"] = EBHelpers.sessionAccounts(session).compactMap(\.uid)
             if let authorized = session.authorized { meta["authorized"] = authorized }
             mergeMetadata(meta, into: connection)
             connection.updatedAt = now

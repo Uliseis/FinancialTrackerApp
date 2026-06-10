@@ -19,8 +19,8 @@ final class EBModelsDecodingTests: XCTestCase {
         XCTAssertEqual(r.aspsps[0].authMethods?.first?.approach, "REDIRECT")
     }
 
-    func test_session_withAccountsData() throws {
-        let s = try decode(SessionResponse.self, """
+    func test_createSession_withAccountsData() throws {
+        let s = try decode(CreateSessionResponse.self, """
         {"session_id":"sess-1","status":"AUTHORIZED","accounts":["uid-1"],
          "accounts_data":[{"uid":"uid-1","account_id":{"iban":"ES1234"},"currency":"EUR","name":"Main"}],
          "access":{"valid_until":"2026-09-01T00:00:00.000+00:00","transactions":true},
@@ -29,7 +29,46 @@ final class EBModelsDecodingTests: XCTestCase {
         XCTAssertEqual(s.sessionId, "sess-1")
         XCTAssertEqual(s.status, "AUTHORIZED")
         XCTAssertEqual(s.accountsData?.first?.accountId?.iban, "ES1234")
-        XCTAssertEqual(s.access.validUntil, "2026-09-01T00:00:00.000+00:00")
+        XCTAssertEqual(s.access?.validUntil, "2026-09-01T00:00:00.000+00:00")
+    }
+
+    // A created session without an id is unusable — the decode must fail loudly.
+    func test_createSession_missingSessionId_throws() {
+        XCTAssertThrowsError(try decode(CreateSessionResponse.self, """
+        {"status":"AUTHORIZED","accounts":[],"aspsp":{"name":"BBVA","country":"ES"}}
+        """))
+    }
+
+    // Field-for-field the shape the live API returned for GET /sessions/{id} on
+    // 2026-06-10 (values scrubbed): no session_id, slim accounts_data, null access
+    // sub-field, null closed. This payload broke the original single-struct model.
+    func test_getSession_liveShape() throws {
+        let s = try decode(SessionResponse.self, """
+        {"status":"AUTHORIZED",
+         "accounts":["11111111-2222-3333-4444-555555555555"],
+         "accounts_data":[{"uid":"11111111-2222-3333-4444-555555555555",
+                           "identification_hash":"abc","identification_hashes":["abc"]}],
+         "aspsp":{"name":"ING","country":"ES"},
+         "psu_type":"personal","psu_id_hash":"deadbeef",
+         "access":{"accounts":null,"balances":true,"transactions":true,
+                   "valid_until":"2026-08-09T05:09:00.000000+00:00"},
+         "created":"2026-05-11T05:09:00.000000+00:00",
+         "authorized":"2026-05-11T05:10:00.000000+00:00","closed":null}
+        """)
+        XCTAssertEqual(s.status, "AUTHORIZED")
+        XCTAssertEqual(EBHelpers.sessionAccounts(s).first?.uid,
+                       "11111111-2222-3333-4444-555555555555")
+        XCTAssertEqual(s.access?.validUntil, "2026-08-09T05:09:00.000000+00:00")
+        XCTAssertNil(s.closed)
+    }
+
+    // The accounts array has carried {uid:…} objects historically; both shapes decode.
+    func test_session_accountsAsObjects() throws {
+        let s = try decode(SessionResponse.self, """
+        {"status":"AUTHORIZED","accounts":[{"uid":"u-1"},"u-2"],
+         "aspsp":{"name":"BBVA","country":"ES"}}
+        """)
+        XCTAssertEqual(s.accounts?.compactMap(\.uid), ["u-1", "u-2"])
     }
 
     func test_accountDetails_andBalances() throws {

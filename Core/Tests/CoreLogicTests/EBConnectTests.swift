@@ -13,7 +13,7 @@ final class EBConnectTests: XCTestCase {
         status: String = "AUTHORIZED",
         validUntil: String? = "2026-09-08T10:00:00Z",
         uids: [String] = ["uid-1", "uid-2"]
-    ) -> SessionResponse {
+    ) -> CreateSessionResponse {
         let json = """
         {
           "session_id": "sess-1",
@@ -24,7 +24,7 @@ final class EBConnectTests: XCTestCase {
           "aspsp": {"name": "Revolut", "country": "ES"}
         }
         """
-        return try! EBJSON.decoder.decode(SessionResponse.self, from: Data(json.utf8))
+        return try! EBJSON.decoder.decode(CreateSessionResponse.self, from: Data(json.utf8))
     }
 
     func testMakeAuthRequestValidityAndFields() {

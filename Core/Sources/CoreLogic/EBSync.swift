@@ -166,7 +166,7 @@ extension CoreLogic {
                 } catch { result.errors.append("invariants-check: \(describe(error))") }
                 result.postProcess = post
 
-                if let valid = session.access.validUntil,
+                if let valid = session.access?.validUntil,
                    let expiresAt = EBHelpers.parseDate(valid) {
                     connection.expiresAt = expiresAt
                 }

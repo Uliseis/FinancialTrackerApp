@@ -100,7 +100,7 @@ struct ConnectBankView: View {
                 let outcome = try await BankLink.link(
                     aspspName: aspsp.name, country: aspsp.country, in: ctx)
                 resultMessage = outcome.authorized
-                    ? "Connected. ^[\(outcome.accountCount) account](inflect: true) authorized."
+                    ? "Connected. \(pluralized(outcome.accountCount, "account")) authorized."
                     : "Authorization is still pending at the bank."
                 linkSucceeded = true
                 showingResult = true

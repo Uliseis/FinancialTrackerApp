@@ -83,9 +83,9 @@ public enum EBHelpers {
     public static func iban(ofSession a: SessionAccount) -> String? { a.accountId?.iban }
     public static func iban(ofDetails a: AccountDetails) -> String? { a.accountId?.iban }
 
-    public static func sessionAccounts(_ s: SessionResponse) -> [SessionAccount] {
+    public static func sessionAccounts(_ s: any EBSessionPayload) -> [SessionAccount] {
         if let data = s.accountsData, !data.isEmpty { return data }
-        return s.accounts.map { uid in
+        return (s.accounts ?? []).compactMap(\.uid).map { uid in
             SessionAccount(uid: uid, identificationHash: nil, accountId: nil, details: nil,
                            usage: nil, cashAccountType: nil, product: nil, currency: nil,
                            name: nil, productName: nil)

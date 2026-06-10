@@ -105,7 +105,7 @@ struct SettingsView: View {
     #if DEBUG
     private func applyHook() {
         switch UITestHooks.presentSheet {
-        case "connections", "eb-setup", "connect-bank":
+        case "connections", "eb-setup", "connect-bank", "eb-sync-all":
             path.append(SettingsDestination.connections)
         case "connection-detail":
             path.append(SettingsDestination.connections)
