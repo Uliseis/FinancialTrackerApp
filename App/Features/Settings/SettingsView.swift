@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import LocalAuthentication
 import CoreModel
 
 // The Settings tab — single home for every secondary surface (was two toolbar "More"
@@ -32,14 +33,17 @@ struct SettingsView: View {
                 }
                 Section {
                     Toggle("Require Face ID", isOn: $requireUnlock)
+                        .onChange(of: requireUnlock) { wasOn, isOn in
+                            if wasOn && !isOn { confirmDisable() }
+                        }
                     LabeledContent("iCloud Sync", value: CloudKitGate.isAvailable ? "On" : "Unavailable")
                     LabeledContent("Version", value: Self.versionString)
                 } header: {
                     Text("App")
                 } footer: {
                     Text(CloudKitGate.isAvailable
-                         ? "Locks when the app goes to the background."
-                         : "Locks when the app goes to the background. Sync needs an iCloud-signed-in, entitled build.")
+                         ? "Locks when the app goes to the background. Turning the lock off requires Face ID."
+                         : "Locks when the app goes to the background. Turning the lock off requires Face ID. Sync needs an iCloud-signed-in, entitled build.")
                 }
             }
             .scrollEdgeEffectStyle(.soft, for: .all)
@@ -68,6 +72,25 @@ struct SettingsView: View {
     private func link(_ title: String, systemImage: String, to destination: SettingsDestination) -> some View {
         NavigationLink(value: destination) {
             Label(title, systemImage: systemImage)
+        }
+    }
+
+    // Disabling the lock is itself a privileged action: without this, anyone holding the
+    // unlocked phone could silently strip the protection. Fails closed — if authentication
+    // can't run or fails, the lock stays on.
+    private func confirmDisable() {
+        let context = LAContext()
+        var error: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
+            requireUnlock = true
+            return
+        }
+        Task {
+            let success = (try? await context.evaluatePolicy(
+                .deviceOwnerAuthentication,
+                localizedReason: "Confirm turning off the app lock"
+            )) ?? false
+            if !success { requireUnlock = true }
         }
     }
 
