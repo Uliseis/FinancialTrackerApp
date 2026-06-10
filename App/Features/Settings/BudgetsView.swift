@@ -8,13 +8,12 @@ struct BudgetsView: View {
     private var budgets: [Budget]
 
     @Environment(\.modelContext) private var ctx
-    @Environment(\.dismiss) private var dismiss
     @State private var editing: BudgetEdit?
     @State private var pendingDelete: Budget?
     @State private var confirmingDelete = false
 
     var body: some View {
-        NavigationStack {
+        Group {
             List {
                 ForEach(budgets) { budget in
                     Button {
@@ -42,9 +41,6 @@ struct BudgetsView: View {
                 }
             }
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Done") { dismiss() }
-                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { editing = BudgetEdit() } label: {
                         Label("Add Budget", systemImage: "plus")
@@ -204,7 +200,7 @@ extension BudgetPeriod {
 
 #if DEBUG
 #Preview {
-    BudgetsView()
+    NavigationStack { BudgetsView() }
         .modelContainer(PreviewData.container)
 }
 #endif

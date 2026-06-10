@@ -8,43 +8,28 @@ struct SharedExpensesView: View {
     private var groups: [SharedExpenseGroup]
 
     @Environment(\.modelContext) private var ctx
-    @Environment(\.dismiss) private var dismiss
     @State private var summaries: [UUID: CoreLogic.SharedExpenses.GroupSummary] = [:]
-    @State private var path: [SharedExpenseGroup] = []
 
+    // Pushed from SettingsView, which registers the SharedExpenseGroup destination
+    // (and handles the shared-detail DEBUG deep-push).
     var body: some View {
-        NavigationStack(path: $path) {
-            List {
-                ForEach(groups) { group in
-                    NavigationLink(value: group) {
-                        GroupRow(group: group, summary: summaries[group.id])
-                    }
+        List {
+            ForEach(groups) { group in
+                NavigationLink(value: group) {
+                    GroupRow(group: group, summary: summaries[group.id])
                 }
             }
-            .navigationDestination(for: SharedExpenseGroup.self) { SharedExpenseGroupDetailView(group: $0) }
-            .navigationTitle("Shared Expenses")
-            .navigationBarTitleDisplayMode(.inline)
-            .overlay {
-                if groups.isEmpty {
-                    ContentUnavailableView("No Shared Expenses", systemImage: "person.2",
-                                           description: Text("Track a shared expense from a transaction."))
-                }
-            }
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Done") { dismiss() }
-                }
-            }
-            .task {
-                reload()
-                #if DEBUG
-                if UITestHooks.presentSheet == "shared-detail", let first = groups.first {
-                    path = [first]
-                }
-                #endif
-            }
-            .reloadOnModelChange { reload() }
         }
+        .navigationTitle("Shared Expenses")
+        .navigationBarTitleDisplayMode(.inline)
+        .overlay {
+            if groups.isEmpty {
+                ContentUnavailableView("No Shared Expenses", systemImage: "person.2",
+                                       description: Text("Track a shared expense from a transaction."))
+            }
+        }
+        .task { reload() }
+        .reloadOnModelChange { reload() }
     }
 
     private func reload() {
@@ -75,7 +60,10 @@ private struct GroupRow: View {
 
 #if DEBUG
 #Preview {
-    SharedExpensesView()
-        .modelContainer(PreviewData.container)
+    NavigationStack {
+        SharedExpensesView()
+            .navigationDestination(for: SharedExpenseGroup.self) { SharedExpenseGroupDetailView(group: $0) }
+    }
+    .modelContainer(PreviewData.container)
 }
 #endif

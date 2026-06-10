@@ -9,7 +9,6 @@ struct ManageTransferRoutesView: View {
     private var routes: [TransferRoute]
 
     @Environment(\.modelContext) private var ctx
-    @Environment(\.dismiss) private var dismiss
     @State private var editing: RouteEdit?
     @State private var pendingDelete: TransferRoute?
     @State private var confirmingDelete = false
@@ -17,7 +16,7 @@ struct ManageTransferRoutesView: View {
     @State private var showingResult = false
 
     var body: some View {
-        NavigationStack {
+        Group {
             List {
                 Section {
                     ForEach(routes) { route in
@@ -58,9 +57,6 @@ struct ManageTransferRoutesView: View {
                 }
             }
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Done") { dismiss() }
-                }
                 ToolbarItem(placement: .topBarTrailing) { EditButton() }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { editing = RouteEdit() } label: {
@@ -303,7 +299,7 @@ private struct TransferRouteEditView: View {
 
 #if DEBUG
 #Preview {
-    ManageTransferRoutesView()
+    NavigationStack { ManageTransferRoutesView() }
         .modelContainer(PreviewData.container)
 }
 #endif

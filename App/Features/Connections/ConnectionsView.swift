@@ -2,31 +2,28 @@ import SwiftUI
 import SwiftData
 import CoreModel
 
-struct ConnectionsView: View {
+// Pushed from SettingsView, which registers the Connection destination.
+struct ConnectionsListView: View {
     @Query(sort: [SortDescriptor(\Connection.institutionName)])
     private var connections: [Connection]
 
     var body: some View {
-        NavigationStack {
-            List {
-                ForEach(connections) { conn in
-                    NavigationLink {
-                        ConnectionDetailView(connection: conn)
-                    } label: {
-                        ConnectionRow(connection: conn)
-                    }
+        List {
+            ForEach(connections) { conn in
+                NavigationLink(value: conn) {
+                    ConnectionRow(connection: conn)
                 }
             }
-            .scrollEdgeEffectStyle(.soft, for: .all)
-            .navigationTitle("Connections")
-            .overlay {
-                if connections.isEmpty {
-                    ContentUnavailableView(
-                        "No Connections",
-                        systemImage: "link",
-                        description: Text("Linked banks appear here.")
-                    )
-                }
+        }
+        .scrollEdgeEffectStyle(.soft, for: .all)
+        .navigationTitle("Connections")
+        .overlay {
+            if connections.isEmpty {
+                ContentUnavailableView(
+                    "No Connections",
+                    systemImage: "link",
+                    description: Text("Linked banks appear here.")
+                )
             }
         }
     }
@@ -102,7 +99,10 @@ enum ExpiryHint {
 
 #if DEBUG
 #Preview {
-    ConnectionsView()
-        .modelContainer(PreviewData.container)
+    NavigationStack {
+        ConnectionsListView()
+            .navigationDestination(for: Connection.self) { ConnectionDetailView(connection: $0) }
+    }
+    .modelContainer(PreviewData.container)
 }
 #endif

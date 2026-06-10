@@ -9,13 +9,12 @@ struct ManageGroupsView: View {
     private var groups: [AccountGroup]
 
     @Environment(\.modelContext) private var ctx
-    @Environment(\.dismiss) private var dismiss
     @State private var editing: GroupEdit?
     @State private var pendingDelete: AccountGroup?
     @State private var confirmingDelete = false
 
     var body: some View {
-        NavigationStack {
+        Group {
             List {
                 ForEach(groups) { group in
                     Button {
@@ -44,9 +43,6 @@ struct ManageGroupsView: View {
                 }
             }
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Done") { dismiss() }
-                }
                 ToolbarItem(placement: .topBarTrailing) { EditButton() }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { editing = GroupEdit() } label: {
@@ -206,7 +202,7 @@ extension AccountGroupKind {
 
 #if DEBUG
 #Preview {
-    ManageGroupsView()
+    NavigationStack { ManageGroupsView() }
         .modelContainer(PreviewData.container)
 }
 #endif

@@ -18,11 +18,6 @@ struct TransactionsView: View {
     @State private var showTransfers = false
     @State private var rows: [CoreModel.Transaction] = []
     @State private var categorizing: CoreModel.Transaction?
-    @State private var managingCategories = false
-    @State private var managingRules = false
-    @State private var managingRoutes = false
-    @State private var managingShared = false
-    @State private var managingBudgets = false
     @State private var path: [CoreModel.Transaction] = []
     #if DEBUG
     @State private var debugPartnerTx: CoreModel.Transaction?
@@ -44,9 +39,8 @@ struct TransactionsView: View {
 
     private func matches(_ tx: CoreModel.Transaction) -> Bool {
         guard !search.isEmpty else { return true }
-        let needle = search.lowercased()
-        return (tx.transactionDescription?.lowercased().contains(needle) ?? false)
-            || (tx.counterparty?.lowercased().contains(needle) ?? false)
+        return (tx.transactionDescription?.localizedStandardContains(search) ?? false)
+            || (tx.counterparty?.localizedStandardContains(search) ?? false)
     }
 
     var body: some View {
@@ -79,48 +73,12 @@ struct TransactionsView: View {
                     .toggleStyle(.button)
                     .sensoryFeedback(.selection, trigger: showTransfers)
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button {
-                            managingCategories = true
-                        } label: {
-                            Label("Manage Categories", systemImage: "tag")
-                        }
-                        Button {
-                            managingRules = true
-                        } label: {
-                            Label("Manage Rules", systemImage: "wand.and.stars")
-                        }
-                        Button {
-                            managingRoutes = true
-                        } label: {
-                            Label("Transfer Routes", systemImage: "arrow.triangle.branch")
-                        }
-                        Button {
-                            managingShared = true
-                        } label: {
-                            Label("Shared Expenses", systemImage: "person.2")
-                        }
-                        Button {
-                            managingBudgets = true
-                        } label: {
-                            Label("Budgets", systemImage: "chart.pie")
-                        }
-                    } label: {
-                        Label("More", systemImage: "ellipsis.circle")
-                    }
-                }
             }
             .sheet(item: $categorizing) { tx in
                 CategoryPickerView(selectedId: tx.category?.id) { category in
                     try? CoreLogic.Categories.recategorize(tx, to: category, in: ctx)
                 }
             }
-            .sheet(isPresented: $managingCategories) { ManageCategoriesView() }
-            .sheet(isPresented: $managingRules) { ManageRulesView() }
-            .sheet(isPresented: $managingRoutes) { ManageTransferRoutesView() }
-            .sheet(isPresented: $managingShared) { SharedExpensesView() }
-            .sheet(isPresented: $managingBudgets) { BudgetsView() }
             #if DEBUG
             .sheet(item: $debugPartnerTx) { tx in
                 TransferPartnerPickerView(tx: tx) { _ in }
@@ -142,20 +100,13 @@ struct TransactionsView: View {
             recompute()
             #if DEBUG
             switch UITestHooks.presentSheet {
-            case "categories", "category-edit": managingCategories = true
             case "categorize": categorizing = rows.first
-            case "rules", "rule-edit": managingRules = true
-            case "routes", "route-edit": managingRoutes = true
             case "tx-detail":
                 if let t = rows.first(where: { !$0.isTransfer && $0.routedFromTx == nil }) { path = [t] }
             case "tx-detail-transfer":
                 if let t = allTx.first(where: { $0.isTransfer && $0.routedFromTx == nil }) { path = [t] }
             case "pair-partner":
                 debugPartnerTx = rows.first(where: { !$0.isTransfer && $0.routedFromTx == nil })
-            case "shared", "shared-detail":
-                managingShared = true
-            case "budgets", "budget-edit":
-                managingBudgets = true
             case "shared-create":
                 debugSharedTx = allTx.first(where: {
                     $0.direction == .debit && !$0.isTransfer && $0.routedFromTx == nil

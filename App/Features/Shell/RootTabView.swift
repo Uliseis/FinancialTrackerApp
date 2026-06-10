@@ -17,8 +17,8 @@ struct RootTabView: View {
             Tab("Investments", systemImage: "chart.line.uptrend.xyaxis", value: .investments) {
                 InvestmentsView()
             }
-            Tab("Connections", systemImage: "link", value: .connections) {
-                ConnectionsView()
+            Tab("Settings", systemImage: "gearshape", value: .settings) {
+                SettingsView()
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)

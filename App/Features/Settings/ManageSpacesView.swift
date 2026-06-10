@@ -9,13 +9,12 @@ struct ManageSpacesView: View {
     private var spaces: [AccountSpace]
 
     @Environment(\.modelContext) private var ctx
-    @Environment(\.dismiss) private var dismiss
     @State private var editing: SpaceEdit?
     @State private var pendingDelete: AccountSpace?
     @State private var confirmingDelete = false
 
     var body: some View {
-        NavigationStack {
+        Group {
             List {
                 ForEach(spaces) { space in
                     Button {
@@ -40,9 +39,6 @@ struct ManageSpacesView: View {
             .navigationTitle("Spaces")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Done") { dismiss() }
-                }
                 ToolbarItem(placement: .topBarTrailing) { EditButton() }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { editing = SpaceEdit() } label: {
@@ -194,7 +190,7 @@ struct SpaceEdit: Identifiable {
 
 #if DEBUG
 #Preview {
-    ManageSpacesView()
+    NavigationStack { ManageSpacesView() }
         .modelContainer(PreviewData.container)
 }
 #endif

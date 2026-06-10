@@ -1,7 +1,7 @@
 import Foundation
 
 enum AppTab: String, CaseIterable {
-    case dashboard, accounts, transactions, investments, connections
+    case dashboard, accounts, transactions, investments, settings
 
     static var initial: AppTab {
         #if DEBUG

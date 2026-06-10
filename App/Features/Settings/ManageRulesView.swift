@@ -9,7 +9,6 @@ struct ManageRulesView: View {
     private var rules: [CategoryRule]
 
     @Environment(\.modelContext) private var ctx
-    @Environment(\.dismiss) private var dismiss
     @State private var editing: RuleEdit?
     @State private var pendingDelete: CategoryRule?
     @State private var confirmingDelete = false
@@ -17,7 +16,7 @@ struct ManageRulesView: View {
     @State private var showingApplyResult = false
 
     var body: some View {
-        NavigationStack {
+        Group {
             List {
                 Section {
                     ForEach(rules) { rule in
@@ -56,9 +55,6 @@ struct ManageRulesView: View {
                 }
             }
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Done") { dismiss() }
-                }
                 ToolbarItem(placement: .topBarTrailing) { EditButton() }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { editing = RuleEdit() } label: {
@@ -269,7 +265,7 @@ extension RuleMatch {
 
 #if DEBUG
 #Preview {
-    ManageRulesView()
+    NavigationStack { ManageRulesView() }
         .modelContainer(PreviewData.container)
 }
 #endif

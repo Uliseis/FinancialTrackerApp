@@ -19,8 +19,6 @@ struct AccountsView: View {
     @State private var eurBalances: [UUID: Decimal] = [:]
     @State private var sections: [GroupSection] = []
     @State private var spaceTotal: Decimal = 0
-    @State private var managingSpaces = false
-    @State private var managingGroups = false
     @State private var editingAccount: AccountEdit?
     @State private var anchoringAccount: Account?
 
@@ -72,25 +70,7 @@ struct AccountsView: View {
                         Label("New Account", systemImage: "plus")
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button {
-                            managingGroups = true
-                        } label: {
-                            Label("Manage Groups", systemImage: "square.stack.3d.up")
-                        }
-                        Button {
-                            managingSpaces = true
-                        } label: {
-                            Label("Manage Spaces", systemImage: "rectangle.stack")
-                        }
-                    } label: {
-                        Label("More", systemImage: "ellipsis.circle")
-                    }
-                }
             }
-            .sheet(isPresented: $managingSpaces) { ManageSpacesView() }
-            .sheet(isPresented: $managingGroups) { ManageGroupsView() }
             .sheet(item: $editingAccount, content: AccountFormView.init)
             .sheet(item: $anchoringAccount, content: BalanceAnchorView.init)
             .overlay {
@@ -102,8 +82,6 @@ struct AccountsView: View {
         .task {
             reload()
             #if DEBUG
-            if UITestHooks.presentSheet?.hasPrefix("space") == true { managingSpaces = true }
-            if UITestHooks.presentSheet?.hasPrefix("group") == true { managingGroups = true }
             if UITestHooks.presentSheet == "account-new" { editingAccount = AccountEdit() }
             if UITestHooks.presentSheet == "account-edit",
                let first = accounts.first(where: { !$0.archived }) {

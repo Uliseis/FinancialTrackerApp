@@ -8,13 +8,12 @@ struct ManageCategoriesView: View {
     private var categories: [CoreModel.Category]
 
     @Environment(\.modelContext) private var ctx
-    @Environment(\.dismiss) private var dismiss
     @State private var editing: CategoryEdit?
     @State private var pendingDelete: CoreModel.Category?
     @State private var confirmingDelete = false
 
     var body: some View {
-        NavigationStack {
+        Group {
             List {
                 ForEach(categories) { category in
                     Button {
@@ -42,9 +41,6 @@ struct ManageCategoriesView: View {
                 }
             }
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Done") { dismiss() }
-                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { editing = CategoryEdit() } label: {
                         Label("Add Category", systemImage: "plus")
@@ -212,7 +208,7 @@ extension CategoryKind {
 
 #if DEBUG
 #Preview {
-    ManageCategoriesView()
+    NavigationStack { ManageCategoriesView() }
         .modelContainer(PreviewData.container)
 }
 #endif
