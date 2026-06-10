@@ -1,15 +1,20 @@
 import SwiftUI
 import SwiftData
 import CoreModel
+import CoreLogic
 import CoreIntegrations
 
 // Pushed from SettingsView, which registers the Connection destination.
 struct ConnectionsListView: View {
     @Query(sort: [SortDescriptor(\Connection.institutionName)])
     private var connections: [Connection]
+    @Environment(\.modelContext) private var ctx
     @State private var settingUp = false
     @State private var linkingBank = false
     @State private var ebConfigured = false
+    @State private var syncingAll = false
+    @State private var syncMessage = ""
+    @State private var showingSyncResult = false
 
     var body: some View {
         List {
@@ -43,11 +48,24 @@ struct ConnectionsListView: View {
         .navigationTitle("Connections")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                Button(action: syncAll) {
+                    if syncingAll {
+                        ProgressView()
+                    } else {
+                        Label("Sync All", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                }
+                .disabled(!ebConfigured || syncingAll || connections.isEmpty)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button { linkingBank = true } label: {
                     Label("Link a Bank", systemImage: "plus")
                 }
                 .disabled(!ebConfigured)
             }
+        }
+        .alert("Sync", isPresented: $showingSyncResult) {} message: {
+            Text(syncMessage)
         }
         .sheet(isPresented: $settingUp, onDismiss: refreshConfigured) {
             EnableBankingSetupView()
@@ -74,6 +92,26 @@ struct ConnectionsListView: View {
 
     private func refreshConfigured() {
         ebConfigured = EBKeychain().isConfigured
+    }
+
+    private func syncAll() {
+        syncingAll = true
+        Task {
+            defer { syncingAll = false }
+            do {
+                let signer = try EBKeychain().loadSigner()
+                let results = await CoreLogic.EBSync.syncAll(
+                    api: EBClient(tokenProvider: signer), in: ctx)
+                let inserted = results.reduce(0) { $0 + $1.transactionsInserted }
+                let failed = results.filter { !$0.errors.isEmpty }.count
+                syncMessage = failed == 0
+                    ? "Synced ^[\(results.count) connection](inflect: true). ^[\(inserted) new transaction](inflect: true)."
+                    : "Synced with issues on ^[\(failed) connection](inflect: true). ^[\(inserted) new transaction](inflect: true)."
+            } catch {
+                syncMessage = "Sync failed — check the Enable Banking key."
+            }
+            showingSyncResult = true
+        }
     }
 }
 

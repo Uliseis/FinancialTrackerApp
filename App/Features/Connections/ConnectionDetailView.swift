@@ -8,6 +8,7 @@ struct ConnectionDetailView: View {
     let connection: Connection
     @Environment(\.modelContext) private var ctx
     @State private var reconnecting = false
+    @State private var syncing = false
     @State private var resultMessage = ""
     @State private var showingResult = false
 
@@ -40,6 +41,16 @@ struct ConnectionDetailView: View {
                         .foregroundStyle(Color.negativeAmount)
                 }
                 if canReconnect {
+                    Button(action: syncNow) {
+                        HStack {
+                            Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
+                            if syncing {
+                                Spacer()
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(syncing || reconnecting || connection.sessionId == nil)
                     Button(action: reconnect) {
                         HStack {
                             Label("Reconnect", systemImage: "arrow.clockwise")
@@ -49,7 +60,7 @@ struct ConnectionDetailView: View {
                             }
                         }
                     }
-                    .disabled(reconnecting)
+                    .disabled(reconnecting || syncing)
                 }
             }
 
@@ -91,8 +102,26 @@ struct ConnectionDetailView: View {
         }
         .navigationTitle(connection.institutionName ?? "Connection")
         .navigationBarTitleDisplayMode(.inline)
-        .alert("Reconnect", isPresented: $showingResult) {} message: {
+        .alert("Connection", isPresented: $showingResult) {} message: {
             Text(resultMessage)
+        }
+    }
+
+    private func syncNow() {
+        syncing = true
+        Task {
+            defer { syncing = false }
+            do {
+                let signer = try EBKeychain().loadSigner()
+                let result = try await CoreLogic.EBSync.sync(
+                    connection: connection, api: EBClient(tokenProvider: signer), in: ctx)
+                resultMessage = result.errors.isEmpty
+                    ? "Synced. ^[\(result.transactionsInserted) new transaction](inflect: true) across ^[\(result.accountsTouched) account](inflect: true)."
+                    : "Synced with issues: \(result.errors.joined(separator: "; "))"
+            } catch {
+                resultMessage = "Sync failed: \(connection.lastError ?? "unknown error")"
+            }
+            showingResult = true
         }
     }
 

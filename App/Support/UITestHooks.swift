@@ -9,7 +9,7 @@ import Foundation
 // Names — Accounts tab: account-new, account-edit, anchor. Transactions tab:
 // categorize, tx-detail, tx-detail-transfer, pair-partner, shared-create.
 // Settings tab (pushes): connections, eb-setup, connect-bank, transfers, spaces, space-edit, groups, group-edit,
-// categories, category-edit, rules, rule-edit, routes, route-edit, shared,
+// connection-detail, categories, category-edit, rules, rule-edit, routes, route-edit, shared,
 // shared-detail, budgets, budget-edit (the *-edit variants also auto-open the
 // editor sheet inside the pushed screen).
 enum UITestHooks {

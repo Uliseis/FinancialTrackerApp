@@ -11,6 +11,8 @@ struct SettingsView: View {
     #if DEBUG
     @Query(sort: [SortDescriptor(\SharedExpenseGroup.createdAt, order: .reverse)])
     private var debugGroups: [SharedExpenseGroup]
+    @Query(sort: [SortDescriptor(\Connection.institutionName)])
+    private var debugConnections: [Connection]
     #endif
 
     var body: some View {
@@ -105,6 +107,9 @@ struct SettingsView: View {
         switch UITestHooks.presentSheet {
         case "connections", "eb-setup", "connect-bank":
             path.append(SettingsDestination.connections)
+        case "connection-detail":
+            path.append(SettingsDestination.connections)
+            if let first = debugConnections.first { path.append(first) }
         case "transfers": path.append(SettingsDestination.transfers)
         case "spaces", "space-edit": path.append(SettingsDestination.spaces)
         case "groups", "group-edit": path.append(SettingsDestination.groups)
