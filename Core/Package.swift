@@ -12,14 +12,14 @@ let package = Package(
     ],
     targets: [
         .target(name: "CoreModel"),
-        .target(name: "CoreLogic", dependencies: ["CoreModel"]),
+        .target(name: "CoreLogic", dependencies: ["CoreModel", "CoreIntegrations"]),
         .target(name: "CoreIntegrations", dependencies: ["CoreModel"]),
         .target(name: "CoreSync", dependencies: ["CoreModel", "CoreLogic", "CoreIntegrations"]),
 
         .testTarget(name: "CoreModelTests", dependencies: ["CoreModel"]),
         .testTarget(
             name: "CoreLogicTests",
-            dependencies: ["CoreLogic", "CoreModel"],
+            dependencies: ["CoreLogic", "CoreModel", "CoreIntegrations"],
             resources: [.copy("Fixtures")]
         ),
         .testTarget(name: "CoreIntegrationsTests", dependencies: ["CoreIntegrations", "CoreModel"]),

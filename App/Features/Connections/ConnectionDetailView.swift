@@ -1,12 +1,23 @@
 import SwiftUI
 import SwiftData
 import CoreModel
+import CoreLogic
+import CoreIntegrations
 
 struct ConnectionDetailView: View {
     let connection: Connection
+    @Environment(\.modelContext) private var ctx
+    @State private var reconnecting = false
+    @State private var resultMessage = ""
+    @State private var showingResult = false
 
     private var accounts: [Account] {
         connection.accounts.sorted { $0.name < $1.name }
+    }
+
+    private var canReconnect: Bool {
+        connection.connector == .enablebanking && connection.institutionId != nil
+            && EBKeychain().isConfigured
     }
 
     private var recentRuns: [SyncRun] {
@@ -27,6 +38,18 @@ struct ConnectionDetailView: View {
                 if let err = connection.lastError, !err.isEmpty {
                     LabeledContent("Last error", value: err)
                         .foregroundStyle(Color.negativeAmount)
+                }
+                if canReconnect {
+                    Button(action: reconnect) {
+                        HStack {
+                            Label("Reconnect", systemImage: "arrow.clockwise")
+                            if reconnecting {
+                                Spacer()
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(reconnecting)
                 }
             }
 
@@ -68,6 +91,35 @@ struct ConnectionDetailView: View {
         }
         .navigationTitle(connection.institutionName ?? "Connection")
         .navigationBarTitleDisplayMode(.inline)
+        .alert("Reconnect", isPresented: $showingResult) {} message: {
+            Text(resultMessage)
+        }
+    }
+
+    private func reconnect() {
+        guard let aspspName = connection.institutionId else { return }
+        let country = CoreLogic.EBConnect.storedCountry(of: connection) ?? "ES"
+        reconnecting = true
+        Task {
+            defer { reconnecting = false }
+            do {
+                let outcome = try await BankLink.link(
+                    aspspName: aspspName, country: country,
+                    existing: connection, in: ctx)
+                resultMessage = outcome.authorized
+                    ? "Reconnected. ^[\(outcome.accountCount) account](inflect: true) authorized."
+                    : "Authorization is still pending at the bank."
+                showingResult = true
+            } catch let error where error.isAuthCancellation {
+                // User closed the bank's page.
+            } catch CoreLogic.EBConnect.CallbackError.bankReported(let reason) {
+                resultMessage = "The bank declined the connection (\(reason))."
+                showingResult = true
+            } catch {
+                resultMessage = "Couldn’t reconnect."
+                showingResult = true
+            }
+        }
     }
 }
 

@@ -103,7 +103,8 @@ struct SettingsView: View {
     #if DEBUG
     private func applyHook() {
         switch UITestHooks.presentSheet {
-        case "connections", "eb-setup": path.append(SettingsDestination.connections)
+        case "connections", "eb-setup", "connect-bank":
+            path.append(SettingsDestination.connections)
         case "transfers": path.append(SettingsDestination.transfers)
         case "spaces", "space-edit": path.append(SettingsDestination.spaces)
         case "groups", "group-edit": path.append(SettingsDestination.groups)

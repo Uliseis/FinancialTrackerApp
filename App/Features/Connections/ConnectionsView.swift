@@ -8,6 +8,7 @@ struct ConnectionsListView: View {
     @Query(sort: [SortDescriptor(\Connection.institutionName)])
     private var connections: [Connection]
     @State private var settingUp = false
+    @State private var linkingBank = false
     @State private var ebConfigured = false
 
     var body: some View {
@@ -40,16 +41,32 @@ struct ConnectionsListView: View {
         }
         .scrollEdgeEffectStyle(.soft, for: .all)
         .navigationTitle("Connections")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { linkingBank = true } label: {
+                    Label("Link a Bank", systemImage: "plus")
+                }
+                .disabled(!ebConfigured)
+            }
+        }
         .sheet(isPresented: $settingUp, onDismiss: refreshConfigured) {
             EnableBankingSetupView()
+        }
+        .sheet(isPresented: $linkingBank) {
+            ConnectBankView()
         }
         .task {
             refreshConfigured()
             #if DEBUG
-            if UITestHooks.presentSheet == "eb-setup" {
-                // Presenting while the push transition is in flight gets dropped silently.
+            // Presenting while the push transition is in flight gets dropped silently.
+            switch UITestHooks.presentSheet {
+            case "eb-setup":
                 try? await Task.sleep(for: .milliseconds(700))
                 settingUp = true
+            case "connect-bank":
+                try? await Task.sleep(for: .milliseconds(700))
+                linkingBank = true
+            default: break
             }
             #endif
         }
