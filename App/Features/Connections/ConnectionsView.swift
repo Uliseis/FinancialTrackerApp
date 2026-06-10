@@ -1,31 +1,62 @@
 import SwiftUI
 import SwiftData
 import CoreModel
+import CoreIntegrations
 
 // Pushed from SettingsView, which registers the Connection destination.
 struct ConnectionsListView: View {
     @Query(sort: [SortDescriptor(\Connection.institutionName)])
     private var connections: [Connection]
+    @State private var settingUp = false
+    @State private var ebConfigured = false
 
     var body: some View {
         List {
-            ForEach(connections) { conn in
-                NavigationLink(value: conn) {
-                    ConnectionRow(connection: conn)
+            Section {
+                Button { settingUp = true } label: {
+                    LabeledContent("Enable Banking") {
+                        HStack(spacing: 8) {
+                            Text(ebConfigured ? "Configured" : "Not set up")
+                                .foregroundStyle(.secondary)
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+                .tint(.primary)
+            } footer: {
+                Text("Bank sync uses an app key stored in your iCloud Keychain.")
+            }
+            if !connections.isEmpty {
+                Section("Linked banks") {
+                    ForEach(connections) { conn in
+                        NavigationLink(value: conn) {
+                            ConnectionRow(connection: conn)
+                        }
+                    }
                 }
             }
         }
         .scrollEdgeEffectStyle(.soft, for: .all)
         .navigationTitle("Connections")
-        .overlay {
-            if connections.isEmpty {
-                ContentUnavailableView(
-                    "No Connections",
-                    systemImage: "link",
-                    description: Text("Linked banks appear here.")
-                )
-            }
+        .sheet(isPresented: $settingUp, onDismiss: refreshConfigured) {
+            EnableBankingSetupView()
         }
+        .task {
+            refreshConfigured()
+            #if DEBUG
+            if UITestHooks.presentSheet == "eb-setup" {
+                // Presenting while the push transition is in flight gets dropped silently.
+                try? await Task.sleep(for: .milliseconds(700))
+                settingUp = true
+            }
+            #endif
+        }
+    }
+
+    private func refreshConfigured() {
+        ebConfigured = EBKeychain().isConfigured
     }
 }
 

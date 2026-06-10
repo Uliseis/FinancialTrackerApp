@@ -74,6 +74,22 @@ public struct EBKeychain: Sendable {
         return EBJWTSigner(applicationId: try loadApplicationId(), privateKey: key, ttl: ttl)
     }
 
+    public var isConfigured: Bool {
+        (try? loadKeyPEM()) != nil && (try? loadApplicationId()) != nil
+    }
+
+    public func removeAll() {
+        for account in [Self.pemAccount, Self.appIdAccount] {
+            let query: [CFString: Any] = [
+                kSecClass: kSecClassGenericPassword,
+                kSecAttrService: service,
+                kSecAttrAccount: account,
+                kSecAttrSynchronizable: kSecAttrSynchronizableAny as Any,
+            ]
+            SecItemDelete(query as CFDictionary)
+        }
+    }
+
     private func store(_ account: String, _ value: String) throws {
         let data = Data(value.utf8)
         let base: [CFString: Any] = [
