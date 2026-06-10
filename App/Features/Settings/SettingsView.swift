@@ -18,6 +18,7 @@ struct SettingsView: View {
                     link("Connections", systemImage: "link", to: .connections)
                 }
                 Section("Money") {
+                    link("Transfers", systemImage: "arrow.left.arrow.right", to: .transfers)
                     link("Shared Expenses", systemImage: "person.2", to: .sharedExpenses)
                     link("Budgets", systemImage: "chart.pie", to: .budgets)
                 }
@@ -37,6 +38,7 @@ struct SettingsView: View {
             .navigationDestination(for: SettingsDestination.self) { destination in
                 switch destination {
                 case .connections: ConnectionsListView()
+                case .transfers: TransfersView()
                 case .sharedExpenses: SharedExpensesView()
                 case .budgets: BudgetsView()
                 case .categories: ManageCategoriesView()
@@ -70,6 +72,7 @@ struct SettingsView: View {
     private func applyHook() {
         switch UITestHooks.presentSheet {
         case "connections": path.append(SettingsDestination.connections)
+        case "transfers": path.append(SettingsDestination.transfers)
         case "spaces", "space-edit": path.append(SettingsDestination.spaces)
         case "groups", "group-edit": path.append(SettingsDestination.groups)
         case "categories", "category-edit": path.append(SettingsDestination.categories)
@@ -87,7 +90,7 @@ struct SettingsView: View {
 }
 
 enum SettingsDestination: Hashable {
-    case connections, sharedExpenses, budgets, categories, rules, transferRoutes, spaces, groups
+    case connections, transfers, sharedExpenses, budgets, categories, rules, transferRoutes, spaces, groups
 }
 
 #if DEBUG

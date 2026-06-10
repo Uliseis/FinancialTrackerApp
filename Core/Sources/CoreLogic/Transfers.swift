@@ -311,5 +311,29 @@ extension CoreLogic {
             tx.transferGroup = nil
             try ctx.save()
         }
+
+        // Read model for the Transfers screen (iOS-only surface; the web shows transfers
+        // inline in the transactions list). Legs are debit-first so "from → to" reads off
+        // the leg order; listings sort by most recent leg.
+        public struct GroupListing: Identifiable {
+            public let group: TransferGroup
+            public let legs: [Transaction]
+            public let latestAt: Date
+            public var id: UUID { group.id }
+        }
+
+        @MainActor
+        public static func listGroups(in ctx: ModelContext) throws -> [GroupListing] {
+            let groups = try ctx.fetch(FetchDescriptor<TransferGroup>())
+            return groups.map { group in
+                let legs = group.transactions.sorted { lhs, rhs in
+                    if lhs.direction != rhs.direction { return lhs.direction == .debit }
+                    return lhs.bookedAt < rhs.bookedAt
+                }
+                let latest = legs.map(\.bookedAt).max() ?? group.createdAt
+                return GroupListing(group: group, legs: legs, latestAt: latest)
+            }
+            .sorted { $0.latestAt > $1.latestAt }
+        }
     }
 }
