@@ -17,6 +17,7 @@ struct TransactionsView: View {
     @State private var search = ""
     @State private var showTransfers = false
     @State private var rows: [CoreModel.Transaction] = []
+    @State private var filteredTotalEur: Decimal = 0
     @State private var categorizing: CoreModel.Transaction?
     @State private var path: [CoreModel.Transaction] = []
     #if DEBUG
@@ -35,6 +36,8 @@ struct TransactionsView: View {
             if !showTransfers && tx.isTransfer { return false }
             return matches(tx)
         }
+        // Net EUR of the current matches — shown only while searching (see body).
+        filteredTotalEur = rows.reduce(Decimal(0)) { $0 + ($1.amountEur ?? 0) }
     }
 
     private func matches(_ tx: CoreModel.Transaction) -> Bool {
@@ -62,6 +65,13 @@ struct TransactionsView: View {
             }
             .navigationDestination(for: CoreModel.Transaction.self) { TransactionDetailView(tx: $0) }
             .scrollEdgeEffectStyle(.soft, for: .all)
+            .safeAreaInset(edge: .bottom) {
+                if !search.isEmpty && !rows.isEmpty {
+                    RunningTotalPill(count: rows.count, total: filteredTotalEur)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.snappy, value: search.isEmpty)
             .navigationTitle("Transactions")
             .searchable(text: $search, prompt: "Description or counterparty")
             .toolbar {
@@ -97,6 +107,9 @@ struct TransactionsView: View {
             }
         }
         .task {
+            #if DEBUG
+            if let q = UITestHooks.search, !q.isEmpty { search = q }
+            #endif
             recompute()
             #if DEBUG
             switch UITestHooks.presentSheet {
@@ -183,6 +196,38 @@ private struct TransactionRow: View {
         if value > 0 { return .positiveAmount }
         if value < 0 { return .primary }
         return .secondary
+    }
+}
+
+// Floating glass pill summarising the current search: match count + net EUR.
+// The one legitimate manual-glass surface — floating content over the list.
+private struct RunningTotalPill: View {
+    let count: Int
+    let total: Decimal
+
+    private var totalString: String {
+        let base = Money.format(total, currency: "EUR")
+        return total > 0 ? "+\(base)" : base
+    }
+
+    var body: some View {
+        HStack(spacing: Theme.Space.m) {
+            Text("^[\(count) match](inflect: true)")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: Theme.Space.s)
+            Text(totalString)
+                .font(.headline.monospacedDigit())
+                .fontDesign(.rounded)
+                .foregroundStyle(Theme.amountColor(total))
+        }
+        .padding(.horizontal, Theme.Space.l)
+        .padding(.vertical, Theme.Space.s + 2)
+        .glassEffect(.regular, in: .capsule)
+        .padding(.horizontal, Theme.Space.m)
+        .padding(.bottom, Theme.Space.s)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("^[\(count) match](inflect: true), net \(Money.format(total, currency: "EUR"))")
     }
 }
 

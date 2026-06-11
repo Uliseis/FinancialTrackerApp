@@ -16,5 +16,11 @@ enum UITestHooks {
     static var presentSheet: String? {
         ProcessInfo.processInfo.environment["UITEST_PRESENT"]
     }
+
+    // Prefill the Transactions search field (UITEST_SEARCH=<query>) so the
+    // search-only running-total pill can be captured.
+    static var search: String? {
+        ProcessInfo.processInfo.environment["UITEST_SEARCH"]
+    }
 }
 #endif
