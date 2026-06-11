@@ -24,19 +24,19 @@ struct SettingsView: View {
                         .listRowSeparator(.hidden)
                 }
                 Section {
-                    link("Connections", systemImage: "link", to: .connections)
+                    SettingsLinkRow(title: "Connections", systemImage: "link", destination: .connections)
                 }
                 Section("Money") {
-                    link("Transfers", systemImage: "arrow.left.arrow.right", to: .transfers)
-                    link("Shared Expenses", systemImage: "person.2", to: .sharedExpenses)
-                    link("Budgets", systemImage: "chart.pie", to: .budgets)
+                    SettingsLinkRow(title: "Transfers", systemImage: "arrow.left.arrow.right", destination: .transfers)
+                    SettingsLinkRow(title: "Shared Expenses", systemImage: "person.2", destination: .sharedExpenses)
+                    SettingsLinkRow(title: "Budgets", systemImage: "chart.pie", destination: .budgets)
                 }
                 Section("Manage") {
-                    link("Categories", systemImage: "tag", to: .categories)
-                    link("Rules", systemImage: "wand.and.stars", to: .rules)
-                    link("Transfer Routes", systemImage: "arrow.triangle.branch", to: .transferRoutes)
-                    link("Spaces", systemImage: "rectangle.stack", to: .spaces)
-                    link("Groups", systemImage: "square.stack.3d.up", to: .groups)
+                    SettingsLinkRow(title: "Categories", systemImage: "tag", destination: .categories)
+                    SettingsLinkRow(title: "Rules", systemImage: "wand.and.stars", destination: .rules)
+                    SettingsLinkRow(title: "Transfer Routes", systemImage: "arrow.triangle.branch", destination: .transferRoutes)
+                    SettingsLinkRow(title: "Spaces", systemImage: "rectangle.stack", destination: .spaces)
+                    SettingsLinkRow(title: "Groups", systemImage: "square.stack.3d.up", destination: .groups)
                 }
                 Section {
                     Toggle("Require Face ID", isOn: $requireUnlock)
@@ -72,15 +72,6 @@ struct SettingsView: View {
             #if DEBUG
             .task { applyHook() }
             #endif
-        }
-    }
-
-    private func link(_ title: String, systemImage: String, to destination: SettingsDestination) -> some View {
-        NavigationLink(value: destination) {
-            HStack(spacing: Theme.Space.m) {
-                IconBadge(systemName: systemImage)
-                Text(title)
-            }
         }
     }
 
@@ -136,6 +127,22 @@ struct SettingsView: View {
 
 enum SettingsDestination: Hashable {
     case connections, transfers, sharedExpenses, budgets, categories, rules, transferRoutes, spaces, groups
+}
+
+// A Settings navigation row: teal icon chip + title, pushing a destination.
+private struct SettingsLinkRow: View {
+    let title: String
+    let systemImage: String
+    let destination: SettingsDestination
+
+    var body: some View {
+        NavigationLink(value: destination) {
+            HStack(spacing: Theme.Space.m) {
+                IconBadge(systemName: systemImage)
+                Text(title)
+            }
+        }
+    }
 }
 
 // Brand identity block at the top of Settings.
