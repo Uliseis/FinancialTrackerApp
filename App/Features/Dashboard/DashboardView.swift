@@ -22,7 +22,13 @@ struct DashboardView: View {
             Group {
                 if model.hasAccounts {
                     List {
-                        NetWorthCard(model: model)
+                        Section {
+                            NetWorthHeroCard(model: model)
+                                .listRowInsets(EdgeInsets(top: Theme.Space.s, leading: Theme.Space.m,
+                                                          bottom: Theme.Space.s, trailing: Theme.Space.m))
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
+                        }
                         if !model.groups.isEmpty { GroupBreakdownSection(groups: model.groups, cashTotal: model.cashTotal) }
                         if model.cashFlow.contains(where: { $0.income != 0 || $0.expense != 0 }) {
                             CashFlowSection(months: model.cashFlow)
@@ -51,24 +57,116 @@ struct DashboardView: View {
     }
 }
 
-private struct NetWorthCard: View {
+// The signature screen element: a dark teal "instrument panel" carrying the
+// net-worth readout, a teal compass mark, and an honest net-flow sparkline.
+private struct NetWorthHeroCard: View {
     let model: DashboardModel
 
+    private var a11y: String {
+        var parts = ["Total net worth \(Money.format(model.totalNetWorth, currency: "EUR"))"]
+        parts.append("cash \(Money.format(model.cashTotal, currency: "EUR"))")
+        if model.investmentValue > 0 { parts.append("investments \(Money.format(model.investmentValue, currency: "EUR"))") }
+        if model.liabilities != 0 { parts.append("liabilities \(Money.format(model.liabilities, currency: "EUR"))") }
+        return parts.joined(separator: ", ")
+    }
+
     var body: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 8) {
-                StatHeader(title: "Total net worth", amount: model.totalNetWorth)
-                if model.investmentValue > 0 {
-                    Text("cash \(Money.format(model.cashTotal, currency: "EUR")) · inv \(Money.format(model.investmentValue, currency: "EUR"))")
-                        .font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                    Text("TOTAL NET WORTH")
+                        .font(.caption2.weight(.semibold))
+                        .tracking(1.4)
+                        .foregroundStyle(.white.opacity(0.55))
+                    Text(Money.format(model.totalNetWorth, currency: "EUR"))
+                        .font(.readout(.largeTitle, weight: .bold))
+                        .foregroundStyle(.white)
+                        .contentTransition(.numericText())
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                 }
-                if model.liabilities != 0 {
-                    Text("liabilities \(Money.format(model.liabilities, currency: "EUR"))")
-                        .font(.caption).foregroundStyle(.secondary)
+                Spacer(minLength: Theme.Space.s)
+                CompassMark()
+            }
+
+            HStack(alignment: .top, spacing: Theme.Space.m) {
+                HeroStat(label: "Cash", value: model.cashTotal)
+                if model.investmentValue > 0 { HeroStat(label: "Invest", value: model.investmentValue) }
+                if model.liabilities != 0 { HeroStat(label: "Liabilities", value: model.liabilities) }
+            }
+
+            if model.cashFlow.count >= 2 {
+                VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                    Text("NET FLOW · \(model.cashFlow.count) MO")
+                        .font(.caption2.weight(.medium))
+                        .tracking(1)
+                        .foregroundStyle(.white.opacity(0.4))
+                    NetFlowSparkline(months: model.cashFlow)
+                        .frame(height: 36)
                 }
             }
-            .padding(.vertical, 4)
         }
+        .padding(Theme.Space.l)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.heroFill)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.hero, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.hero, style: .continuous)
+                .strokeBorder(.white.opacity(0.07), lineWidth: 1)
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(a11y)
+    }
+}
+
+private struct HeroStat: View {
+    let label: String
+    let value: Decimal
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label.uppercased())
+                .font(.caption2.weight(.semibold))
+                .tracking(0.8)
+                .foregroundStyle(.white.opacity(0.5))
+            Text(Money.format(value, currency: "EUR"))
+                .font(.readout(.subheadline, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.92))
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// Honest net cash-flow (income − expense) sparkline over the months we have.
+// Decorative on the hero; the same data is labelled in the Cash flow section.
+private struct NetFlowSparkline: View {
+    let months: [DashboardModel.MonthBar]
+
+    private struct Point: Identifiable {
+        let id: Date
+        let value: Double
+    }
+    private var points: [Point] {
+        months.map { Point(id: $0.id, value: ($0.income - $0.expense).doubleValue) }
+    }
+
+    var body: some View {
+        Chart(points) { p in
+            AreaMark(x: .value("Month", p.id), y: .value("Net", p.value))
+                .foregroundStyle(LinearGradient(colors: [Theme.heroAccent.opacity(0.30), .clear],
+                                                startPoint: .top, endPoint: .bottom))
+                .interpolationMethod(.catmullRom)
+            LineMark(x: .value("Month", p.id), y: .value("Net", p.value))
+                .foregroundStyle(Theme.heroAccent)
+                .interpolationMethod(.catmullRom)
+                .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round))
+        }
+        .chartXAxis(.hidden)
+        .chartYAxis(.hidden)
+        .chartLegend(.hidden)
+        .accessibilityHidden(true)
     }
 }
 

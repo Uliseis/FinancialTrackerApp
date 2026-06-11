@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Currency value, monospaced, optionally sign-colored.
+// Currency value rendered as a rounded tabular "readout", optionally sign-colored.
 struct MoneyText: View {
     let amount: Decimal
     var currency = "EUR"
@@ -10,6 +10,7 @@ struct MoneyText: View {
     var body: some View {
         Text(Money.format(amount, currency: currency))
             .font(font.monospacedDigit())
+            .fontDesign(.rounded)
             .foregroundStyle(signed ? Theme.amountColor(amount) : Color.primary)
             .lineLimit(1)
     }
