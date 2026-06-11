@@ -19,6 +19,7 @@ struct AccountsView: View {
     @State private var eurBalances: [UUID: Decimal] = [:]
     @State private var sections: [GroupSection] = []
     @State private var spaceTotal: Decimal = 0
+    @State private var accountCount: Int = 0
     @State private var editingAccount: AccountEdit?
     @State private var anchoringAccount: Account?
 
@@ -35,9 +36,11 @@ struct AccountsView: View {
         NavigationStack {
             List {
                 Section {
-                    LabeledContent("Cash net worth",
-                                   value: Money.format(spaceTotal, currency: "EUR"))
-                        .font(.headline)
+                    AccountsSummaryHeader(total: spaceTotal, accountCount: accountCount)
+                        .listRowInsets(EdgeInsets(top: Theme.Space.s, leading: Theme.Space.m,
+                                                  bottom: Theme.Space.s, trailing: Theme.Space.m))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
                 }
                 ForEach(sections) { section in
                     Section(section.title) {
@@ -54,7 +57,7 @@ struct AccountsView: View {
                                 } label: {
                                     Label("Set Balance", systemImage: "scalemass")
                                 }
-                                .tint(.blue)
+                                .tint(.brand)
                             }
                         }
                     }
@@ -105,6 +108,7 @@ struct AccountsView: View {
     private func rebuild() {
         let scope = SpaceScope.resolve(rawCurrentId: currentSpaceId, spaces: spaces)
         let visible = accounts.filter { !$0.archived && scope.includes($0) }
+        accountCount = visible.count
         spaceTotal = visible
             .filter { CoreLogic.AccountStatus.isCountedInCashNetWorth($0) }
             .reduce(Decimal(0)) { $0 + (eurBalances[$1.id] ?? 0) }
@@ -124,28 +128,79 @@ struct AccountsView: View {
     }
 }
 
+// Cash net worth readout for the current space — the Accounts counterpart to
+// the Dashboard hero (light, type-on-surface; the dark panel stays unique to
+// the Dashboard).
+private struct AccountsSummaryHeader: View {
+    let total: Decimal
+    let accountCount: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.xs) {
+            Text("CASH NET WORTH")
+                .font(.caption2.weight(.semibold))
+                .tracking(1.4)
+                .foregroundStyle(.secondary)
+            Text(Money.format(total, currency: "EUR"))
+                .font(.readout(.largeTitle, weight: .bold))
+                .foregroundStyle(.primary)
+                .contentTransition(.numericText())
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            Text("^[\(accountCount) account](inflect: true) in this space")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 private struct AccountRow: View {
     let account: Account
     let eur: Decimal?
 
+    private var tint: Color { Color(hex: account.group?.color) ?? .brand }
+
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
+        HStack(spacing: Theme.Space.m) {
+            AccountTypeChip(type: account.type, tint: tint)
             VStack(alignment: .leading, spacing: 2) {
                 Text(account.name)
                     .font(.body)
+                    .lineLimit(1)
                 Text(account.institution)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-            Spacer(minLength: 12)
+            Spacer(minLength: Theme.Space.s)
             if let eur {
                 MoneyText(amount: eur)
             } else {
-                Text("—").font(.body.monospacedDigit()).foregroundStyle(.secondary)
+                Text("—")
+                    .font(.body.monospacedDigit())
+                    .fontDesign(.rounded)
+                    .foregroundStyle(.secondary)
             }
         }
         .opacity(account.excluded ? 0.55 : 1)
         .accessibilityElement(children: .combine)
+    }
+}
+
+private struct AccountTypeChip: View {
+    let type: AccountType
+    let tint: Color
+    @ScaledMetric(relativeTo: .body) private var dimension: CGFloat = 36
+
+    var body: some View {
+        Image(systemName: type.icon)
+            .font(.system(size: dimension * 0.42, weight: .semibold))
+            .foregroundStyle(tint)
+            .frame(width: dimension, height: dimension)
+            .background(tint.opacity(0.15), in: RoundedRectangle(cornerRadius: dimension * 0.28, style: .continuous))
+            .accessibilityHidden(true)
     }
 }
 

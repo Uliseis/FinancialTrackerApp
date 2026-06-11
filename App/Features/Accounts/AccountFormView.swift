@@ -184,6 +184,17 @@ extension AccountType {
         case .other: "Other"
         }
     }
+
+    var icon: String {
+        switch self {
+        case .bank: "building.columns.fill"
+        case .broker: "chart.xyaxis.line"
+        case .crypto: "bitcoinsign"
+        case .realEstate: "house.fill"
+        case .pension: "calendar"
+        case .other: "wallet.bifold.fill"
+        }
+    }
 }
 
 #if DEBUG
