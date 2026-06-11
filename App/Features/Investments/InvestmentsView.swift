@@ -26,7 +26,13 @@ struct InvestmentsView: View {
             Group {
                 if let vm, !vm.rows.isEmpty {
                     List {
-                        Section { SummaryCard(vm: vm) }
+                        Section {
+                            SummaryCard(vm: vm)
+                                .listRowInsets(EdgeInsets(top: Theme.Space.s, leading: Theme.Space.m,
+                                                          bottom: Theme.Space.s, trailing: Theme.Space.m))
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
+                        }
                         if vm.series.count > 1 {
                             Section("Value over time") {
                                 PortfolioChart(series: filteredSeries(vm))
@@ -72,34 +78,49 @@ private struct SummaryCard: View {
     let vm: InvestmentsModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                StatHeader(title: "Portfolio value", amount: vm.totalValue)
-                if vm.totalPositions > 0 || vm.totalCash > 0 {
-                    Text("\(Money.format(vm.totalPositions, currency: "EUR")) pos · \(Money.format(vm.totalCash, currency: "EUR")) cash")
-                        .font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
+            VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                Text("PORTFOLIO VALUE")
+                    .font(.caption2.weight(.semibold))
+                    .tracking(1.4)
+                    .foregroundStyle(.secondary)
+                Text(Money.format(vm.totalValue, currency: "EUR"))
+                    .font(.readout(.largeTitle, weight: .bold))
+                    .contentTransition(.numericText())
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                if let pnl = vm.totalPnl {
+                    Label {
+                        Text(pnlText)
+                    } icon: {
+                        Image(systemName: pnl >= 0 ? "arrow.up.right" : "arrow.down.right")
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .fontDesign(.rounded)
+                    .foregroundStyle(Theme.amountColor(pnl))
                 }
             }
-            HStack {
+            HStack(alignment: .top, spacing: Theme.Space.m) {
                 MetricView(label: "Invested",
                            value: vm.totalCost.map { Money.format($0, currency: "EUR") } ?? "—")
-                Spacer()
-                MetricView(label: "P&L", value: pnlText, color: pnlColor)
+                if vm.totalPositions > 0 {
+                    MetricView(label: "Positions", value: Money.format(vm.totalPositions, currency: "EUR"))
+                }
+                if vm.totalCash > 0 {
+                    MetricView(label: "Cash", value: Money.format(vm.totalCash, currency: "EUR"))
+                }
             }
         }
-        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 
     private var pnlText: String {
         guard let pnl = vm.totalPnl else { return "—" }
         let amount = Money.format(pnl, currency: "EUR")
-        guard let pct = vm.totalPnlPct else { return amount }
-        return "\(amount)  (\(pct.formatted(.percent.precision(.fractionLength(1)))))"
-    }
-
-    private var pnlColor: Color {
-        guard let pnl = vm.totalPnl else { return .secondary }
-        return Theme.amountColor(pnl)
+        let signed = pnl > 0 ? "+\(amount)" : amount
+        guard let pct = vm.totalPnlPct else { return signed }
+        return "\(signed)  (\(pct.formatted(.percent.precision(.fractionLength(1)))))"
     }
 }
 
@@ -122,6 +143,7 @@ private struct AccountMetricRow: View {
                 if let pnl = row.pnlEur {
                     Text(pnlLabel(pnl, row.pnlPct))
                         .font(.caption.monospacedDigit())
+                        .fontDesign(.rounded)
                         .foregroundStyle(Theme.amountColor(pnl))
                 }
             }
@@ -153,12 +175,22 @@ private struct PortfolioChart: View {
     }
 
     var body: some View {
-        Chart(points) { p in
-            LineMark(x: .value("Date", p.date), y: .value("EUR", p.value))
-                .foregroundStyle(by: .value("Series", p.kind))
-                .interpolationMethod(.monotone)
-                .accessibilityLabel("\(p.kind), \(p.date.formatted(date: .abbreviated, time: .omitted))")
-                .accessibilityValue(Money.format(Decimal(p.value), currency: "EUR"))
+        Chart {
+            ForEach(series, id: \.date) { p in
+                AreaMark(x: .value("Date", p.date),
+                         y: .value("EUR", p.marketValueEur.doubleValue))
+                    .foregroundStyle(LinearGradient(colors: [Color.accentColor.opacity(0.22), .clear],
+                                                    startPoint: .top, endPoint: .bottom))
+                    .interpolationMethod(.monotone)
+                    .accessibilityHidden(true)
+            }
+            ForEach(points) { p in
+                LineMark(x: .value("Date", p.date), y: .value("EUR", p.value))
+                    .foregroundStyle(by: .value("Series", p.kind))
+                    .interpolationMethod(.monotone)
+                    .accessibilityLabel("\(p.kind), \(p.date.formatted(date: .abbreviated, time: .omitted))")
+                    .accessibilityValue(Money.format(Decimal(p.value), currency: "EUR"))
+            }
         }
         .chartForegroundStyleScale(["Market value": Color.accentColor, "Cost basis": Color.secondary])
         .chartLegend(.visible)
