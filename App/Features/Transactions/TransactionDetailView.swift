@@ -20,6 +20,14 @@ struct TransactionDetailView: View {
             && tx.sharedExpenseGroup == nil && tx.amountEur != nil
     }
 
+    private var navTitle: String {
+        let d = tx.transactionDescription?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let d, !d.isEmpty { return d }
+        let c = tx.counterparty?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let c, !c.isEmpty { return c }
+        return "Transaction"
+    }
+
     private var isMirrorLeg: Bool { tx.routedFromTx != nil }
     private var hasTransfer: Bool {
         tx.isTransfer || tx.transferGroup != nil || !tx.mirrors.isEmpty
@@ -34,6 +42,11 @@ struct TransactionDetailView: View {
 
     var body: some View {
         Form {
+            Section {
+                TransactionDetailHeader(tx: tx)
+                    .listRowBackground(Color.clear)
+            }
+
             Section("Amount") {
                 row("Amount", Money.format(tx.amount, currency: tx.currency))
                 if let eur = tx.amountEur {
@@ -121,7 +134,7 @@ struct TransactionDetailView: View {
                 row("Created", tx.createdAt.formatted(date: .abbreviated, time: .shortened))
             }
         }
-        .navigationTitle(tx.amountEur.map { Money.format($0, currency: "EUR") } ?? "Transaction")
+        .navigationTitle(navTitle)
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $picking) {
             CategoryPickerView(selectedId: tx.category?.id) { category in
@@ -199,6 +212,62 @@ struct TransactionDetailView: View {
         case .missingEurAmount: "An EUR amount hasn’t been computed yet."
         case .amountsDiffer: "The amounts differ by more than €0.01."
         }
+    }
+}
+
+// At-a-glance amount readout at the top of the detail Form.
+private struct TransactionDetailHeader: View {
+    let tx: CoreModel.Transaction
+
+    private var title: String {
+        let d = tx.transactionDescription?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let d, !d.isEmpty { return d }
+        let c = tx.counterparty?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let c, !c.isEmpty { return c }
+        return "Transaction"
+    }
+
+    private var value: Decimal { tx.amountEur ?? tx.amount }
+    private var currency: String { tx.amountEur != nil ? "EUR" : tx.currency }
+    private var amountString: String {
+        let base = Money.format(value, currency: currency)
+        return value > 0 ? "+\(base)" : base
+    }
+    private var amountColor: Color {
+        if value > 0 { return .positiveAmount }
+        if value < 0 { return .primary }
+        return .secondary
+    }
+
+    private var badge: TagChip {
+        if tx.isTransfer { return TagChip(text: "Transfer", tint: .brand) }
+        if value > 0 { return TagChip(text: "Income", tint: .positiveAmount) }
+        return TagChip(text: "Expense")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            HStack(spacing: Theme.Space.s) {
+                ColorDot(hex: tx.category?.color, size: 10)
+                Text(tx.category?.name ?? "Uncategorized")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: Theme.Space.s)
+                badge
+            }
+            Text(amountString)
+                .font(.readout(.largeTitle, weight: .bold))
+                .foregroundStyle(amountColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, Theme.Space.xs)
+        .accessibilityElement(children: .combine)
     }
 }
 

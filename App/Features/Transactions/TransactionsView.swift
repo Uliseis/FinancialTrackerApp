@@ -56,7 +56,7 @@ struct TransactionsView: View {
                         } label: {
                             Label("Categorize", systemImage: "tag")
                         }
-                        .tint(.indigo)
+                        .tint(.brand)
                     }
                 }
             }
@@ -139,8 +139,9 @@ private struct TransactionRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: Theme.Space.m) {
+            ColorDot(hex: tx.category?.color, size: 9)
+            VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .lineLimit(1)
                 HStack(spacing: 6) {
@@ -158,18 +159,23 @@ private struct TransactionRow: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: Theme.Space.s)
             Text(amount)
-                .font(.body.monospacedDigit())
+                .font(.callout.monospacedDigit())
+                .fontDesign(.rounded)
                 .foregroundStyle(color)
                 .lineLimit(1)
         }
         .accessibilityElement(children: .combine)
     }
 
+    // Income carries an explicit "+" so the credit/debit distinction survives
+    // without relying on color (debits already carry "-").
     private var amount: String {
-        if let eur = tx.amountEur { return Money.format(eur, currency: "EUR") }
-        return Money.format(tx.amount, currency: tx.currency)
+        let value = tx.amountEur ?? tx.amount
+        let currency = tx.amountEur != nil ? "EUR" : tx.currency
+        let base = Money.format(value, currency: currency)
+        return value > 0 ? "+\(base)" : base
     }
 
     private var color: Color {
