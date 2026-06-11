@@ -192,15 +192,9 @@ private struct AccountRow: View {
 private struct AccountTypeChip: View {
     let type: AccountType
     let tint: Color
-    @ScaledMetric(relativeTo: .body) private var dimension: CGFloat = 36
 
     var body: some View {
-        Image(systemName: type.icon)
-            .font(.system(size: dimension * 0.42, weight: .semibold))
-            .foregroundStyle(tint)
-            .frame(width: dimension, height: dimension)
-            .background(tint.opacity(0.15), in: RoundedRectangle(cornerRadius: dimension * 0.28, style: .continuous))
-            .accessibilityHidden(true)
+        IconBadge(systemName: type.icon, tint: tint, size: 36)
     }
 }
 

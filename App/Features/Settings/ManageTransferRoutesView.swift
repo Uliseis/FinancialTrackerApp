@@ -32,7 +32,7 @@ struct ManageTransferRoutesView: View {
                             } label: {
                                 Label("Backfill", systemImage: "arrow.triangle.2.circlepath")
                             }
-                            .tint(.blue)
+                            .tint(.brand)
                         }
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) {

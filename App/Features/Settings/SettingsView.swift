@@ -19,6 +19,11 @@ struct SettingsView: View {
         NavigationStack(path: $path) {
             List {
                 Section {
+                    SettingsBrandHeader(version: Self.versionString)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                }
+                Section {
                     link("Connections", systemImage: "link", to: .connections)
                 }
                 Section("Money") {
@@ -39,7 +44,6 @@ struct SettingsView: View {
                             if wasOn && !isOn { confirmDisable() }
                         }
                     LabeledContent("iCloud Sync", value: CloudKitGate.isAvailable ? "On" : "Unavailable")
-                    LabeledContent("Version", value: Self.versionString)
                 } header: {
                     Text("App")
                 } footer: {
@@ -73,7 +77,10 @@ struct SettingsView: View {
 
     private func link(_ title: String, systemImage: String, to destination: SettingsDestination) -> some View {
         NavigationLink(value: destination) {
-            Label(title, systemImage: systemImage)
+            HStack(spacing: Theme.Space.m) {
+                IconBadge(systemName: systemImage)
+                Text(title)
+            }
         }
     }
 
@@ -129,6 +136,26 @@ struct SettingsView: View {
 
 enum SettingsDestination: Hashable {
     case connections, transfers, sharedExpenses, budgets, categories, rules, transferRoutes, spaces, groups
+}
+
+// Brand identity block at the top of Settings.
+private struct SettingsBrandHeader: View {
+    let version: String
+
+    var body: some View {
+        VStack(spacing: Theme.Space.s) {
+            CompassMark(size: 56, tint: .brand, ringOpacity: 0)
+            Text("Odyssey Finance")
+                .font(.title3.weight(.semibold))
+            Text("Version \(version)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Theme.Space.s)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Odyssey Finance, version \(version)")
+    }
 }
 
 #if DEBUG
