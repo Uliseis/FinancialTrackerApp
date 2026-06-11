@@ -149,27 +149,34 @@ struct LockScreen: View {
     let onUnlock: () -> Void
 
     var body: some View {
-        GlassEffectContainer {
-            VStack(spacing: 16) {
-                Image(systemName: "lock.shield")
-                    .font(.system(size: 56))
-                    .foregroundStyle(.tint)
-                Text("Odyssey Finance")
-                    .font(.title2).bold()
+        ZStack {
+            Theme.heroFill.ignoresSafeArea()
+
+            VStack(spacing: Theme.Space.l) {
+                Spacer()
+                CompassMark(size: 96, tint: Theme.heroAccent, ringOpacity: 0.18)
+                VStack(spacing: Theme.Space.xs) {
+                    Text("Odyssey Finance")
+                        .font(.title.weight(.semibold))
+                        .foregroundStyle(.white)
+                    Label("Locked", systemImage: "lock.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.white.opacity(0.6))
+                }
                 if let error {
                     Text(error)
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.white.opacity(0.75))
                         .multilineTextAlignment(.center)
                 }
+                Spacer()
                 Button("Unlock", systemImage: "faceid", action: onUnlock)
                     .buttonStyle(.glassProminent)
+                    .controlSize(.large)
             }
-            .padding(28)
-            .glassEffect(.regular, in: .rect(cornerRadius: 28))
+            .padding(Theme.Space.l)
+            .padding(.bottom, Theme.Space.xl)
         }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
