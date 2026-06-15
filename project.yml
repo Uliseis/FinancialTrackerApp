@@ -43,6 +43,14 @@ targets:
           - com.uliseis.financialtracker.refresh
     entitlements:
       path: App/FinancialTracker.entitlements
+      # Source of truth for capabilities: xcodegen regenerates the .entitlements file
+      # from these on every `generate` (a path-only entry wipes it to empty).
+      properties:
+        com.apple.developer.icloud-services:
+          - CloudKit
+        com.apple.developer.icloud-container-identifiers:
+          - iCloud.com.uliseis.financialtracker
+        aps-environment: development
     dependencies:
       - package: Core
         product: CoreModel
