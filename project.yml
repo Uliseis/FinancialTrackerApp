@@ -11,9 +11,9 @@ settings:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: minimal
     ENABLE_USER_SCRIPT_SANDBOXING: YES
-    # Phase 4: set to the Apple Developer Team ID, then `xcodegen generate`.
-    # Simulator builds work either way; device builds + CloudKit need the real team.
-    DEVELOPMENT_TEAM: ""
+    # Apple Developer Team. Simulator builds work without signing; device builds +
+    # CloudKit provisioning require Xcode to be signed into this team's Apple ID.
+    DEVELOPMENT_TEAM: "Q35DSRH5L8"
     CODE_SIGN_STYLE: Automatic
 
 packages:
