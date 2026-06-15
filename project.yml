@@ -1,4 +1,4 @@
-name: FinancialTracker
+name: OdysseyFinance
 options:
   bundleIdPrefix: com.uliseis
   deploymentTarget:
@@ -21,7 +21,7 @@ packages:
     path: Core
 
 targets:
-  FinancialTracker:
+  OdysseyFinance:
     type: application
     platform: iOS
     sources:
@@ -40,16 +40,16 @@ targets:
         UIBackgroundModes:
           - processing
         BGTaskSchedulerPermittedIdentifiers:
-          - com.uliseis.financialtracker.refresh
+          - com.uliseis.odysseyfinance.refresh
     entitlements:
-      path: App/FinancialTracker.entitlements
+      path: App/OdysseyFinance.entitlements
       # Source of truth for capabilities: xcodegen regenerates the .entitlements file
       # from these on every `generate` (a path-only entry wipes it to empty).
       properties:
         com.apple.developer.icloud-services:
           - CloudKit
         com.apple.developer.icloud-container-identifiers:
-          - iCloud.com.uliseis.financialtracker
+          - iCloud.com.uliseis.odysseyfinance
         aps-environment: development
     dependencies:
       - package: Core
@@ -62,7 +62,7 @@ targets:
         product: CoreSync
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.uliseis.financialtracker
+        PRODUCT_BUNDLE_IDENTIFIER: com.uliseis.odysseyfinance
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MACCATALYST: NO
         GENERATE_INFOPLIST_FILE: NO

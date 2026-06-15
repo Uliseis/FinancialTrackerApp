@@ -2,7 +2,7 @@ import Foundation
 import CloudKit
 
 public enum SyncZone {
-    public static let zoneName = "FinancialTracker"
+    public static let zoneName = "OdysseyFinance"
 
     public static var id: CKRecordZone.ID {
         CKRecordZone.ID(zoneName: zoneName, ownerName: CKCurrentUserDefaultName)

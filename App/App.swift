@@ -4,10 +4,10 @@ import LocalAuthentication
 import CoreModel
 import CoreSync
 
-private let iCloudContainerID = "iCloud.com.uliseis.financialtracker"
+private let iCloudContainerID = "iCloud.com.uliseis.odysseyfinance"
 
 @main
-struct FinancialTrackerApp: App {
+struct OdysseyFinanceApp: App {
     let modelContainer: ModelContainer
     @State private var syncEngine: CloudKitSyncEngine
 

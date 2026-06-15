@@ -1,4 +1,7 @@
-# FinancialTracker (iOS)
+# Odyssey Finance (iOS)
+<!-- Repo dir is still FinancialTrackerApp/; the app, bundle id (com.uliseis.odysseyfinance),
+     Xcode project/scheme (OdysseyFinance), and CloudKit container were rebranded 2026-06-15. -->
+
 
 Native SwiftUI rewrite of the Next.js web app. Single-user EU/Spain personal finance app. iCloud-only storage (no server DB). The web app at `Spec/` is the **port spec** — read it, don't edit it.
 
@@ -30,14 +33,14 @@ Native SwiftUI rewrite of the Next.js web app. Single-user EU/Spain personal fin
 | `category_source` | Non-optional `CategorySource` enum. Nulls backfilled to `.bank` at import. |
 | Sync conflict policy | Last-writer-wins, except `categorySource == .manual` always beats a non-manual write. |
 | Enable Banking | **On-device, no server (changed 2026-06-09, was a Vercel proxy).** RS256 JWT signed on-device (Security framework); RSA app key in the Keychain, biometric-gated + iCloud-synced (`kSecAttrSynchronizable`). REST called directly from `CoreIntegrations`. Single-user app ⇒ the key never ships in a distributed binary, so the original "key in binary" risk doesn't apply. |
-| CloudKit container | `iCloud.com.uliseis.financialtracker` |
+| CloudKit container | `iCloud.com.uliseis.odysseyfinance` (renamed from `…financialtracker` 2026-06-15, pre-registration full rebrand; bundle id is now `com.uliseis.odysseyfinance`, Xcode project/scheme `OdysseyFinance`) |
 
 ## File map
 
 ```
 App/                    SwiftUI target. @main, Face ID gate, ModelContainer wiring.
   App.swift
-  FinancialTracker.entitlements
+  OdysseyFinance.entitlements
   Features/             per-feature folders (Accounts, Transactions, Transfers, …)
 Core/                   Swift package. Pure-Swift business logic + models.
   Package.swift

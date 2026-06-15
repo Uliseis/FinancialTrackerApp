@@ -4,7 +4,7 @@ import Foundation
 import BackgroundTasks
 
 public enum BackgroundSync {
-    public static let taskIdentifier = "com.uliseis.financialtracker.refresh"
+    public static let taskIdentifier = "com.uliseis.odysseyfinance.refresh"
 
     @MainActor
     public static func register(engine: CloudKitSyncEngine) {
@@ -43,7 +43,7 @@ public enum BackgroundSync {
 #else
 
 public enum BackgroundSync {
-    public static let taskIdentifier = "com.uliseis.financialtracker.refresh"
+    public static let taskIdentifier = "com.uliseis.odysseyfinance.refresh"
 
     @MainActor
     public static func register(engine: CloudKitSyncEngine) {}

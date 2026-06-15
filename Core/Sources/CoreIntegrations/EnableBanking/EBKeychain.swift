@@ -57,7 +57,7 @@ public enum EBRSAKey {
 // at launch; the item itself is gated by device unlock (kSecAttrAccessibleWhenUnlocked).
 public struct EBKeychain: Sendable {
     public let service: String
-    public init(service: String = "com.uliseis.financialtracker.enablebanking") {
+    public init(service: String = "com.uliseis.odysseyfinance.enablebanking") {
         self.service = service
     }
 
