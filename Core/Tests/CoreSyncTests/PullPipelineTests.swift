@@ -30,6 +30,52 @@ final class PullPipelineTests: XCTestCase {
         XCTAssertNotNil(ModelSnapshots.find(connection: snap.id, in: ctx))
     }
 
+    func test_pull_cachesSystemFieldsTag_forMaterializedRecord() throws {
+        let ctx = try makeContext()
+        let snap = Build.connection(updatedAt: Build.epoch)
+        XCTAssertNil(SyncRecordStore.lastKnownRecord(for: snap.id, in: ctx))
+
+        _ = try PullPipeline.apply(
+            modifications: [RecordCoding.encode(snap)], deletions: [], in: ctx
+        )
+        // A pulled record now has its lastKnownRecord cached, so a later edit pushes as an
+        // update rather than a tagless insert.
+        let cached = SyncRecordStore.lastKnownRecord(for: snap.id, in: ctx)
+        XCTAssertNotNil(cached)
+        XCTAssertEqual(cached?.recordID.recordName, snap.id.uuidString)
+    }
+
+    func test_pull_skipsTagCache_forUndecodableRecord() throws {
+        let ctx = try makeContext()
+        // Known type but no fields → fails to decode → not materialized, so no tag cached.
+        let bogus = CKRecord(
+            recordType: RecordType.connection,
+            recordID: SyncZone.recordID(for: UUID())
+        )
+        let report = try PullPipeline.apply(modifications: [bogus], deletions: [], in: ctx)
+        XCTAssertEqual(report.skippedDecodeError, 1)
+        XCTAssertNil(SyncRecordStore.lastKnownRecord(
+            for: UUID(uuidString: bogus.recordID.recordName)!, in: ctx
+        ))
+    }
+
+    func test_pullDeletion_removesCachedTag() throws {
+        let ctx = try makeContext()
+        let snap = Build.connection(updatedAt: Build.epoch)
+        _ = try PullPipeline.apply(
+            modifications: [RecordCoding.encode(snap)], deletions: [], in: ctx
+        )
+        XCTAssertNotNil(SyncRecordStore.lastKnownRecord(for: snap.id, in: ctx))
+
+        let deletion = PullDeletion(
+            recordID: SyncZone.recordID(for: snap.id),
+            recordType: RecordType.connection
+        )
+        _ = try PullPipeline.apply(modifications: [], deletions: [deletion], in: ctx)
+        XCTAssertNil(SyncRecordStore.lastKnownRecord(for: snap.id, in: ctx))
+        XCTAssertNil(ModelSnapshots.find(connection: snap.id, in: ctx))
+    }
+
     func test_updateExisting_remoteNewer_appliesRemote() throws {
         let ctx = try makeContext()
         let original = Build.connection(updatedAt: Build.epoch)

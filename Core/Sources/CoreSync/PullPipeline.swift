@@ -43,7 +43,16 @@ public enum PullPipeline {
         }
 
         for record in sorted {
+            let skippedBefore = report.skippedUnknownType + report.skippedDecodeError
             applyOne(record, in: ctx, report: &report)
+            // Cache the server change tag (lastKnownRecord) for records we actually
+            // materialized, so the first local edit to a pulled row saves as an update — not a
+            // tagless insert that has to round-trip through serverRecordChanged. Mirrors the
+            // push side's `.sentRecordZoneChanges` caching and Apple's `setLastKnownRecord` on
+            // fetch. Skip unknown/undecodable records: there's no local row to edit later.
+            if report.skippedUnknownType + report.skippedDecodeError == skippedBefore {
+                SyncRecordStore.store(record, in: ctx)
+            }
         }
 
         for record in sorted where record.recordType == RecordType.transaction {
@@ -110,6 +119,8 @@ public enum PullPipeline {
             report.skippedNonUUID += 1
             return
         }
+        // Drop the cached change tag for a remotely-deleted record (no-op if none cached).
+        SyncRecordStore.remove(uuid, in: ctx)
         switch d.recordType {
         case RecordType.connection:
             if let m = ModelSnapshots.find(connection: uuid, in: ctx) {

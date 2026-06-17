@@ -18,6 +18,11 @@ struct TransactionsView: View {
     @State private var showTransfers = false
     @State private var rows: [CoreModel.Transaction] = []
     @State private var filteredTotalEur: Decimal = 0
+    // The full filtered set can be thousands of rows; render it a page at a time and grow
+    // the window as the user scrolls (see the footer's onAppear). `rows` stays complete so
+    // the running total and counts still reflect every match.
+    @State private var visibleLimit = pageSize
+    private static let pageSize = 100
     @State private var categorizing: CoreModel.Transaction?
     @State private var path: [CoreModel.Transaction] = []
     #if DEBUG
@@ -38,6 +43,8 @@ struct TransactionsView: View {
         }
         // Net EUR of the current matches — shown only while searching (see body).
         filteredTotalEur = rows.reduce(Decimal(0)) { $0 + ($1.amountEur ?? 0) }
+        // Filter inputs changed → scroll back to the first page.
+        visibleLimit = Self.pageSize
     }
 
     private func matches(_ tx: CoreModel.Transaction) -> Bool {
@@ -49,7 +56,7 @@ struct TransactionsView: View {
     var body: some View {
         NavigationStack(path: $path) {
             List {
-                ForEach(rows) { tx in
+                ForEach(rows.prefix(visibleLimit)) { tx in
                     NavigationLink(value: tx) {
                         TransactionRow(tx: tx)
                     }
@@ -60,6 +67,20 @@ struct TransactionsView: View {
                             Label("Categorize", systemImage: "tag")
                         }
                         .tint(.brand)
+                    }
+                }
+                if visibleLimit < rows.count {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                        Text("\(visibleLimit) of \(rows.count)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .listRowSeparator(.hidden)
+                    .onAppear {
+                        visibleLimit = min(visibleLimit + Self.pageSize, rows.count)
                     }
                 }
             }
