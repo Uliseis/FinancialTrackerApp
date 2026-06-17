@@ -101,6 +101,46 @@ final class PushPipelineTests: XCTestCase {
         XCTAssertNotNil(accSave)
     }
 
+    func test_allLocalSaves_enqueuesEveryRowAsSave() throws {
+        let ctx = try makeContext()
+        let conn = ModelSnapshots.insertOrUpdate(Build.connection(), in: ctx)
+        let group = ModelSnapshots.insertOrUpdate(Build.accountGroup(), in: ctx)
+        let space = ModelSnapshots.insertOrUpdate(Build.accountSpace(), in: ctx)
+        let acc = ModelSnapshots.insertOrUpdate(
+            AccountSnapshot(
+                id: UUID(),
+                connectionId: conn.id, groupId: group.id, spaceId: space.id,
+                externalId: "EXT", type: .bank,
+                institution: "B", name: "N", currency: "EUR",
+                archived: false, excluded: false,
+                createdAt: Build.epoch, clock: Build.epoch
+            ),
+            in: ctx
+        )
+        let cat = ModelSnapshots.insertOrUpdate(Build.category(), in: ctx)
+        let tx = ModelSnapshots.insertOrUpdate(
+            Build.transaction(accountId: acc.id, categoryId: cat.id), in: ctx
+        )
+        try ctx.save()
+
+        let changes = PushPipeline.allLocalSaves(in: ctx)
+        let savedNames = Set(changes.compactMap { change -> String? in
+            if case .saveRecord(let id) = change { return id.recordName }
+            return nil
+        })
+        // Every inserted row is enqueued, and all are saves (no stray deletes).
+        XCTAssertEqual(changes.count, 6)
+        XCTAssertEqual(savedNames.count, 6)
+        for id in [conn.id, group.id, space.id, acc.id, cat.id, tx.id] {
+            XCTAssertTrue(savedNames.contains(id.uuidString), "missing \(id)")
+        }
+    }
+
+    func test_allLocalSaves_emptyStore_returnsEmpty() throws {
+        let ctx = try makeContext()
+        XCTAssertTrue(PushPipeline.allLocalSaves(in: ctx).isEmpty)
+    }
+
     func test_pendingChanges_translatesDeletes() throws {
         let ctx = try makeContext()
         let conn = ModelSnapshots.insertOrUpdate(Build.connection(), in: ctx)

@@ -50,6 +50,34 @@ public enum PushPipeline {
         return (records, deletions)
     }
 
+    // Every local row of every synced type, as `.saveRecord` pending changes. Used once to
+    // seed the initial push when a store is populated out-of-band (the data cutover: a store
+    // file is copied into the app container, so no save event ever fires for its rows).
+    @MainActor
+    public static func allLocalSaves(
+        in ctx: ModelContext
+    ) -> [CKSyncEngine.PendingRecordZoneChange] {
+        var models: [any PersistentModel] = []
+        func fetch<T: PersistentModel>(_ type: T.Type) {
+            models += (try? ctx.fetch(FetchDescriptor<T>())) ?? []
+        }
+        fetch(Connection.self)
+        fetch(AccountGroup.self)
+        fetch(AccountSpace.self)
+        fetch(Account.self)
+        fetch(CoreModel.Category.self)
+        fetch(CategoryRule.self)
+        fetch(TransferRoute.self)
+        fetch(Budget.self)
+        fetch(FxRate.self)
+        fetch(TransferGroup.self)
+        fetch(Transaction.self)
+        fetch(SharedExpenseGroup.self)
+        fetch(PortfolioValuation.self)
+        fetch(SyncRun.self)
+        return pendingChanges(inserted: models, updated: [], deleted: [])
+    }
+
     @MainActor
     public static func pendingChanges(
         inserted: [any PersistentModel],

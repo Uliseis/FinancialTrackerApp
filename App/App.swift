@@ -77,6 +77,12 @@ struct OdysseyFinanceApp: App {
                     guard CloudKitGate.isAvailable else { return }
                     do {
                         try syncEngine.start()
+                        // Data cutover: a store copied into the app container fires no save
+                        // events, so its rows must be enqueued explicitly, once. Set this env
+                        // var on the single cutover launch only (devicectl --environment-variables).
+                        if ProcessInfo.processInfo.environment["OFSYNC_SEED_INITIAL_PUSH"] == "1" {
+                            syncEngine.seedInitialPush()
+                        }
                     } catch {
                         // Engine may fail to start if iCloud isn't available; the app still works
                         // locally. Log and carry on; next launch retries.

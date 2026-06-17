@@ -96,6 +96,23 @@ public final class CloudKitSyncEngine {
         }
     }
 
+    // One-shot: enqueue every existing local row for an initial push. Normal operation
+    // pushes via SaveObserver, but a store populated out-of-band (the data cutover copies a
+    // store file straight into the app container) fires no save events, so its rows would
+    // never push. Trigger this exactly once on the cutover launch. Idempotent if repeated:
+    // CKSyncEngine dedupes pending changes by recordID and the lastKnownRecord tag makes a
+    // re-send a no-op update.
+    public func seedInitialPush() {
+        guard let engine else { return }
+        let pending = PushPipeline.allLocalSaves(in: makeContext())
+        guard !pending.isEmpty else {
+            SyncLog.log("seed: store empty, nothing to enqueue")
+            return
+        }
+        engine.state.add(pendingRecordZoneChanges: pending)
+        SyncLog.log("seed: enqueued \(pending.count) record(s) for initial push")
+    }
+
     public func enqueueLocalChanges(
         inserted: [any PersistentModel],
         updated: [any PersistentModel],
