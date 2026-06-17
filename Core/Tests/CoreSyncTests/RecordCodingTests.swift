@@ -15,6 +15,24 @@ final class RecordCodingTests: XCTestCase {
         XCTAssertEqual(decoded, snap)
     }
 
+    // Regression: every encoded record must live in the custom sync zone, not CloudKit's
+    // _defaultZone. A record built in the wrong zone mismatches its pending change and is
+    // pushed to the default zone (records "vanish" from the custom zone, then collide).
+    func test_encode_recordsLandInSyncZone() throws {
+        let records: [CKRecord] = [
+            RecordCoding.encode(Build.connection()),
+            RecordCoding.encode(Build.accountGroup()),
+            RecordCoding.encode(Build.accountSpace()),
+            RecordCoding.encode(Build.account()),
+        ]
+        for record in records {
+            XCTAssertEqual(record.recordID.zoneID, SyncZone.id,
+                           "\(record.recordType) must be encoded into the \(SyncZone.zoneName) zone")
+            XCTAssertNotEqual(record.recordID.zoneID, CKRecordZone.ID(
+                zoneName: CKRecordZone.ID.defaultZoneName, ownerName: CKCurrentUserDefaultName))
+        }
+    }
+
     func test_accountGroup_roundTrip() throws {
         let snap = Build.accountGroup()
         let record = RecordCoding.encode(snap)

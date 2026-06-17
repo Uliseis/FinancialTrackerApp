@@ -451,7 +451,9 @@ public enum RecordCoding {
     // MARK: - helpers
 
     private static func makeRecord(_ type: String, id: UUID) -> CKRecord {
-        let rid = CKRecord.ID(recordName: id.uuidString)
+        // The zone is load-bearing: without it the record lands in CloudKit's _defaultZone
+        // instead of our custom sync zone, mismatching the pending change's recordID.
+        let rid = CKRecord.ID(recordName: id.uuidString, zoneID: SyncZone.id)
         return CKRecord(recordType: type, recordID: rid)
     }
 
