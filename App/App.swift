@@ -12,6 +12,13 @@ struct OdysseyFinanceApp: App {
     @State private var syncEngine: CloudKitSyncEngine
 
     init() {
+        // SwiftData's default store lives in Application Support, which doesn't exist on a
+        // fresh install — SwiftData recovers but logs a wall of CoreData errors first.
+        // Create it up front so first launch is clean.
+        _ = try? FileManager.default.url(
+            for: .applicationSupportDirectory, in: .userDomainMask,
+            appropriateFor: nil, create: true)
+
         let container: ModelContainer
         do {
             let schema = Schema(CoreModelSchema.allTypes)
