@@ -150,4 +150,49 @@ final class PushPipelineTests: XCTestCase {
         XCTAssertEqual(mirrored?.institutionId, snap.institutionId)
         XCTAssertEqual(mirrored?.status, snap.status)
     }
+
+    // merge must clear keys the values omit, so an edit that removes an optional isn't
+    // masked by the server record's stale value (conflict-path nil-clearing).
+    func test_merge_clearsKeysAbsentFromValues() {
+        let rid = SyncZone.recordID(for: UUID())
+        let base = CKRecord(recordType: RecordType.account, recordID: rid)
+        base["iban"] = "ES123" as CKRecordValue
+        base["name"] = "Old" as CKRecordValue
+        let values = CKRecord(recordType: RecordType.account, recordID: rid)
+        values["name"] = "New" as CKRecordValue
+        PushPipeline.merge(values: values, into: base)
+        XCTAssertEqual(base["name"] as? String, "New")
+        XCTAssertNil(base["iban"], "a key absent from values must be cleared on the base")
+    }
+
+    // Deleting an Account must enqueue deletions for its cascade-deleted transactions too,
+    // or those CloudKit records survive and resurrect on the next pull.
+    func test_pendingChanges_enqueuesCascadeDeletedChildren() throws {
+        let ctx = try makeContext()
+        let acc = ModelSnapshots.insertOrUpdate(Build.account(), in: ctx)
+        let tx1 = ModelSnapshots.insertOrUpdate(Build.transaction(accountId: acc.id), in: ctx)
+        let tx2 = ModelSnapshots.insertOrUpdate(Build.transaction(accountId: acc.id), in: ctx)
+        try ctx.save()
+
+        let changes = PushPipeline.pendingChanges(inserted: [], updated: [], deleted: [acc])
+        let deletedNames: [String] = changes.compactMap {
+            if case .deleteRecord(let rid) = $0 { return rid.recordName } else { return nil }
+        }
+        XCTAssertTrue(deletedNames.contains(acc.id.uuidString))
+        XCTAssertTrue(deletedNames.contains(tx1.id.uuidString), "cascade child tx1 must be enqueued for deletion")
+        XCTAssertTrue(deletedNames.contains(tx2.id.uuidString), "cascade child tx2 must be enqueued for deletion")
+    }
+
+    // System fields (recordID + zone + change tag) round-trip through SyncRecordStore so
+    // buildRecord can reuse the change tag.
+    func test_syncRecordStore_roundTripsSystemFields() throws {
+        let ctx = try makeContext()
+        let id = UUID()
+        let rid = SyncZone.recordID(for: id)
+        SyncRecordStore.store(CKRecord(recordType: RecordType.account, recordID: rid), in: ctx)
+        try ctx.save()
+        let loaded = SyncRecordStore.lastKnownRecord(for: id, in: ctx)
+        XCTAssertEqual(loaded?.recordID, rid)
+        XCTAssertEqual(loaded?.recordID.zoneID, SyncZone.id)
+    }
 }

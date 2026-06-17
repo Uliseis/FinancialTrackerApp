@@ -75,7 +75,7 @@ extension CoreLogic {
                 run.finishedAt = now
                 run.error = "abandoned"
             }
-            if !stale.isEmpty { try ctx.save() }
+            if !stale.isEmpty { try ctx.saveTouchingChanges() }
             return stale.count
         }
 
@@ -98,7 +98,7 @@ extension CoreLogic {
 
             let run = SyncRun(connector: .enablebanking, connection: connection, startedAt: now)
             ctx.insert(run)
-            try ctx.save()
+            try ctx.saveTouchingChanges()
 
             var insertedIds: [UUID] = []
 
@@ -110,7 +110,7 @@ extension CoreLogic {
                     connection.lastError = "Session status: \(session.status)"
                     connection.updatedAt = now
                     finish(run, status: .error, error: "session \(session.status)", now: now)
-                    try ctx.save()
+                    try ctx.saveTouchingChanges()
                     result.errors.append("session \(session.status)")
                     return result
                 }
@@ -180,7 +180,7 @@ extension CoreLogic {
                 finish(run, status: result.errors.isEmpty ? .ok : .partial,
                        error: result.errors.isEmpty ? nil : result.errors.joined(separator: "; "),
                        now: now)
-                try ctx.save()
+                try ctx.saveTouchingChanges()
                 return result
             } catch {
                 let expired = (error as? EnableBankingError)
@@ -189,7 +189,7 @@ extension CoreLogic {
                 connection.lastError = describe(error)
                 connection.updatedAt = now
                 finish(run, status: .error, error: describe(error), now: now)
-                try? ctx.save()
+                try? ctx.saveTouchingChanges()
                 throw error
             }
         }
@@ -230,7 +230,7 @@ extension CoreLogic {
                     "lastBadAccount": jsonObject(sessionAccount) ?? [:],
                     "lastBadAccountAt": isoFormatter.string(from: now),
                 ], into: connection)
-                try ctx.save()
+                try ctx.saveTouchingChanges()
                 errors.append("bad-uid: Enable Banking returned an account with an invalid uid (\(sessionAccount.uid ?? "nil")). Re-authorize the connection.")
                 return []
             }
@@ -290,7 +290,7 @@ extension CoreLogic {
 
             if let account = resolved, account.archived {
                 mergeMetadata(["lastDiscoveredAt": isoFormatter.string(from: now)], into: account)
-                try ctx.save()
+                try ctx.saveTouchingChanges()
                 return []
             }
 
@@ -308,7 +308,7 @@ extension CoreLogic {
                 meta["pendingApproval"] = true
                 discovered.metadataJSON = try? JSONSerialization.data(withJSONObject: meta)
                 ctx.insert(discovered)
-                try ctx.save()
+                try ctx.saveTouchingChanges()
                 return []
             }
 
@@ -323,7 +323,7 @@ extension CoreLogic {
             var merged = prevMeta.merging(discoveredMeta) { _, new in new }
             if fullSync { merged.removeValue(forKey: "fullSyncRequested") }
             account.metadataJSON = try? JSONSerialization.data(withJSONObject: merged)
-            try ctx.save()
+            try ctx.saveTouchingChanges()
 
             let dateFrom = fullSync
                 ? isoDate(now.addingTimeInterval(-Double(txLookbackDays) * 86_400))
@@ -367,7 +367,7 @@ extension CoreLogic {
                 continuationKey = resp.continuationKey
                 pages += 1
             } while continuationKey != nil && pages < txPageLimit
-            try ctx.save()
+            try ctx.saveTouchingChanges()
             return insertedIds
         }
 

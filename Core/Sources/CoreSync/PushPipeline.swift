@@ -62,16 +62,68 @@ public enum PushPipeline {
                 out.append(.saveRecord(SyncZone.recordID(for: uuid)))
             }
         }
+        // Include cascade descendants: SwiftData deletes .cascade children during the save,
+        // but they aren't in the deleted set captured at willSave. Without enqueuing their
+        // deletions too, their CloudKit records survive and resurrect on the next pull.
+        var deletedIDs = Set<UUID>()
         for m in deleted {
-            if let uuid = uuidOf(m) {
-                out.append(.deleteRecord(SyncZone.recordID(for: uuid)))
+            guard let uuid = uuidOf(m) else { continue }
+            for id in [uuid] + cascadeDescendantIDs(m) where deletedIDs.insert(id).inserted {
+                out.append(.deleteRecord(SyncZone.recordID(for: id)))
             }
         }
         return out
     }
 
+    // UUIDs of records deleted transitively by SwiftData .cascade rules when `m` is
+    // deleted. Mirrors the @Relationship(deleteRule: .cascade) declarations on the models
+    // (.nullify children survive and are not included).
+    @MainActor
+    static func cascadeDescendantIDs(_ m: any PersistentModel) -> [UUID] {
+        if let a = m as? Account {
+            return a.transactions.flatMap { [$0.id] + cascadeDescendantIDs($0) }
+                + a.valuations.map(\.id)
+                + a.incomingRoutes.map(\.id) + a.outgoingRoutes.map(\.id)
+        }
+        if let t = m as? Transaction {
+            return t.mirrors.flatMap { [$0.id] + cascadeDescendantIDs($0) }
+                + (t.primaryForGroup.map { [$0.id] } ?? [])
+        }
+        if let c = m as? CoreModel.Category {
+            return c.rules.map(\.id) + c.budgets.map(\.id)
+        }
+        if let conn = m as? Connection {
+            return conn.accounts.flatMap { [$0.id] + cascadeDescendantIDs($0) }
+        }
+        return []
+    }
+
+    // Builds the record to push: the current field values applied onto the persisted
+    // lastKnownRecord (which carries the server change tag), so edits save as updates.
+    // Keys the snapshot omits (nil'd optionals) are cleared on the base so an edit that
+    // removes a value isn't masked by the server's stale value.
     @MainActor
     public static func buildRecord(for recordID: CKRecord.ID, in ctx: ModelContext) -> CKRecord? {
+        guard let values = currentValues(for: recordID, in: ctx),
+              let uuid = UUID(uuidString: values.recordID.recordName) else { return nil }
+        let base = SyncRecordStore.lastKnownRecord(for: uuid, in: ctx)
+            ?? CKRecord(recordType: values.recordType, recordID: values.recordID)
+        merge(values: values, into: base)
+        return base
+    }
+
+    // Copy field values onto a base record (which may carry a server change tag), clearing
+    // keys the values omit so a cleared optional isn't masked by the base's stale value.
+    public static func merge(values: CKRecord, into base: CKRecord) {
+        let incoming = Set(values.allKeys())
+        for key in base.allKeys() where !incoming.contains(key) { base[key] = nil }
+        for key in values.allKeys() { base[key] = values[key] }
+    }
+
+    // The current local field values for a record (a fresh, tagless CKRecord in the sync
+    // zone). Used as push values and as the local side of push-conflict resolution.
+    @MainActor
+    public static func currentValues(for recordID: CKRecord.ID, in ctx: ModelContext) -> CKRecord? {
         guard let uuid = UUID(uuidString: recordID.recordName) else { return nil }
 
         if let m = ModelSnapshots.find(transaction: uuid, in: ctx) {

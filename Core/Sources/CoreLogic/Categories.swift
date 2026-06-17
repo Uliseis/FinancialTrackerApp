@@ -25,7 +25,7 @@ extension CoreLogic {
                 color: color, createdAt: now
             )
             ctx.insert(category)
-            try ctx.save()
+            try ctx.saveTouchingChanges()
             return category
         }
 
@@ -48,13 +48,13 @@ extension CoreLogic {
             category.kind = kind.rawValue
             category.parent = parent
             category.color = color
-            try ctx.save()
+            try ctx.saveTouchingChanges()
         }
 
         @MainActor
         public static func delete(_ category: CoreModel.Category, in ctx: ModelContext) throws {
             ctx.delete(category)
-            try ctx.save()
+            try ctx.saveTouchingChanges()
         }
 
         // Manual categorization always sets categorySource = .manual — the side that wins
@@ -65,7 +65,7 @@ extension CoreLogic {
         ) throws {
             tx.category = category
             tx.categorySource = .manual
-            try ctx.save()
+            try ctx.saveTouchingChanges()
         }
 
         @MainActor
@@ -76,7 +76,7 @@ extension CoreLogic {
                 tx.category = category
                 tx.categorySource = .manual
             }
-            try ctx.save()
+            try ctx.saveTouchingChanges()
         }
     }
 }

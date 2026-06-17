@@ -165,7 +165,7 @@ public enum ModelSnapshots {
             archived: m.archived, excluded: m.excluded,
             manualOpeningBalance: m.manualOpeningBalance,
             balanceAnchor: m.balanceAnchor, balanceAnchorAt: m.balanceAnchorAt,
-            createdAt: m.createdAt, clock: m.createdAt
+            createdAt: m.createdAt, clock: m.updatedAt
         )
     }
 
@@ -189,6 +189,7 @@ public enum ModelSnapshots {
         m.balanceAnchor = s.balanceAnchor
         m.balanceAnchorAt = s.balanceAnchorAt
         m.createdAt = s.createdAt
+        m.updatedAt = s.clock
     }
 
     @MainActor
@@ -222,7 +223,7 @@ public enum ModelSnapshots {
         CategorySnapshot(
             id: m.id, name: m.name, parentId: m.parent?.id,
             kind: m.kind, color: m.color,
-            createdAt: m.createdAt, clock: m.createdAt
+            createdAt: m.createdAt, clock: m.updatedAt
         )
     }
 
@@ -233,6 +234,7 @@ public enum ModelSnapshots {
         m.kind = s.kind
         m.color = s.color
         m.createdAt = s.createdAt
+        m.updatedAt = s.clock
     }
 
     @MainActor
@@ -264,7 +266,7 @@ public enum ModelSnapshots {
         CategoryRuleSnapshot(
             id: m.id, pattern: m.pattern, field: m.field, matchType: m.matchType,
             categoryId: m.category?.id, priority: m.priority,
-            createdAt: m.createdAt, clock: m.createdAt
+            createdAt: m.createdAt, clock: m.updatedAt
         )
     }
 
@@ -276,6 +278,7 @@ public enum ModelSnapshots {
         m.category = s.categoryId.flatMap { find(category: $0, in: ctx) }
         m.priority = s.priority
         m.createdAt = s.createdAt
+        m.updatedAt = s.clock
     }
 
     @MainActor
@@ -352,7 +355,7 @@ public enum ModelSnapshots {
     public static func snapshot(_ m: TransferGroup) -> TransferGroupSnapshot {
         TransferGroupSnapshot(
             id: m.id, pairedAt: m.pairedAt, routeId: m.route?.id,
-            createdAt: m.createdAt, clock: m.createdAt
+            createdAt: m.createdAt, clock: m.updatedAt
         )
     }
 
@@ -361,6 +364,7 @@ public enum ModelSnapshots {
         m.pairedAt = s.pairedAt
         m.route = s.routeId.flatMap { find(transferRoute: $0, in: ctx) }
         m.createdAt = s.createdAt
+        m.updatedAt = s.clock
     }
 
     @MainActor
@@ -506,7 +510,7 @@ public enum ModelSnapshots {
             routeId: m.route?.id,
             sharedExpenseGroupId: m.sharedExpenseGroup?.id,
             rawJSON: m.rawJSON,
-            createdAt: m.createdAt, clock: m.createdAt
+            createdAt: m.createdAt, clock: m.updatedAt
         )
     }
 
@@ -532,6 +536,7 @@ public enum ModelSnapshots {
         m.sharedExpenseGroup = s.sharedExpenseGroupId.flatMap { find(sharedExpenseGroup: $0, in: ctx) }
         m.rawJSON = s.rawJSON
         m.createdAt = s.createdAt
+        m.updatedAt = s.clock
     }
 
     @MainActor

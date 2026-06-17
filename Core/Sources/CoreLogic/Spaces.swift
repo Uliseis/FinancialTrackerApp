@@ -22,7 +22,7 @@ extension CoreLogic {
                 sortOrder: 0, createdAt: now, updatedAt: now
             )
             ctx.insert(space)
-            try ctx.save()
+            try ctx.saveTouchingChanges()
             return space
         }
 
@@ -43,7 +43,7 @@ extension CoreLogic {
                 sortOrder: sortOrder, createdAt: now, updatedAt: now
             )
             ctx.insert(space)
-            try ctx.save()
+            try ctx.saveTouchingChanges()
             return space
         }
 
@@ -57,7 +57,7 @@ extension CoreLogic {
             space.name = trimmed
             space.color = color
             space.updatedAt = now
-            try ctx.save()
+            try ctx.saveTouchingChanges()
         }
 
         @MainActor
@@ -71,7 +71,7 @@ extension CoreLogic {
                 space.sortOrder = index
                 space.updatedAt = now
             }
-            try ctx.save()
+            try ctx.saveTouchingChanges()
         }
 
         @MainActor
@@ -82,7 +82,7 @@ extension CoreLogic {
             }
             space.isDefault = true
             space.updatedAt = now
-            try ctx.save()
+            try ctx.saveTouchingChanges()
         }
 
         @MainActor
@@ -95,7 +95,7 @@ extension CoreLogic {
             ))
             for account in members { account.space = fallback }
             ctx.delete(space)
-            try ctx.save()
+            try ctx.saveTouchingChanges()
         }
     }
 }

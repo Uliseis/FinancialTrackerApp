@@ -118,7 +118,7 @@ extension CoreLogic {
             primary.sharedExpenseGroup = group
             for r in reimbursements { r.sharedExpenseGroup = group }
 
-            try ctx.save()
+            try ctx.saveTouchingChanges()
             return group
         }
 
@@ -151,7 +151,7 @@ extension CoreLogic {
 
             for r in candidates { r.sharedExpenseGroup = group }
             group.updatedAt = now
-            try ctx.save()
+            try ctx.saveTouchingChanges()
         }
 
         @MainActor
@@ -168,7 +168,7 @@ extension CoreLogic {
             ))
             for tx in matches { tx.sharedExpenseGroup = nil }
             group.updatedAt = now
-            try ctx.save()
+            try ctx.saveTouchingChanges()
         }
 
         @MainActor
@@ -179,13 +179,13 @@ extension CoreLogic {
             guard !trimmed.isEmpty else { throw Error.labelRequired }
             group.label = trimmed
             group.updatedAt = now
-            try ctx.save()
+            try ctx.saveTouchingChanges()
         }
 
         @MainActor
         public static func deleteGroup(_ group: SharedExpenseGroup, in ctx: ModelContext) throws {
             ctx.delete(group)
-            try ctx.save()
+            try ctx.saveTouchingChanges()
         }
 
         // MARK: - Net summaries

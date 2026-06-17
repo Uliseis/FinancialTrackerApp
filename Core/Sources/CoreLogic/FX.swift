@@ -86,7 +86,7 @@ public enum FX {
             ctx.insert(FxRate(date: r.date, currency: r.currency, rate: r.rate))
             inserted += 1
         }
-        try ctx.save()
+        try ctx.saveTouchingChanges()
         return inserted
     }
 
@@ -173,7 +173,7 @@ public enum FX {
             tx.fxRateUsed = conv.rate
             result.updated += 1
         }
-        if result.updated > 0 { try ctx.save() }
+        if result.updated > 0 { try ctx.saveTouchingChanges() }
         return result
     }
 

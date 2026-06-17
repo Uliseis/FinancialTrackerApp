@@ -142,6 +142,8 @@ public final class Account {
     public var balanceAnchor: Decimal?
     public var balanceAnchorAt: Date?
     public var createdAt: Date
+    // Last-modified clock for LWW sync. Bumped by CoreLogic mutations via touch().
+    public var updatedAt: Date
 
     @Relationship(deleteRule: .cascade, inverse: \Transaction.account)
     public var transactions: [Transaction] = []
@@ -174,7 +176,8 @@ public final class Account {
         manualOpeningBalance: Decimal? = nil,
         balanceAnchor: Decimal? = nil,
         balanceAnchorAt: Date? = nil,
-        createdAt: Date = .now
+        createdAt: Date = .now,
+        updatedAt: Date? = nil
     ) {
         self.id = id
         self.connection = connection
@@ -195,6 +198,7 @@ public final class Account {
         self.balanceAnchor = balanceAnchor
         self.balanceAnchorAt = balanceAnchorAt
         self.createdAt = createdAt
+        self.updatedAt = updatedAt ?? createdAt
     }
 }
 
@@ -206,6 +210,8 @@ public final class Category {
     public var kind: String
     public var color: String?
     public var createdAt: Date
+    // Last-modified clock for LWW sync. Bumped by CoreLogic mutations via touch().
+    public var updatedAt: Date
 
     @Relationship(deleteRule: .nullify, inverse: \Category.parent)
     public var children: [Category] = []
@@ -225,7 +231,8 @@ public final class Category {
         parent: Category? = nil,
         kind: String = "expense",
         color: String? = nil,
-        createdAt: Date = .now
+        createdAt: Date = .now,
+        updatedAt: Date? = nil
     ) {
         self.id = id
         self.name = name
@@ -233,6 +240,7 @@ public final class Category {
         self.kind = kind
         self.color = color
         self.createdAt = createdAt
+        self.updatedAt = updatedAt ?? createdAt
     }
 }
 
@@ -245,6 +253,8 @@ public final class CategoryRule {
     public var category: Category?
     public var priority: Int
     public var createdAt: Date
+    // Last-modified clock for LWW sync. Bumped via saveTouchingChanges().
+    public var updatedAt: Date
 
     public init(
         id: UUID = UUID(),
@@ -253,7 +263,8 @@ public final class CategoryRule {
         matchType: RuleMatch = .contains,
         category: Category? = nil,
         priority: Int = 0,
-        createdAt: Date = .now
+        createdAt: Date = .now,
+        updatedAt: Date? = nil
     ) {
         self.id = id
         self.pattern = pattern
@@ -262,6 +273,7 @@ public final class CategoryRule {
         self.category = category
         self.priority = priority
         self.createdAt = createdAt
+        self.updatedAt = updatedAt ?? createdAt
     }
 }
 
@@ -319,6 +331,8 @@ public final class TransferGroup {
     public var pairedAt: Date?
     public var route: TransferRoute?
     public var createdAt: Date
+    // Last-modified clock for LWW sync. Bumped via saveTouchingChanges().
+    public var updatedAt: Date
 
     @Relationship(deleteRule: .nullify, inverse: \Transaction.transferGroup)
     public var transactions: [Transaction] = []
@@ -327,12 +341,14 @@ public final class TransferGroup {
         id: UUID = UUID(),
         pairedAt: Date? = nil,
         route: TransferRoute? = nil,
-        createdAt: Date = .now
+        createdAt: Date = .now,
+        updatedAt: Date? = nil
     ) {
         self.id = id
         self.pairedAt = pairedAt
         self.route = route
         self.createdAt = createdAt
+        self.updatedAt = updatedAt ?? createdAt
     }
 }
 
@@ -414,6 +430,8 @@ public final class Transaction {
     public var sharedExpenseGroup: SharedExpenseGroup?
     public var rawJSON: Data?
     public var createdAt: Date
+    // Last-modified clock for LWW sync. Bumped by CoreLogic mutations via touch().
+    public var updatedAt: Date
 
     @Relationship(deleteRule: .cascade, inverse: \Transaction.routedFromTx)
     public var mirrors: [Transaction] = []
@@ -444,7 +462,8 @@ public final class Transaction {
         route: TransferRoute? = nil,
         sharedExpenseGroup: SharedExpenseGroup? = nil,
         rawJSON: Data? = nil,
-        createdAt: Date = .now
+        createdAt: Date = .now,
+        updatedAt: Date? = nil
     ) {
         self.id = id
         self.account = account
@@ -467,6 +486,7 @@ public final class Transaction {
         self.sharedExpenseGroup = sharedExpenseGroup
         self.rawJSON = rawJSON
         self.createdAt = createdAt
+        self.updatedAt = updatedAt ?? createdAt
     }
 }
 
@@ -566,6 +586,22 @@ public final class SyncRun {
     }
 }
 
+// Local-only sync bookkeeping (NOT a synced record type): the persisted CKRecord
+// system fields ("lastKnownRecord") per synced record, keyed by the record's UUID.
+// Lets the push layer reuse the server change tag so edits save as updates, not
+// duplicate inserts — the pattern from Apple's CKSyncEngine sample. Never enqueued for
+// push (it's not among the 14 RecordTypes, and only the engine's context writes it).
+@Model
+public final class SyncRecordMeta {
+    @Attribute(.unique) public var id: UUID
+    public var systemFields: Data
+
+    public init(id: UUID, systemFields: Data) {
+        self.id = id
+        self.systemFields = systemFields
+    }
+}
+
 public enum CoreModelSchema {
     public static let allTypes: [any PersistentModel.Type] = [
         Connection.self,
@@ -582,5 +618,6 @@ public enum CoreModelSchema {
         SharedExpenseGroup.self,
         PortfolioValuation.self,
         SyncRun.self,
+        SyncRecordMeta.self,
     ]
 }

@@ -42,7 +42,7 @@ extension CoreLogic.Accounts {
             createdAt: now
         )
         ctx.insert(account)
-        try ctx.save()
+        try ctx.saveTouchingChanges()
         return account
     }
 
@@ -89,7 +89,7 @@ extension CoreLogic.Accounts {
         if spaceChanged {
             return try CoreLogic.Transfers.repairGroups(in: ctx, accountId: account.id)
         }
-        try ctx.save()
+        try ctx.saveTouchingChanges()
         return nil
     }
 
@@ -106,7 +106,7 @@ extension CoreLogic.Accounts {
     @MainActor
     public static func delete(_ account: Account, in ctx: ModelContext) throws {
         ctx.delete(account)
-        try ctx.save()
+        try ctx.saveTouchingChanges()
     }
 
     // Balance anchor: "as of `date`, the real balance was `balance`". The displayed balance
@@ -118,14 +118,14 @@ extension CoreLogic.Accounts {
     ) throws {
         account.balanceAnchor = balance
         account.balanceAnchorAt = date
-        try ctx.save()
+        try ctx.saveTouchingChanges()
     }
 
     @MainActor
     public static func clearAnchor(_ account: Account, in ctx: ModelContext) throws {
         account.balanceAnchor = nil
         account.balanceAnchorAt = nil
-        try ctx.save()
+        try ctx.saveTouchingChanges()
     }
 
     // MARK: - Helpers

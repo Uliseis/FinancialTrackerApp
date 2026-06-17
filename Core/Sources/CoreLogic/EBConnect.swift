@@ -57,7 +57,7 @@ extension CoreLogic {
             ], into: connection)
             connection.updatedAt = now
             if existing == nil { ctx.insert(connection) }
-            try ctx.save()
+            try ctx.saveTouchingChanges()
             return connection
         }
 
@@ -96,7 +96,7 @@ extension CoreLogic {
             if let authorized = session.authorized { meta["authorized"] = authorized }
             mergeMetadata(meta, into: connection)
             connection.updatedAt = now
-            try ctx.save()
+            try ctx.saveTouchingChanges()
         }
 
         public static func storedState(of connection: Connection) -> String? {

@@ -99,7 +99,7 @@ extension CoreLogic {
                 tx.categorySource = .rule
                 updated += 1
             }
-            if updated > 0 { try ctx.save() }
+            if updated > 0 { try ctx.saveTouchingChanges() }
             return Result(updated: updated, scanned: rows.count)
         }
     }

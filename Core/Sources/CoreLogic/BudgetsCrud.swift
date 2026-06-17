@@ -15,7 +15,7 @@ extension CoreLogic.Budgets {
             startsOn: startsOn, active: active, createdAt: now, updatedAt: now
         )
         ctx.insert(budget)
-        try ctx.save()
+        try ctx.saveTouchingChanges()
         return budget
     }
 
@@ -30,12 +30,12 @@ extension CoreLogic.Budgets {
         budget.startsOn = startsOn
         budget.active = active
         budget.updatedAt = now
-        try ctx.save()
+        try ctx.saveTouchingChanges()
     }
 
     @MainActor
     public static func delete(_ budget: Budget, in ctx: ModelContext) throws {
         ctx.delete(budget)
-        try ctx.save()
+        try ctx.saveTouchingChanges()
     }
 }

@@ -94,7 +94,7 @@ extension CoreLogic {
                 }
                 matched += 2
             }
-            try ctx.save()
+            try ctx.saveTouchingChanges()
             return DetectResult(scanned: candidates.count, matched: matched)
         }
 
@@ -212,7 +212,7 @@ extension CoreLogic {
                 s.transferGroup = nil
             }
 
-            try ctx.save()
+            try ctx.saveTouchingChanges()
             return result
         }
 
@@ -276,7 +276,7 @@ extension CoreLogic {
                 tx.isTransfer = true
                 tx.transferGroup = group
             }
-            try ctx.save()
+            try ctx.saveTouchingChanges()
             return group
         }
 
@@ -304,12 +304,12 @@ extension CoreLogic {
                 // Unlike the web (bare UUID column), the group is a real synced record —
                 // leaving it orphaned would accumulate CloudKit rows forever.
                 ctx.delete(group)
-                try ctx.save()
+                try ctx.saveTouchingChanges()
                 return
             }
             tx.isTransfer = false
             tx.transferGroup = nil
-            try ctx.save()
+            try ctx.saveTouchingChanges()
         }
 
         // Read model for the Transfers screen (iOS-only surface; the web shows transfers

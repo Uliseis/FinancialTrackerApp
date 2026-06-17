@@ -22,7 +22,7 @@ extension CoreLogic {
                 sortOrder: sortOrder, createdAt: now, updatedAt: now
             )
             ctx.insert(group)
-            try ctx.save()
+            try ctx.saveTouchingChanges()
             return group
         }
 
@@ -37,7 +37,7 @@ extension CoreLogic {
             group.kind = kind
             group.color = color
             group.updatedAt = now
-            try ctx.save()
+            try ctx.saveTouchingChanges()
         }
 
         @MainActor
@@ -51,13 +51,13 @@ extension CoreLogic {
                 group.sortOrder = index
                 group.updatedAt = now
             }
-            try ctx.save()
+            try ctx.saveTouchingChanges()
         }
 
         @MainActor
         public static func delete(_ group: AccountGroup, in ctx: ModelContext) throws {
             ctx.delete(group)
-            try ctx.save()
+            try ctx.saveTouchingChanges()
         }
     }
 }

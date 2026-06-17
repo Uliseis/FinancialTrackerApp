@@ -79,7 +79,7 @@ extension CoreLogic {
                     source.isTransfer = true
                     source.transferGroup = group
                 }
-                try ctx.save()
+                try ctx.saveTouchingChanges()
                 return MirrorResult(mirrorId: mirror.id, transferGroupId: group.id)
             }
 
@@ -112,7 +112,7 @@ extension CoreLogic {
             source.isTransfer = true
             source.transferGroup = group
 
-            try ctx.save()
+            try ctx.saveTouchingChanges()
             return MirrorResult(mirrorId: mirror.id, transferGroupId: group.id)
         }
 
@@ -137,7 +137,7 @@ extension CoreLogic {
                 source.isTransfer = false
                 source.transferGroup = nil
             }
-            try ctx.save()
+            try ctx.saveTouchingChanges()
             return RemoveMirrorResult(deleted: mirrors.count)
         }
 
@@ -174,7 +174,7 @@ extension CoreLogic {
                     sourcesReset += 1
                 }
             }
-            try ctx.save()
+            try ctx.saveTouchingChanges()
             return RemoveRouteMirrorsResult(deleted: deleted, sourcesReset: sourcesReset)
         }
 
@@ -295,7 +295,7 @@ extension CoreLogic {
                 priority: priority, enabled: enabled, createdAt: now, updatedAt: now
             )
             ctx.insert(route)
-            try ctx.save()
+            try ctx.saveTouchingChanges()
             var applied: ApplyResult?
             if enabled {
                 applied = try apply(in: ctx, sinceDays: backfillLookbackDays, routeId: route.id)
@@ -338,7 +338,7 @@ extension CoreLogic {
             route.direction = direction
             route.enabled = enabled
             route.updatedAt = now
-            try ctx.save()
+            try ctx.saveTouchingChanges()
 
             var reapplied: ApplyResult?
             if matchersChanged && enabled {
@@ -355,7 +355,7 @@ extension CoreLogic {
         ) throws -> RemoveRouteMirrorsResult {
             let removed = try removeRouteMirrors(routeId: route.id, in: ctx)
             ctx.delete(route)
-            try ctx.save()
+            try ctx.saveTouchingChanges()
             return removed
         }
 
@@ -373,7 +373,7 @@ extension CoreLogic {
                 route.priority = priority
                 route.updatedAt = now
             }
-            try ctx.save()
+            try ctx.saveTouchingChanges()
         }
 
         @MainActor @discardableResult

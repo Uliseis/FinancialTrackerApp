@@ -24,7 +24,7 @@ extension CoreLogic {
                 category: category, priority: priority, createdAt: now
             )
             ctx.insert(rule)
-            try ctx.save()
+            try ctx.saveTouchingChanges()
             return rule
         }
 
@@ -39,7 +39,7 @@ extension CoreLogic {
             rule.category = category
             rule.field = field
             rule.matchType = matchType
-            try ctx.save()
+            try ctx.saveTouchingChanges()
         }
 
         // Top of the list = highest priority. Index 0 ⇒ (count-1), so applyRules' priority
@@ -56,13 +56,13 @@ extension CoreLogic {
                 guard let rule = byId[id], rule.priority != priority else { continue }
                 rule.priority = priority
             }
-            try ctx.save()
+            try ctx.saveTouchingChanges()
         }
 
         @MainActor
         public static func delete(_ rule: CategoryRule, in ctx: ModelContext) throws {
             ctx.delete(rule)
-            try ctx.save()
+            try ctx.saveTouchingChanges()
         }
     }
 }
