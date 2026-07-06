@@ -2,6 +2,9 @@ import Foundation
 
 #if os(iOS) || os(visionOS)
 import BackgroundTasks
+import SwiftData
+import CoreLogic
+import CoreIntegrations
 
 public enum BackgroundSync {
     public static let taskIdentifier = "com.uliseis.odysseyfinance.refresh"
@@ -31,12 +34,24 @@ public enum BackgroundSync {
     private static func handle(task: BGTask, engine: CloudKitSyncEngine) {
         let box = TaskBox(task: task)
         let work = Task { @MainActor in
+            await syncEnableBanking(engine.modelContainer)
             await engine.fetchOnLaunch()
             await engine.sendPendingChanges()
             schedule()
             box.task.setTaskCompleted(success: !Task.isCancelled)
         }
         task.expirationHandler = { work.cancel() }
+    }
+
+    // Pull bank transactions before the CloudKit push so new ones ride out the same run.
+    // Writes to mainContext → SaveObserver enqueues the inserts for push. Dedupe is on
+    // (accountId, externalId) in EBSync, so replays insert nothing.
+    // ponytail: try? skips silently when the key is absent or unreadable (device locked,
+    // AccessibleWhenUnlocked) — it just syncs on the next unlocked run.
+    @MainActor
+    private static func syncEnableBanking(_ container: ModelContainer) async {
+        guard let signer = try? EBKeychain().loadSigner() else { return }
+        _ = await CoreLogic.EBSync.syncAll(api: EBClient(tokenProvider: signer), in: container.mainContext)
     }
 }
 
