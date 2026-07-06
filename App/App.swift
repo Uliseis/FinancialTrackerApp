@@ -85,6 +85,7 @@ struct OdysseyFinanceApp: App {
                         }
                         #if DEBUG
                         CCStatementImport.runIfRequested(modelContainer)
+                        CCBalanceFix.runIfRequested(modelContainer)
                         #endif
                     } catch {
                         // Engine may fail to start if iCloud isn't available; the app still works
