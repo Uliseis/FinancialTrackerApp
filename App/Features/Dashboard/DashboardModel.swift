@@ -19,6 +19,7 @@ struct DashboardModel {
         let label: String
         let income: Decimal
         let expense: Decimal
+        var net: Decimal { income - expense }
     }
 
     struct CategorySlice: Identifiable {
@@ -48,6 +49,8 @@ struct DashboardModel {
     var hasAccounts: Bool
 
     var totalNetWorth: Decimal { cashTotal + investmentValue }
+    var currentMonth: MonthBar? { cashFlow.last }
+    var previousMonth: MonthBar? { cashFlow.count >= 2 ? cashFlow[cashFlow.count - 2] : nil }
 
     static let empty = DashboardModel(
         cashTotal: 0, liabilities: 0, investmentValue: 0,
@@ -107,7 +110,7 @@ struct DashboardModel {
         let accountIds = Set(inScope.map { $0.id })
         let incomeIds = CoreLogic.Dashboard.incomeAccountIds(from: inScope)
         let flow = (try? CoreLogic.Dashboard.monthlyCashFlow(
-            months: 4, accountIds: accountIds, incomeAccountIds: incomeIds, now: now, in: ctx)) ?? []
+            months: 6, accountIds: accountIds, incomeAccountIds: incomeIds, now: now, in: ctx)) ?? []
         let cashFlow = flow.map {
             MonthBar(id: $0.monthStart, label: monthFormatter.string(from: $0.monthStart),
                      income: $0.income, expense: $0.expense)
