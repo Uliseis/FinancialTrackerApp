@@ -83,6 +83,9 @@ struct OdysseyFinanceApp: App {
                         if ProcessInfo.processInfo.environment["OFSYNC_SEED_INITIAL_PUSH"] == "1" {
                             syncEngine.seedInitialPush()
                         }
+                        #if DEBUG
+                        CCStatementImport.runIfRequested(modelContainer)
+                        #endif
                     } catch {
                         // Engine may fail to start if iCloud isn't available; the app still works
                         // locally. Log and carry on; next launch retries.
