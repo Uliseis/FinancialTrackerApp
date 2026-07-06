@@ -7,6 +7,7 @@ extension CoreLogic.Accounts {
         case nameRequired
         case institutionRequired
         case invalidCurrency
+        case amountMustBePositive
     }
 
     // Manual account: externalId is "manual:<uuid>", no connection. Opening balance seeds
@@ -126,6 +127,35 @@ extension CoreLogic.Accounts {
         account.balanceAnchor = nil
         account.balanceAnchorAt = nil
         try ctx.saveTouchingChanges()
+    }
+
+    // Ports app/api/accounts/[id]/interest: a manual positive credit ("Interest") on the
+    // account. externalId "manual-interest:<uuid>", counterparty = institution. EUR amounts
+    // are their own EUR value; other currencies get amountEur backfilled by the FX pass.
+    @MainActor @discardableResult
+    public static func addInterest(
+        _ account: Account, amount: Decimal, at date: Date, note: String? = nil,
+        in ctx: ModelContext, now: Date = .now
+    ) throws -> Transaction {
+        guard amount > 0 else { throw MutationError.amountMustBePositive }
+        let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isEur = account.currency.uppercased() == "EUR"
+        let tx = Transaction(
+            account: account,
+            externalId: "manual-interest:\(UUID().uuidString)",
+            bookedAt: date,
+            amount: amount,
+            currency: account.currency,
+            amountEur: isEur ? amount : nil,
+            fxRateUsed: isEur ? 1 : nil,
+            direction: .credit,
+            description: (trimmed?.isEmpty == false ? trimmed : "Interest"),
+            counterparty: account.institution,
+            categorySource: .bank,
+            createdAt: now)
+        ctx.insert(tx)
+        try ctx.saveTouchingChanges()
+        return tx
     }
 
     // MARK: - Helpers

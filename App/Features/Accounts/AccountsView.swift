@@ -22,6 +22,7 @@ struct AccountsView: View {
     @State private var accountCount: Int = 0
     @State private var editingAccount: AccountEdit?
     @State private var anchoringAccount: Account?
+    @State private var interestAccount: Account?
 
     // Cached current-space layout: non-archived accounts grouped by AccountGroup
     // (sortOrder), nil ⇒ Other. Built in rebuild() so grouping runs only on input or
@@ -59,6 +60,14 @@ struct AccountsView: View {
                                 }
                                 .tint(.brand)
                             }
+                            .swipeActions(edge: .trailing) {
+                                Button {
+                                    interestAccount = account
+                                } label: {
+                                    Label("Add Interest", systemImage: "percent")
+                                }
+                                .tint(.positiveAmount)
+                            }
                         }
                     }
                 }
@@ -76,6 +85,7 @@ struct AccountsView: View {
             }
             .sheet(item: $editingAccount, content: AccountFormView.init)
             .sheet(item: $anchoringAccount, content: BalanceAnchorView.init)
+            .sheet(item: $interestAccount, content: AddInterestView.init)
             .overlay {
                 if sections.isEmpty {
                     ContentUnavailableView("No Accounts", systemImage: "creditcard")

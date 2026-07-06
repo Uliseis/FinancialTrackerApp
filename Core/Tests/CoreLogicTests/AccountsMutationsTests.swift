@@ -24,6 +24,31 @@ final class AccountsMutationsTests: XCTestCase {
         XCTAssertNotNil(a.balanceUpdatedAt)
     }
 
+    func testAddInterestInsertsPositiveCredit() throws {
+        let ctx = try S.makeContext()
+        let space = S.makeSpace(ctx)
+        let a = try A.createManual(
+            name: "Savings", institution: "Revolut", currency: "EUR", space: space, in: ctx)
+        let tx = try A.addInterest(a, amount: 12.34, at: .now, note: nil, in: ctx)
+        XCTAssertTrue(tx.externalId.hasPrefix("manual-interest:"))
+        XCTAssertEqual(tx.direction, .credit)
+        XCTAssertEqual(tx.amount, 12.34)
+        XCTAssertEqual(tx.amountEur, 12.34)
+        XCTAssertEqual(tx.transactionDescription, "Interest")
+        XCTAssertEqual(tx.counterparty, "Revolut")
+        XCTAssertEqual(tx.account?.id, a.id)
+    }
+
+    func testAddInterestUsesTrimmedNoteAndRejectsNonPositive() throws {
+        let ctx = try S.makeContext()
+        let a = try A.createManual(name: "Savings", institution: "Revolut", in: ctx)
+        let tx = try A.addInterest(a, amount: 5, at: .now, note: "  Q2 interest ", in: ctx)
+        XCTAssertEqual(tx.transactionDescription, "Q2 interest")
+        XCTAssertThrowsError(try A.addInterest(a, amount: 0, at: .now, in: ctx)) {
+            XCTAssertEqual($0 as? A.MutationError, .amountMustBePositive)
+        }
+    }
+
     func testCreateManualDefaultsToDefaultSpace() throws {
         let ctx = try S.makeContext()
         let a = try A.createManual(name: "Cash", institution: "Wallet", in: ctx)
