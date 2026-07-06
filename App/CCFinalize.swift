@@ -22,6 +22,18 @@ enum CCFinalize {
         ("Supermercado Lourdes", "Groceries"),
         ("Fruteria Lourdes", "Groceries"),
         ("Tesco", "Groceries"),
+        // second batch — recurring merchants (transfers/Bizum intentionally excluded)
+        ("Las Tablas", "Restaurants"),
+        ("Github", "Subscriptions"),
+        ("OpenAI", "Subscriptions"),
+        ("Aws Emea", "Subscriptions"),
+        ("Spotify", "Subscriptions"),
+        ("pending.uber.com", "Transport"),
+        ("eats help.uber", "Restaurants"),
+        ("one help.uber", "Subscriptions"),
+        ("Bar Fanin", "Restaurants"),
+        ("Mimbre", "Restaurants"),
+        ("COM. PROP. AVIACION", "Housing"),
     ]
 
     @MainActor
