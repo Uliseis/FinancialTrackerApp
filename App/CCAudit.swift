@@ -58,12 +58,27 @@ enum CCAudit {
         }
         try? ctx.save()
 
-        // 3) Re-categorise. (Transfer auto-pairing intentionally NOT run here — the two legs
-        // of these self-transfers don't line up in the data: split across spaces + amount
-        // mismatches, so detect() safely pairs ~nothing. Pairing is a manual/UI decision.)
+        // 3) Re-categorise. (General transfer auto-pairing intentionally NOT run — most
+        // self-transfer legs don't line up in the data, so detect() safely pairs ~nothing.)
         let cats = (try? CoreLogic.Categorize.applyRulesToTransactions(in: ctx))?.updated ?? 0
+
+        // 4) Safe route: "Savings Vault topup" (defunct Revolut vault) is provably one-legged
+        // (17 debits on main Revolut, no matching credit) and all pre-date the savings anchor,
+        // so mirrors land pre-anchor and don't disturb the (correct) savings balance. Routing
+        // marks the topups as transfers → out of expenses. Guarded so it's created once.
+        let vaultId = UUID(uuidString: "7C65A2D3-E137-43C8-B5BB-C4658AD81B45")! // Revolut Savings (Instant Access)
+        let vaultPattern = "Savings Vault topup"
+        let already = ((try? ctx.fetchCount(FetchDescriptor<TransferRoute>(
+            predicate: #Predicate { $0.pattern == vaultPattern }))) ?? 0) > 0
+        let savings = (try? ctx.fetch(FetchDescriptor<Account>(
+            predicate: #Predicate { $0.id == vaultId })))?.first
+        if !already, let savings {
+            _ = try? CoreLogic.TransferRoutes.createRoute(
+                pattern: vaultPattern, target: savings, field: .description,
+                matchType: .contains, direction: .debit, in: ctx)
+        }
         try? ctx.save()
-        print("[CCAudit] loosened=\(loosened) rulesCreated=\(created) recategorized=\(cats)")
+        print("[CCAudit] loosened=\(loosened) rulesCreated=\(created) recategorized=\(cats) vaultRoute=\(!already)")
     }
 }
 #endif
