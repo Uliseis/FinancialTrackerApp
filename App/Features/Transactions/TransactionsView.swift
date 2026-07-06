@@ -16,6 +16,7 @@ struct TransactionsView: View {
     @Environment(\.modelContext) private var ctx
     @State private var search = ""
     @State private var showTransfers = false
+    @State private var showExcluded = false
     @State private var rows: [CoreModel.Transaction] = []
     @State private var filteredTotalEur: Decimal = 0
     // The full filtered set can be thousands of rows; render it a page at a time and grow
@@ -38,6 +39,7 @@ struct TransactionsView: View {
         rows = allTx.filter { tx in
             guard scope.includes(tx.account) else { return false }
             guard tx.routedFromTx == nil else { return false }
+            if !showExcluded && (tx.account?.excluded ?? false) { return false }
             if !showTransfers && tx.isTransfer { return false }
             return matches(tx)
         }
@@ -98,6 +100,13 @@ struct TransactionsView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { SpacePicker() }
                 ToolbarItem(placement: .topBarTrailing) {
+                    Toggle(isOn: $showExcluded) {
+                        Label("Excluded", systemImage: "eye.slash")
+                    }
+                    .toggleStyle(.button)
+                    .sensoryFeedback(.selection, trigger: showExcluded)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Toggle(isOn: $showTransfers) {
                         Label("Transfers", systemImage: "arrow.left.arrow.right")
                     }
@@ -152,6 +161,7 @@ struct TransactionsView: View {
         }
         .onChange(of: search) { recompute() }
         .onChange(of: showTransfers) { recompute() }
+        .onChange(of: showExcluded) { recompute() }
         .onChange(of: currentSpaceId) { recompute() }
         .reloadOnModelChange { recompute() }
     }
