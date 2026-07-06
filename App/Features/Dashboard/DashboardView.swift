@@ -29,8 +29,7 @@ struct DashboardView: View {
                                 .listRowBackground(Color.clear)
                                 .listRowSeparator(.hidden)
                         }
-                        if let current = model.currentMonth,
-                           current.income != 0 || current.expense != 0 {
+                        if let current = model.currentMonth {
                             Section {
                                 ThisMonthCard(current: current, previous: model.previousMonth)
                                     .listRowInsets(EdgeInsets(top: Theme.Space.s, leading: Theme.Space.m,
