@@ -74,9 +74,16 @@ struct OdysseyFinanceApp: App {
                     // CKContainer init traps without the iCloud entitlement (unsigned dev
                     // builds). Only start sync when CloudKit is actually provisioned; the app
                     // runs fully locally otherwise.
-                    guard CloudKitGate.isAvailable else { return }
+                    // ponytail: drains only on launch, not on foreground-resume — the queue is
+                    // durable, so a charge logged while suspended just lands on the next launch.
+                    guard CloudKitGate.isAvailable else {
+                        QuickAddDrain.run(modelContainer.mainContext)
+                        return
+                    }
                     do {
                         try syncEngine.start()
+                        // After start() so the SaveObserver enqueues these for CloudKit push.
+                        QuickAddDrain.run(modelContainer.mainContext)
                         // Data cutover: a store copied into the app container fires no save
                         // events, so its rows must be enqueued explicitly, once. Set this env
                         // var on the single cutover launch only (devicectl --environment-variables).
