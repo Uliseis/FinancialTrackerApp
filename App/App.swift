@@ -77,13 +77,13 @@ struct OdysseyFinanceApp: App {
                     // ponytail: drains only on launch, not on foreground-resume — the queue is
                     // durable, so a charge logged while suspended just lands on the next launch.
                     guard CloudKitGate.isAvailable else {
-                        QuickAddDrain.run(modelContainer.mainContext)
+                        QuickAddDrain.run(modelContainer.mainContext, engine: nil)
                         return
                     }
                     do {
                         try syncEngine.start()
-                        // After start() so the SaveObserver enqueues these for CloudKit push.
-                        QuickAddDrain.run(modelContainer.mainContext)
+                        // After start() so the created rows enqueue for CloudKit push.
+                        QuickAddDrain.run(modelContainer.mainContext, engine: syncEngine)
                         // Data cutover: a store copied into the app container fires no save
                         // events, so its rows must be enqueued explicitly, once. Set this env
                         // var on the single cutover launch only (devicectl --environment-variables).
@@ -95,6 +95,7 @@ struct OdysseyFinanceApp: App {
                         CCBalanceFix.runIfRequested(modelContainer)
                         CCFinalize.runIfRequested(modelContainer)
                         CCAudit.runIfRequested(modelContainer)
+                        QuickAddSignFix.runIfRequested(modelContainer)
                         #endif
                     } catch {
                         // Engine may fail to start if iCloud isn't available; the app still works
@@ -121,6 +122,7 @@ let authShowLockOnly = false
 
 struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.modelContext) private var modelContext
     @Environment(CloudKitSyncEngine.self) private var syncEngine
     @AppStorage(SecuritySettings.requireUnlockKey) private var requireUnlock = true
     @State private var unlocked = authGateBypassed || !SecuritySettings.requireUnlock
@@ -139,6 +141,12 @@ struct RootView: View {
         }
         .task { if !unlocked && !authShowLockOnly { authenticate() } }
         .onChange(of: scenePhase) { _, phase in
+            // Materialize charges captured by the App Intent while the app was suspended.
+            // Only once the engine is up, so we don't race start() on cold launch (the
+            // launch-time drain handles that case).
+            if phase == .active, syncEngine.isRunning {
+                QuickAddDrain.run(modelContext, engine: syncEngine)
+            }
             if phase == .background, requireUnlock, !authGateBypassed {
                 unlocked = false
                 authError = nil

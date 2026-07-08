@@ -2,6 +2,7 @@ import Foundation
 import SwiftData
 import CoreModel
 import CoreLogic
+import CoreSync
 
 // A quick-add captured by the App Intent. The intent runs in a background app launch where
 // the sync engine isn't started, so it can't safely write SwiftData (a stray context wouldn't
@@ -9,6 +10,7 @@ import CoreLogic
 // through mainContext → SaveObserver → normal push. Amount is stored as a string to keep the
 // Decimal exact (never round-trips through Double).
 struct PendingQuickAdd: Codable {
+    var accountId: String
     var amount: String
     var merchant: String?
     var bookedAt: Date
@@ -53,37 +55,37 @@ enum QuickAddQueue {
 
 enum QuickAddDrain {
     // Materializes queued quick-adds into real transactions on the observed main context.
-    // Must be called AFTER syncEngine.start() so the SaveObserver pushes them.
+    // Called on cold launch (after start()) and on every foreground resume — draining the
+    // queue is atomic, so a double-fire just finds it empty. Enqueues created rows on the
+    // sync engine directly so the push doesn't depend on SaveObserver timing.
     @MainActor
-    static func run(_ ctx: ModelContext) {
+    static func run(_ ctx: ModelContext, engine: CloudKitSyncEngine?) {
         let pending = QuickAddQueue.drainRaw()
         guard !pending.isEmpty else { return }
-        guard let account = targetAccount(in: ctx) else {
-            // No destination account yet — re-queue rather than drop the data.
-            pending.forEach(QuickAddQueue.append)
-            return
-        }
+        var created: [Transaction] = []
+        var requeue: [PendingQuickAdd] = []
         for entry in pending {
-            guard let amount = QuickAddQueue.parseAmount(entry.amount) else { continue }
-            guard let tx = try? CoreLogic.Transactions.createManual(
-                account: account, amount: amount, bookedAt: entry.bookedAt,
-                description: entry.merchant, counterparty: entry.merchant, in: ctx)
+            // Route strictly by the account UUID chosen in the shortcut. If it can't be resolved
+            // yet (e.g. not synced to this device), re-queue rather than misroute or drop.
+            guard let accountId = UUID(uuidString: entry.accountId),
+                  let account = account(by: accountId, in: ctx) else {
+                requeue.append(entry)
+                continue
+            }
+            guard let amount = QuickAddQueue.parseAmount(entry.amount),
+                  let tx = try? CoreLogic.Transactions.createManual(
+                    account: account, amount: amount, bookedAt: entry.bookedAt,
+                    description: entry.merchant, counterparty: entry.merchant, in: ctx)
             else { continue }
             _ = try? CoreLogic.Categorize.applyRulesToTransactions(in: ctx, txIds: [tx.id])
+            created.append(tx)
         }
+        requeue.forEach(QuickAddQueue.append)
+        engine?.enqueueLocalChanges(inserted: created, updated: [], deleted: [])
     }
 
-    // ponytail: matches the Revolut credit-card account by name. If you rename it, update the
-    // match here — or add a Settings picker that stores the target account's UUID.
     @MainActor
-    private static func targetAccount(in ctx: ModelContext) -> Account? {
-        let accounts = (try? ctx.fetch(FetchDescriptor<Account>())) ?? []
-        let manual = accounts.filter { $0.connection == nil && !$0.archived }
-        func matches(_ a: Account) -> Bool {
-            let hay = "\(a.name) \(a.institution)".lowercased()
-            return hay.contains("revolut") && (hay.contains("cred") || hay.contains("card"))
-        }
-        return manual.first(where: matches)
-            ?? manual.first { "\($0.name) \($0.institution)".lowercased().contains("revolut") }
+    private static func account(by id: UUID, in ctx: ModelContext) -> Account? {
+        (try? ctx.fetch(FetchDescriptor<Account>(predicate: #Predicate { $0.id == id })))?.first
     }
 }

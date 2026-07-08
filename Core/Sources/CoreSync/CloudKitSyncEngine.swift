@@ -24,6 +24,8 @@ public final class CloudKitSyncEngine {
     public private(set) var lastPullReport: PullReport?
     public private(set) var lastError: Error?
 
+    public var isRunning: Bool { engine != nil }
+
     public init(
         containerIdentifier: String,
         modelContainer: ModelContainer,
