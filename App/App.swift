@@ -74,8 +74,8 @@ struct OdysseyFinanceApp: App {
                     // CKContainer init traps without the iCloud entitlement (unsigned dev
                     // builds). Only start sync when CloudKit is actually provisioned; the app
                     // runs fully locally otherwise.
-                    // ponytail: drains only on launch, not on foreground-resume — the queue is
-                    // durable, so a charge logged while suspended just lands on the next launch.
+                    // Cold-launch drain of App Intent captures; foreground-resume is handled
+                    // separately in RootView.onChange(scenePhase == .active).
                     guard CloudKitGate.isAvailable else {
                         QuickAddDrain.run(modelContainer.mainContext, engine: nil)
                         return
