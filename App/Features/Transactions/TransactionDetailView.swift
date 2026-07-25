@@ -12,6 +12,7 @@ struct TransactionDetailView: View {
     @State private var pairing = false
     @State private var trackingShared = false
     @State private var matchingIncome = false
+    @State private var creatingRule: RuleEdit?
     @State private var confirmingUnpair = false
     @State private var errorMessage = ""
     @State private var showingError = false
@@ -116,6 +117,7 @@ struct TransactionDetailView: View {
         .sheet(isPresented: $matchingIncome) {
             MatchIncomeView(incomeTx: tx)
         }
+        .sheet(item: $creatingRule) { RuleEditView(edit: $0) }
         .confirmationDialog("Remove this transfer?", isPresented: $confirmingUnpair,
                             titleVisibility: .visible) {
             Button("Remove Transfer", role: .destructive, action: unpair)
@@ -186,6 +188,9 @@ struct TransactionDetailView: View {
             }
             if let d = tx.transactionDescription, !d.isEmpty {
                 row("Description", d)
+            }
+            Button("Always Categorize Like This…") {
+                creatingRule = RuleEdit(seededFrom: tx)
             }
         }
     }

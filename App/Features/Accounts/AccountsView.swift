@@ -46,34 +46,14 @@ struct AccountsView: View {
                 ForEach(sections) { section in
                     Section(section.title) {
                         ForEach(section.accounts) { account in
-                            Button {
-                                editingAccount = AccountEdit(account)
-                            } label: {
-                                AccountRow(account: account, eur: eurBalances[account.id])
-                            }
-                            .buttonStyle(.plain)
-                            .swipeActions(edge: .leading) {
-                                Button {
-                                    anchoringAccount = account
-                                } label: {
-                                    Label("Set Balance", systemImage: "scalemass")
-                                }
-                                .tint(.brand)
-                            }
-                            .swipeActions(edge: .trailing) {
-                                Button {
-                                    interestAccount = account
-                                } label: {
-                                    Label("Add Interest", systemImage: "percent")
-                                }
-                                .tint(.positiveAmount)
-                            }
+                            row(for: account)
                         }
                     }
                 }
             }
             .scrollEdgeEffectStyle(.soft, for: .all)
             .refreshable { reload() }
+            .navigationDestination(for: Account.self) { AccountDetailView(account: $0) }
             .navigationTitle("Accounts")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { SpacePicker() }
@@ -110,6 +90,29 @@ struct AccountsView: View {
         .reloadOnModelChange { reload() }
     }
 
+    @ViewBuilder
+    private func row(for account: Account) -> some View {
+        NavigationLink(value: account) {
+            AccountRow(account: account, eur: eurBalances[account.id])
+        }
+        .swipeActions(edge: .leading) {
+            Button { anchoringAccount = account } label: {
+                Label("Set Balance", systemImage: "scalemass")
+            }
+            .tint(.brand)
+        }
+        .swipeActions(edge: .trailing) {
+            Button { interestAccount = account } label: {
+                Label("Add Interest", systemImage: "percent")
+            }
+            .tint(.positiveAmount)
+            Button { editingAccount = AccountEdit(account) } label: {
+                Label("Edit", systemImage: "pencil")
+            }
+            .tint(.gray)
+        }
+    }
+
     private func reload() {
         eurBalances = (try? CoreLogic.Accounts.computeEurBalances(accounts, in: ctx)) ?? [:]
         rebuild()
@@ -138,7 +141,9 @@ struct AccountsView: View {
     }
 }
 
-// Cash net worth readout for the current space — the Accounts counterpart to
+// Sum of every visible account balance in the space, cards included. The Dashboard's
+// "Cash" stat is deliberately narrower (it splits liabilities out) — hence the
+// different label. Counterpart to
 // the Dashboard hero (light, type-on-surface; the dark panel stays unique to
 // the Dashboard).
 private struct AccountsSummaryHeader: View {
@@ -147,7 +152,7 @@ private struct AccountsSummaryHeader: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.xs) {
-            Text("CASH NET WORTH")
+            Text("TOTAL BALANCE")
                 .font(.caption2.weight(.semibold))
                 .tracking(1.4)
                 .foregroundStyle(.secondary)

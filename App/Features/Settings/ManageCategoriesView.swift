@@ -34,6 +34,7 @@ struct ManageCategoriesView: View {
             }
             .navigationTitle("Categories")
             .navigationBarTitleDisplayMode(.inline)
+            .presentationDetents([.medium, .large])
             .overlay {
                 if categories.isEmpty {
                     ContentUnavailableView("No Categories", systemImage: "tag",
@@ -106,10 +107,12 @@ struct CategoryEdit: Identifiable {
     var parentId: UUID?
     var color: String?
 
-    init() {
+    // presetName seeds the field from whatever the user typed in the category picker's
+    // search box, so "no such category" flows straight into creating it.
+    init(presetName: String = "") {
         id = UUID()
         existing = nil
-        name = ""
+        name = presetName.trimmingCharacters(in: .whitespacesAndNewlines)
         kind = .expense
         parentId = nil
         color = ColorSwatchPicker.palette.first
@@ -125,7 +128,7 @@ struct CategoryEdit: Identifiable {
     }
 }
 
-private struct CategoryEditView: View {
+struct CategoryEditView: View {
     @State private var edit: CategoryEdit
     @State private var saveError: String?
     @Query(sort: [SortDescriptor(\CoreModel.Category.name)])

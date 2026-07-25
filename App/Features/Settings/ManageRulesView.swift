@@ -150,9 +150,26 @@ struct RuleEdit: Identifiable {
         matchType = rule.matchType
         categoryId = rule.category?.id
     }
+
+    // Seeds a rule from the transaction you're looking at: the counterparty is the more
+    // stable key, so prefer it and fall back to the description.
+    init(seededFrom tx: CoreModel.Transaction) {
+        id = UUID()
+        existing = nil
+        let cp = tx.counterparty?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let cp, !cp.isEmpty {
+            pattern = cp
+            field = .counterparty
+        } else {
+            pattern = tx.transactionDescription?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            field = .description
+        }
+        matchType = .contains
+        categoryId = tx.category?.id
+    }
 }
 
-private struct RuleEditView: View {
+struct RuleEditView: View {
     @State private var edit: RuleEdit
     @State private var previewCount: Int?
     @State private var saveError: String?

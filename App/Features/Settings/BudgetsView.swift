@@ -36,8 +36,14 @@ struct BudgetsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .overlay {
                 if budgets.isEmpty {
-                    ContentUnavailableView("No Budgets", systemImage: "chart.pie",
-                                           description: Text("Add a monthly budget for a category."))
+                    ContentUnavailableView {
+                        Label("No Budgets", systemImage: "chart.pie")
+                    } description: {
+                        Text("Cap a category's monthly spend and track it here.")
+                    } actions: {
+                        Button("Add Budget") { editing = BudgetEdit() }
+                            .buttonStyle(.glassProminent)
+                    }
                 }
             }
             .toolbar {
