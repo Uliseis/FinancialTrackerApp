@@ -39,7 +39,7 @@ struct SharedExpenseCreateView: View {
                 }
             }
             .searchable(text: $search, prompt: "Filter credits")
-            .navigationTitle("Shared Expense")
+            .navigationTitle("Match Expense")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -94,7 +94,7 @@ enum SharedExpenseMessages {
         case .primaryIsAlsoReimbursement: return "The expense can’t also be a reimbursement."
         case .primaryMustBeDebit: return "The primary must be an expense (debit)."
         case .primaryIsTransfer: return "The primary is a transfer."
-        case .primaryAlreadyInGroup: return "The primary is already in a shared expense."
+        case .primaryAlreadyInGroup: return "That expense is already matched."
         case .primaryHasNoEurAmount: return "The primary has no EUR amount yet."
         case .reimbursementNotCredit: return "A reimbursement must be a credit."
         case .reimbursementIsTransfer: return "A reimbursement is a transfer."

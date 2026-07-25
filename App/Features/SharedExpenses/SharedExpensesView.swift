@@ -20,12 +20,12 @@ struct SharedExpensesView: View {
                 }
             }
         }
-        .navigationTitle("Shared Expenses")
+        .navigationTitle("Matches")
         .navigationBarTitleDisplayMode(.inline)
         .overlay {
             if groups.isEmpty {
-                ContentUnavailableView("No Shared Expenses", systemImage: "person.2",
-                                       description: Text("Track a shared expense from a transaction."))
+                ContentUnavailableView("No Matches", systemImage: "arrow.trianglehead.branch",
+                                       description: Text("Open a transaction and match it against the money on the other side."))
             }
         }
         .task { reload() }

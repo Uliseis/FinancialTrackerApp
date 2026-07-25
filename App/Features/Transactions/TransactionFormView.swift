@@ -88,9 +88,9 @@ struct TransactionFormView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .center)
                     } footer: {
-                        if edit.blocksDelete {
-                            Text("This is part of a transfer. Remove the transfer first.")
-                        }
+                        Text(edit.blocksDelete
+                             ? "This is part of a transfer. Remove the transfer first."
+                             : "")
                     }
                 }
             }
