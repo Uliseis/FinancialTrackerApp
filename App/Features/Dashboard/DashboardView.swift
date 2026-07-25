@@ -336,7 +336,7 @@ private struct GroupBreakdownSection: View {
     let cashTotal: Decimal
 
     var body: some View {
-        Section("Net worth by group") {
+        Section {
             ForEach(groups) { g in
                 ProgressRow(
                     value: Money.format(g.eur, currency: "EUR"),
@@ -349,6 +349,8 @@ private struct GroupBreakdownSection: View {
                     else if g.kind == .investment { TagChip(text: "investments") }
                 }
             }
+        } header: {
+            Text("Net worth by group").displaySectionHeader()
         }
     }
 }
@@ -372,7 +374,7 @@ private struct CashFlowSection: View {
     }
 
     var body: some View {
-        Section("Cash flow") {
+        Section {
             Chart(points) { p in
                 BarMark(
                     x: .value("Month", p.date, unit: .month),
@@ -393,9 +395,11 @@ private struct CashFlowSection: View {
             .chartLegend(.visible)
             .frame(height: 200)
             .padding(.vertical, 4)
+        } header: {
+            Text("Cash flow").displaySectionHeader()
         }
 
-        Section("By month") {
+        Section {
             HStack {
                 Text("MONTH").frame(maxWidth: .infinity, alignment: .leading)
                 Text("INCOME").frame(maxWidth: .infinity, alignment: .trailing)
@@ -410,6 +414,8 @@ private struct CashFlowSection: View {
             ForEach(months.reversed()) { m in
                 MonthFlowRow(month: m, isCurrent: m.id == months.last?.id)
             }
+        } header: {
+            Text("By month").displaySectionHeader()
         }
     }
 }
@@ -456,7 +462,7 @@ private struct TopCategoriesSection: View {
     private var maxTotal: Decimal { categories.map { $0.total }.max() ?? 0 }
 
     var body: some View {
-        Section("Top categories this month") {
+        Section {
             ForEach(categories) { c in
                 ProgressRow(
                     value: Money.format(c.total, currency: "EUR"),
@@ -466,6 +472,8 @@ private struct TopCategoriesSection: View {
                     Text(c.name).lineLimit(1)
                 }
             }
+        } header: {
+            Text("Top categories this month").displaySectionHeader()
         }
     }
 }
@@ -474,7 +482,7 @@ private struct BudgetsSection: View {
     let budgets: [DashboardModel.BudgetBar]
 
     var body: some View {
-        Section("Budgets") {
+        Section {
             ForEach(budgets) { b in
                 ProgressRow(
                     value: "\(Money.format(b.spent, currency: "EUR")) / \(Money.format(b.amount, currency: "EUR"))",
@@ -492,6 +500,8 @@ private struct BudgetsSection: View {
                     TagChip(text: b.period.rawValue)
                 }
             }
+        } header: {
+            Text("Budgets").displaySectionHeader()
         }
     }
 }
