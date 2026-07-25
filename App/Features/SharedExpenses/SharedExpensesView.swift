@@ -24,7 +24,7 @@ struct SharedExpensesView: View {
         .navigationBarTitleDisplayMode(.inline)
         .overlay {
             if groups.isEmpty {
-                ContentUnavailableView("No Matches", systemImage: "arrow.trianglehead.branch",
+                ContentUnavailableView("No Matches", systemImage: "plusminus.circle",
                                        description: Text("Open a transaction and match it against the money on the other side."))
             }
         }

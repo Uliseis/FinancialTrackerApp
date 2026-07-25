@@ -23,11 +23,22 @@ struct SharedExpenseGroupDetailView: View {
 
     var body: some View {
         Form {
-            Section("Summary") {
-                LabeledContent("Expenses", value: Money.format(net?.gross ?? 0, currency: "EUR"))
-                LabeledContent("Covered by", value: Money.format(net?.reimbursed ?? 0, currency: "EUR"))
-                LabeledContent("Net") { MoneyText(amount: net?.net ?? 0) }
-                    .font(.headline)
+            Section {
+                InstrumentPanel {
+                    VStack(alignment: .leading, spacing: Theme.Space.s) {
+                        PanelLabel(text: "Net still spent")
+                        Text(Money.format(net?.net ?? 0, currency: "EUR"))
+                            .font(.readout(.largeTitle, weight: .bold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                        HStack(spacing: Theme.Space.l) {
+                            panelStat("Expenses", net?.gross ?? 0)
+                            panelStat("Covered by", net?.reimbursed ?? 0)
+                        }
+                    }
+                }
+                .instrumentPanelRow()
             }
 
             // Split by direction, not by is-it-the-primary: a match can hold several
@@ -89,6 +100,15 @@ struct SharedExpenseGroupDetailView: View {
             Button("Delete", role: .destructive) { deleteGroup() }
         } message: {
             Text("The transactions stay; only the grouping is removed.")
+        }
+    }
+
+    private func panelStat(_ label: String, _ value: Decimal) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            PanelLabel(text: label)
+            Text(Money.format(value, currency: "EUR"))
+                .font(.readout(.subheadline, weight: .medium))
+                .foregroundStyle(.white.opacity(0.9))
         }
     }
 

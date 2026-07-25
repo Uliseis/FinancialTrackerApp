@@ -208,7 +208,10 @@ struct TransactionsView: View {
                 if rows.isEmpty {
                     ContentUnavailableView(
                         search.isEmpty ? "No Transactions" : "No Matches",
-                        systemImage: "list.bullet.rectangle"
+                        systemImage: "list.bullet.rectangle",
+                        description: Text(search.isEmpty
+                            ? "Nothing in this space yet. Sync a bank, or add a transaction with the + button."
+                            : "Nothing matches “\(search)”.")
                     )
                 }
             }

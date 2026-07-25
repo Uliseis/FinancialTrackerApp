@@ -54,7 +54,7 @@ struct TransactionDetailView: View {
         Form {
             Section {
                 TransactionDetailHeader(tx: tx)
-                    .listRowBackground(Color.clear)
+                    .instrumentPanelRow()
             }
 
             Section("Amount") {
@@ -300,34 +300,39 @@ private struct TransactionDetailHeader: View {
         return .secondary
     }
 
-    private var badge: TagChip {
-        if tx.isTransfer { return TagChip(text: "Transfer", tint: .brand) }
-        if value > 0 { return TagChip(text: "Income", tint: .positiveAmount) }
-        return TagChip(text: "Expense")
+    private var badgeText: String {
+        if tx.isTransfer { return "Transfer" }
+        return value > 0 ? "Income" : "Expense"
+    }
+
+    // On the instrument panel the sign is carried by the +/- and the label, not by the
+    // light-mode amount colours, which are unreadable on the dark wash.
+    private var panelAmountColor: Color {
+        value > 0 ? Theme.heroAccent : .white
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Space.s) {
-            HStack(spacing: Theme.Space.s) {
-                ColorDot(hex: tx.category?.color, size: 10)
-                Text(tx.category?.name ?? "Uncategorized")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: Theme.Space.s)
-                badge
+        InstrumentPanel {
+            VStack(alignment: .leading, spacing: Theme.Space.s) {
+                HStack(spacing: Theme.Space.s) {
+                    CategoryBadge(category: tx.category, size: 28)
+                    Text(tx.category?.name ?? "Uncategorized")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.7))
+                    Spacer(minLength: Theme.Space.s)
+                    PanelLabel(text: badgeText)
+                }
+                Text(amountString)
+                    .font(.readout(.largeTitle, weight: .bold))
+                    .foregroundStyle(panelAmountColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                Text(title)
+                    .font(.display(.headline))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .lineLimit(2)
             }
-            Text(amountString)
-                .font(.readout(.largeTitle, weight: .bold))
-                .foregroundStyle(amountColor)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(.primary)
-                .lineLimit(2)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, Theme.Space.xs)
         .accessibilityElement(children: .combine)
     }
 }
