@@ -158,7 +158,8 @@ public enum ModelSnapshots {
             spaceId: m.space?.id,
             externalId: m.externalId,
             type: m.type,
-            institution: m.institution, name: m.name, currency: m.currency,
+            institution: m.institution, name: m.name, alias: m.alias,
+            currency: m.currency,
             iban: m.iban,
             balance: m.balance, balanceUpdatedAt: m.balanceUpdatedAt,
             metadataJSON: m.metadataJSON,
@@ -178,6 +179,7 @@ public enum ModelSnapshots {
         m.type = s.type
         m.institution = s.institution
         m.name = s.name
+        m.alias = s.alias
         m.currency = s.currency
         m.iban = s.iban
         m.balance = s.balance

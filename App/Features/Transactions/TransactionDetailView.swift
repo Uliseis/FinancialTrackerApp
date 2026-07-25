@@ -64,7 +64,7 @@ struct TransactionDetailView: View {
                     row("Value", valueAt.formatted(date: .abbreviated, time: .omitted))
                 }
                 if let account = tx.account {
-                    row("Account", account.name)
+                    row("Account", account.displayName)
                     row("Institution", account.institution)
                 }
             }
@@ -93,7 +93,7 @@ struct TransactionDetailView: View {
 
             Section("Transfer") {
                 if isMirrorLeg {
-                    row("Routed from", tx.routedFromTx?.account?.name ?? "—")
+                    row("Routed from", tx.routedFromTx?.account?.displayName ?? "—")
                     Button("Remove Transfer", role: .destructive) { confirmingUnpair = true }
                 } else if hasTransfer {
                     if let paired = tx.transferGroup?.pairedAt {
@@ -111,7 +111,7 @@ struct TransactionDetailView: View {
                 } else if tx.sharedExpenseGroup == nil {
                     Menu("Route to Account") {
                         ForEach(routeTargets) { account in
-                            Button(account.name) { route(to: account) }
+                            Button(account.displayName) { route(to: account) }
                         }
                     }
                     Button("Pair with Transaction…") { pairing = true }
@@ -179,7 +179,7 @@ struct TransactionDetailView: View {
     private func route(to account: Account) {
         do {
             if try CoreLogic.TransferRoutes.createMirror(from: tx, to: account, in: ctx) == nil {
-                showError("Couldn’t route into \(account.name). The target must be in the same space and not archived.")
+                showError("Couldn’t route into \(account.displayName). The target must be in the same space and not archived.")
             }
         } catch {
             showError("Couldn’t route this transfer.")

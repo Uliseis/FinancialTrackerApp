@@ -176,7 +176,7 @@ private struct AccountRow: View {
         HStack(spacing: Theme.Space.m) {
             AccountTypeChip(type: account.type, tint: tint)
             VStack(alignment: .leading, spacing: 2) {
-                Text(account.name)
+                Text(account.displayName)
                     .font(.body)
                     .lineLimit(1)
                 Text(account.institution)

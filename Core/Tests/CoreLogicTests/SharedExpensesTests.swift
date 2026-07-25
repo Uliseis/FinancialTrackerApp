@@ -461,4 +461,92 @@ final class SharedExpensesTests: XCTestCase {
         XCTAssertEqual(primaryHit?.sharedExpenseGroupId != nil, true)
         XCTAssertEqual(primaryHit?.existingReimbursed, 50)
     }
+
+    // MARK: - createGroupFromCredit (income matched to N expenses)
+
+    func testCreateFromCreditBundlesSeveralExpensesAndNetsOut() throws {
+        let (ctx, _, joint, roommate) = try happyPathContext()
+        let at = Date(timeIntervalSince1970: 1_750_000_000)
+        let income = S.makeTx(ctx, account: joint, amount: 50, amountEur: 50,
+                              direction: .credit, bookedAt: at, description: "Bizum Jimena")
+        let a = S.makeTx(ctx, account: joint, amount: -30, amountEur: -30,
+                         direction: .debit, bookedAt: at, description: "Restaurante X")
+        let b = S.makeTx(ctx, account: roommate, amount: -25, amountEur: -25,
+                         direction: .debit, bookedAt: at, description: "Bar Y")
+        try ctx.save()
+
+        let g = try SE.createGroupFromCredit(
+            .init(label: "Dinner refund", creditTxId: income.id, expenseTxIds: [a.id, b.id]),
+            in: ctx)
+
+        XCTAssertEqual(income.sharedExpenseGroup?.id, g.id)
+        XCTAssertEqual(a.sharedExpenseGroup?.id, g.id)
+        XCTAssertEqual(b.sharedExpenseGroup?.id, g.id)
+        // Anchor is the largest expense.
+        XCTAssertEqual(g.primaryTx?.id, a.id)
+
+        let net = try SE.netForGroup(g.id, in: ctx)
+        XCTAssertEqual(net.gross, 55)       // both expenses
+        XCTAssertEqual(net.reimbursed, 50)  // the income
+        XCTAssertEqual(net.net, 5)          // still actually spent
+    }
+
+    func testCreateFromCreditRejectsExpensesThatDontCoverTheIncome() throws {
+        let (ctx, _, joint, _) = try happyPathContext()
+        let at = Date(timeIntervalSince1970: 1_750_000_000)
+        let income = S.makeTx(ctx, account: joint, amount: 50, amountEur: 50,
+                              direction: .credit, bookedAt: at)
+        let small = S.makeTx(ctx, account: joint, amount: -20, amountEur: -20,
+                             direction: .debit, bookedAt: at)
+        try ctx.save()
+
+        XCTAssertThrowsError(try SE.createGroupFromCredit(
+            .init(label: "Refund", creditTxId: income.id, expenseTxIds: [small.id]), in: ctx)
+        ) {
+            XCTAssertEqual($0 as? SE.Error, .undercoverage(expenses: 20, credited: 50))
+        }
+        XCTAssertNil(income.sharedExpenseGroup)
+        XCTAssertNil(small.sharedExpenseGroup)
+    }
+
+    func testCreateFromCreditRejectsCreditOnTheExpenseSide() throws {
+        let (ctx, _, joint, _) = try happyPathContext()
+        let at = Date(timeIntervalSince1970: 1_750_000_000)
+        let income = S.makeTx(ctx, account: joint, amount: 50, amountEur: 50,
+                              direction: .credit, bookedAt: at)
+        let alsoIncome = S.makeTx(ctx, account: joint, amount: 80, amountEur: 80,
+                                  direction: .credit, bookedAt: at)
+        try ctx.save()
+
+        XCTAssertThrowsError(try SE.createGroupFromCredit(
+            .init(label: "Refund", creditTxId: income.id, expenseTxIds: [alsoIncome.id]), in: ctx)
+        ) {
+            XCTAssertEqual($0 as? SE.Error, .expenseNotDebit(txId: alsoIncome.id))
+        }
+    }
+
+    func testRemovingAnchorRepointsToAnotherExpense() throws {
+        let (ctx, _, joint, roommate) = try happyPathContext()
+        let at = Date(timeIntervalSince1970: 1_750_000_000)
+        let income = S.makeTx(ctx, account: joint, amount: 50, amountEur: 50,
+                              direction: .credit, bookedAt: at)
+        let big = S.makeTx(ctx, account: joint, amount: -30, amountEur: -30,
+                           direction: .debit, bookedAt: at)
+        let small = S.makeTx(ctx, account: roommate, amount: -25, amountEur: -25,
+                             direction: .debit, bookedAt: at)
+        try ctx.save()
+        let g = try SE.createGroupFromCredit(
+            .init(label: "Dinner", creditTxId: income.id, expenseTxIds: [big.id, small.id]),
+            in: ctx)
+        XCTAssertEqual(g.primaryTx?.id, big.id)
+
+        try SE.removeReimbursement(groupId: g.id, txId: big.id, in: ctx)
+        XCTAssertEqual(g.primaryTx?.id, small.id)
+        XCTAssertNil(big.sharedExpenseGroup)
+
+        // Last expense standing can't leave — nothing left to net against.
+        XCTAssertThrowsError(try SE.removeReimbursement(groupId: g.id, txId: small.id, in: ctx)) {
+            XCTAssertEqual($0 as? SE.Error, .cannotRemovePrimary)
+        }
+    }
 }

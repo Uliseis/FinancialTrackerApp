@@ -179,7 +179,7 @@ private struct TransactionRow: View {
     }
 
     private var subtitle: String {
-        [tx.account?.name, tx.category?.name].compactMap { $0 }.joined(separator: " · ")
+        [tx.account?.displayName, tx.category?.name].compactMap { $0 }.joined(separator: " · ")
     }
 
     var body: some View {

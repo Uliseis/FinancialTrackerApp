@@ -62,7 +62,7 @@ struct InvestmentsModel {
                 lastUpdated = la
             }
             rows.append(Row(
-                id: r.account.id, name: r.account.name, group: r.group.name,
+                id: r.account.id, name: r.account.displayName, group: r.group.name,
                 latestEur: m?.latestEur, pnlEur: m?.pnlEur, pnlPct: m?.pnlPct
             ))
         }

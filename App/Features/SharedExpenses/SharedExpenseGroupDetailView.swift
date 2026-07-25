@@ -116,7 +116,7 @@ private struct MemberRow: View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(tx.transactionDescription ?? tx.counterparty ?? "—").lineLimit(1)
-                Text("\(tx.bookedAt.formatted(.dateTime.day().month(.abbreviated).year(.twoDigits))) · \(tx.account?.name ?? "—")")
+                Text("\(tx.bookedAt.formatted(.dateTime.day().month(.abbreviated).year(.twoDigits))) · \(tx.account?.displayName ?? "—")")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

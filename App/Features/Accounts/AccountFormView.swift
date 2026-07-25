@@ -28,14 +28,35 @@ struct AccountFormView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Name", text: $edit.name)
-                    TextField("Institution", text: $edit.institution)
+                    // A connected account's `name` is whatever the bank returns (for Enable
+                    // Banking that's the holder's name, identical across every account), and
+                    // each sync overwrites it — so the editable field there is the alias.
+                    if edit.isManual {
+                        LabeledContent("Name") {
+                            TextField("Name", text: $edit.name)
+                                .multilineTextAlignment(.trailing)
+                        }
+                    } else {
+                        LabeledContent("Display name") {
+                            TextField(edit.name, text: $edit.alias)
+                                .multilineTextAlignment(.trailing)
+                        }
+                        LabeledContent("Bank name", value: edit.name)
+                            .foregroundStyle(.secondary)
+                    }
+                    LabeledContent("Institution") {
+                        TextField("Institution", text: $edit.institution)
+                            .multilineTextAlignment(.trailing)
+                    }
                     Picker("Type", selection: $edit.type) {
                         ForEach(AccountType.allCases, id: \.self) { Text($0.label).tag($0) }
                     }
-                    TextField("Currency", text: $edit.currency)
-                        .textInputAutocapitalization(.characters)
-                        .autocorrectionDisabled()
+                    LabeledContent("Currency") {
+                        TextField("EUR", text: $edit.currency)
+                            .multilineTextAlignment(.trailing)
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                    }
                 }
                 Section {
                     Picker("Group", selection: $edit.groupId) {
@@ -48,8 +69,11 @@ struct AccountFormView: View {
                 }
                 if edit.isManual {
                     Section("Opening balance") {
-                        TextField("Opening balance", value: $edit.openingBalance, format: .number)
-                            .keyboardType(.numbersAndPunctuation)
+                        LabeledContent(edit.currency.uppercased()) {
+                            TextField("0", value: $edit.openingBalance, format: .number)
+                                .multilineTextAlignment(.trailing)
+                                .keyboardType(.numbersAndPunctuation)
+                        }
                     }
                 }
                 Section {
@@ -96,7 +120,8 @@ struct AccountFormView: View {
         do {
             if let existing = edit.existing {
                 _ = try CoreLogic.Accounts.update(
-                    existing, name: edit.name, type: edit.type, institution: edit.institution,
+                    existing, name: edit.name, alias: edit.alias,
+                    type: edit.type, institution: edit.institution,
                     currency: edit.currency, group: group, space: space,
                     excluded: edit.excluded, openingBalance: edit.openingBalance, in: ctx)
                 if existing.archived != edit.archived {
@@ -131,6 +156,7 @@ struct AccountEdit: Identifiable {
     let id: UUID
     let existing: Account?
     var name: String
+    var alias: String
     var institution: String
     var type: AccountType
     var currency: String
@@ -148,6 +174,7 @@ struct AccountEdit: Identifiable {
         id = UUID()
         existing = nil
         name = ""
+        alias = ""
         institution = ""
         type = .bank
         currency = "EUR"
@@ -162,6 +189,7 @@ struct AccountEdit: Identifiable {
         id = account.id
         existing = account
         name = account.name
+        alias = account.alias ?? ""
         institution = account.institution
         type = account.type
         currency = account.currency

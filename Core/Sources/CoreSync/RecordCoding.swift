@@ -107,6 +107,7 @@ public enum RecordCoding {
         r["type"] = s.type.rawValue as CKRecordValue
         r["institution"] = s.institution as CKRecordValue
         r["name"] = s.name as CKRecordValue
+        r["alias"] = s.alias as CKRecordValue?
         r["currency"] = s.currency as CKRecordValue
         r["iban"] = s.iban as CKRecordValue?
         r["balance"] = s.balance.map(decimalString) as CKRecordValue?
@@ -133,6 +134,7 @@ public enum RecordCoding {
             type: try requireEnum(r, "type", AccountType.self),
             institution: try requireString(r, "institution"),
             name: try requireString(r, "name"),
+            alias: optionalString(r, "alias"),
             currency: try requireString(r, "currency"),
             iban: optionalString(r, "iban"),
             balance: try optionalDecimal(r, "balance"),

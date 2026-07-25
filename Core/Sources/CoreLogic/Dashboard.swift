@@ -118,6 +118,8 @@ extension CoreLogic {
                     net += -(member.amountEur ?? 0)
                 }
                 if net == 0 { continue }
+                // ponytail: a multi-expense group books its whole net under the anchor's
+                // category. Split proportionally by expense if category totals ever look wrong.
                 totals[g.primaryTx?.category?.id, default: 0] += net
             }
 
