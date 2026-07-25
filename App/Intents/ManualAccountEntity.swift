@@ -36,7 +36,7 @@ struct ManualAccountQuery: EntityQuery {
         let accounts = try ctx.fetch(FetchDescriptor<Account>())
         return accounts
             .filter { $0.connection == nil && !$0.archived }
-            .sorted { $0.name < $1.name }
-            .map { ManualAccountEntity(id: $0.id, name: $0.name) }
+            .sorted { $0.displayName < $1.displayName }
+            .map { ManualAccountEntity(id: $0.id, name: $0.displayName) }
     }
 }

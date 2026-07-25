@@ -8,6 +8,7 @@ struct TransactionDetailView: View {
     @Query(sort: [SortDescriptor(\Account.name)]) private var accounts: [Account]
     @Environment(\.modelContext) private var ctx
     @State private var picking = false
+    @State private var editing: TransactionEdit?
     @State private var pairing = false
     @State private var trackingShared = false
     @State private var confirmingUnpair = false
@@ -136,6 +137,17 @@ struct TransactionDetailView: View {
         }
         .navigationTitle(navTitle)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Edit") { editing = TransactionEdit(tx) }
+            }
+        }
+        .sheet(item: $editing) { TransactionFormView(edit: $0) }
+        // Deleting from the edit sheet leaves this view holding a dead model; pop before
+        // body can re-read it.
+        .onChange(of: editing == nil) { _, dismissed in
+            if dismissed, tx.isDeleted || tx.modelContext == nil { dismiss() }
+        }
         .sheet(isPresented: $picking) {
             CategoryPickerView(selectedId: tx.category?.id) { category in
                 try? CoreLogic.Categories.recategorize(tx, to: category, in: ctx)

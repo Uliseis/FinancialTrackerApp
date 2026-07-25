@@ -45,11 +45,7 @@ enum QuickAddQueue {
 
     // Parses "14.20" or the EU "14,20". Returns nil for junk / non-positive.
     static func parseAmount(_ raw: String) -> Decimal? {
-        var s = raw.trimmingCharacters(in: .whitespaces)
-        if s.contains(",") && !s.contains(".") { s = s.replacingOccurrences(of: ",", with: ".") }
-        s.removeAll { $0 == " " || $0 == "€" || $0 == "$" }
-        guard let d = Decimal(string: s), d > 0 else { return nil }
-        return d
+        CoreLogic.Transactions.parseAmount(raw)
     }
 }
 

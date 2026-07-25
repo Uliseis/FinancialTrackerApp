@@ -27,7 +27,7 @@ struct AddTransactionIntent: AppIntent {
             amount: amount,
             merchant: (name?.isEmpty == false ? name : nil),
             bookedAt: Date()))
-        return .result(dialog: "Logged \(name ?? "charge") · \(amount) to \(account.displayName).")
+        return .result(dialog: "Logged \(name ?? "charge") · \(amount) to \(account.name).")
     }
 }
 

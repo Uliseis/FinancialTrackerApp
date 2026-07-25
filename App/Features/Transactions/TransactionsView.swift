@@ -25,6 +25,7 @@ struct TransactionsView: View {
     @State private var visibleLimit = pageSize
     private static let pageSize = 100
     @State private var categorizing: CoreModel.Transaction?
+    @State private var adding: TransactionEdit?
     @State private var path: [CoreModel.Transaction] = []
     #if DEBUG
     @State private var debugPartnerTx: CoreModel.Transaction?
@@ -100,6 +101,11 @@ struct TransactionsView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { SpacePicker() }
                 ToolbarItem(placement: .topBarTrailing) {
+                    Button { adding = TransactionEdit() } label: {
+                        Label("New Transaction", systemImage: "plus")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Toggle(isOn: $showExcluded) {
                         Label("Excluded", systemImage: "eye.slash")
                     }
@@ -114,6 +120,7 @@ struct TransactionsView: View {
                     .sensoryFeedback(.selection, trigger: showTransfers)
                 }
             }
+            .sheet(item: $adding) { TransactionFormView(edit: $0) }
             .sheet(item: $categorizing) { tx in
                 CategoryPickerView(selectedId: tx.category?.id) { category in
                     try? CoreLogic.Categories.recategorize(tx, to: category, in: ctx)
