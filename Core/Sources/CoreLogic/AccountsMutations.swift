@@ -54,6 +54,7 @@ extension CoreLogic.Accounts {
     public static func update(
         _ account: Account,
         name: String,
+        alias: String? = nil,
         type: AccountType,
         institution: String,
         currency: String,
@@ -72,6 +73,9 @@ extension CoreLogic.Accounts {
         let currencyChanged = account.currency != cleanCurrency
 
         account.name = cleanName
+        // Blank alias clears it rather than storing "" — displayName falls back to `name`.
+        let cleanAlias = alias?.trimmingCharacters(in: .whitespacesAndNewlines)
+        account.alias = (cleanAlias?.isEmpty ?? true) ? nil : cleanAlias
         account.type = type
         account.institution = cleanInstitution
         account.currency = cleanCurrency

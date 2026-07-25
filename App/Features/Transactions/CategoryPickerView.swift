@@ -12,6 +12,7 @@ struct CategoryPickerView: View {
     private var categories: [CoreModel.Category]
     @Environment(\.dismiss) private var dismiss
     @State private var search = ""
+    @State private var creating: CategoryEdit?
 
     private var filtered: [CoreModel.Category] {
         guard !search.isEmpty else { return categories }
@@ -21,19 +22,32 @@ struct CategoryPickerView: View {
     var body: some View {
         NavigationStack {
             List {
+                // Section headers, not wording, keep the "no category" option apart from a
+                // real category that happens to also be named Uncategorized.
                 if search.isEmpty {
-                    Button { choose(nil) } label: {
-                        row(name: "Uncategorized", color: nil, selected: selectedId == nil)
+                    Section {
+                        Button { choose(nil) } label: {
+                            row(name: "Uncategorized", color: nil, selected: selectedId == nil)
+                        }
+                        .tint(.primary)
+                    } header: {
+                        Text("No category")
                     }
-                    .tint(.primary)
                 }
-                ForEach(filtered) { cat in
-                    Button { choose(cat) } label: {
-                        row(name: cat.name, color: cat.color, selected: cat.id == selectedId)
+                Section("Categories") {
+                    ForEach(filtered) { cat in
+                        Button { choose(cat) } label: {
+                            row(name: cat.name, color: cat.color, selected: cat.id == selectedId)
+                        }
+                        .tint(.primary)
                     }
-                    .tint(.primary)
+                    Button { creating = CategoryEdit(presetName: search) } label: {
+                        Label(search.isEmpty ? "New Category" : "New Category “\(search)”",
+                              systemImage: "plus")
+                    }
                 }
             }
+            .sheet(item: $creating) { CategoryEditView(edit: $0) }
             .searchable(text: $search, prompt: "Category")
             .navigationTitle("Category")
             .navigationBarTitleDisplayMode(.inline)

@@ -26,6 +26,30 @@ extension CoreLogic {
             case groupNotFound
             case cannotRemovePrimary
             case startingTxNotCredit
+            case noExpenses
+            case creditIsAlsoExpense
+            case creditMustBeCredit
+            case creditIsTransfer
+            case creditAlreadyInGroup
+            case creditHasNoEurAmount
+            case expenseNotDebit(txId: UUID)
+            case expenseIsTransfer(txId: UUID)
+            case expenseAlreadyInGroup(txId: UUID)
+            case expenseOutsideWindow(txId: UUID, windowDays: Int)
+            case expenseHasNoEurAmount(txId: UUID)
+            case undercoverage(expenses: Decimal, credited: Decimal)
+        }
+
+        public struct CreateFromCreditInput: Equatable, Sendable {
+            public var label: String
+            public var creditTxId: UUID
+            public var expenseTxIds: [UUID]
+
+            public init(label: String, creditTxId: UUID, expenseTxIds: [UUID]) {
+                self.label = label
+                self.creditTxId = creditTxId
+                self.expenseTxIds = expenseTxIds
+            }
         }
 
         public struct CreateInput: Equatable, Sendable {
@@ -122,6 +146,82 @@ extension CoreLogic {
             return group
         }
 
+        // Mirror of createGroup, starting from an incoming payment instead of an expense.
+        // A group is just N debits + N credits; the difference is only which side you pick
+        // first, and which way the coverage inequality points. Here the incoming money must
+        // be fully accounted for: sum(expenses) >= credit.
+        @MainActor
+        @discardableResult
+        public static func createGroupFromCredit(
+            _ input: CreateFromCreditInput,
+            in ctx: ModelContext,
+            now: Date = .now
+        ) throws -> SharedExpenseGroup {
+            let label = input.label.trimmingCharacters(in: .whitespacesAndNewlines)
+            if label.isEmpty { throw Error.labelRequired }
+            if input.expenseTxIds.isEmpty { throw Error.noExpenses }
+            if Set(input.expenseTxIds).contains(input.creditTxId) {
+                throw Error.creditIsAlsoExpense
+            }
+
+            let credit = try loadTx(input.creditTxId, label: "credit", in: ctx)
+            let expenses = try loadTxs(input.expenseTxIds, in: ctx)
+
+            if credit.direction != .credit { throw Error.creditMustBeCredit }
+            if credit.isTransfer { throw Error.creditIsTransfer }
+            if credit.sharedExpenseGroup != nil { throw Error.creditAlreadyInGroup }
+            guard let creditEur = credit.amountEur else { throw Error.creditHasNoEurAmount }
+            let credited = abs(creditEur)
+
+            var expenseTotal: Decimal = 0
+            for e in expenses {
+                expenseTotal += try validateExpense(e, anchor: credit)
+            }
+            try assertCoversCredit(expenseTotal, credited: credited)
+            try assertSameSpace(primary: credit, others: expenses)
+
+            // The anchor drives attributionMonth and the reimbursement window for later
+            // edits; the biggest expense is the most representative of the bundle.
+            let anchor = expenses.max { lhs, rhs in
+                (lhs.amountEur.map { abs($0) } ?? 0) < (rhs.amountEur.map { abs($0) } ?? 0)
+            } ?? expenses[0]
+
+            let group = SharedExpenseGroup(
+                label: label,
+                primaryTx: anchor,
+                attributionMonth: monthStart(anchor.bookedAt),
+                createdAt: now,
+                updatedAt: now
+            )
+            ctx.insert(group)
+            credit.sharedExpenseGroup = group
+            for e in expenses { e.sharedExpenseGroup = group }
+
+            try ctx.saveTouchingChanges()
+            return group
+        }
+
+        // Adds more expenses to an existing group. Coverage is only asserted downward here
+        // (expenses can always exceed credits); the credit-side cap is enforced by
+        // addReimbursements.
+        @MainActor
+        public static func addExpenses(
+            groupId: UUID,
+            txIds: [UUID],
+            in ctx: ModelContext,
+            now: Date = .now
+        ) throws {
+            if txIds.isEmpty { return }
+            let group = try loadGroup(groupId, in: ctx)
+            guard let anchor = group.primaryTx else { throw Error.groupNotFound }
+            let candidates = try loadTxs(txIds, in: ctx)
+            for e in candidates { _ = try validateExpense(e, anchor: anchor) }
+            try assertSameSpace(primary: anchor, others: candidates)
+            for e in candidates { e.sharedExpenseGroup = group }
+            group.updatedAt = now
+            try ctx.saveTouchingChanges()
+        }
+
         @MainActor
         public static func addReimbursements(
             groupId: UUID,
@@ -136,17 +236,18 @@ extension CoreLogic {
             let existingMembers = try ctx.fetch(FetchDescriptor<Transaction>(
                 predicate: #Predicate { $0.sharedExpenseGroup?.id == groupId }
             ))
-            let primaryAmount = try primaryAmount(primary)
-
+            // Cap is the whole expense side of the group, not just the anchor.
+            var expenseTotal: Decimal = 0
             var total: Decimal = 0
             for m in existingMembers {
-                if m.id == primary.id { continue }
-                if let eur = m.amountEur { total += abs(eur) }
+                let eur = m.amountEur.map { abs($0) } ?? 0
+                if m.direction == .debit { expenseTotal += eur } else { total += eur }
             }
+            if expenseTotal == 0 { expenseTotal = try primaryAmount(primary) }
             for r in candidates {
                 total += try validateReimbursement(r, primary: primary)
             }
-            try assertWithinPrimary(total, primaryAmount: primaryAmount)
+            try assertWithinPrimary(total, primaryAmount: expenseTotal)
             try assertSameSpace(primary: primary, others: candidates)
 
             for r in candidates { r.sharedExpenseGroup = group }
@@ -162,11 +263,18 @@ extension CoreLogic {
             now: Date = .now
         ) throws {
             let group = try loadGroup(groupId, in: ctx)
-            if group.primaryTx?.id == txId { throw Error.cannotRemovePrimary }
-            let matches = try ctx.fetch(FetchDescriptor<Transaction>(
-                predicate: #Predicate { $0.id == txId && $0.sharedExpenseGroup?.id == groupId }
+            let members = try ctx.fetch(FetchDescriptor<Transaction>(
+                predicate: #Predicate { $0.sharedExpenseGroup?.id == groupId }
             ))
-            for tx in matches { tx.sharedExpenseGroup = nil }
+            // The anchor can go as long as another expense can take its place — a group with
+            // no expense side has nothing to net against.
+            if group.primaryTx?.id == txId {
+                let replacement = members.first { $0.id != txId && $0.direction == .debit }
+                guard let replacement else { throw Error.cannotRemovePrimary }
+                group.primaryTx = replacement
+                group.attributionMonth = monthStart(replacement.bookedAt)
+            }
+            for tx in members where tx.id == txId { tx.sharedExpenseGroup = nil }
             group.updatedAt = now
             try ctx.saveTouchingChanges()
         }
@@ -192,20 +300,18 @@ extension CoreLogic {
 
         @MainActor
         public static func netForGroup(_ groupId: UUID, in ctx: ModelContext) throws -> GroupNet {
-            let group = try loadGroup(groupId, in: ctx)
-            let primaryId = group.primaryTx?.id
+            _ = try loadGroup(groupId, in: ctx)
             let members = try ctx.fetch(FetchDescriptor<Transaction>(
                 predicate: #Predicate { $0.sharedExpenseGroup?.id == groupId }
             ))
+            // Split by direction, not by "is it the primary" — a group can hold several
+            // expenses. For a legacy single-expense group the only debit is the primary,
+            // so this is identical to the old math.
             var gross: Decimal = 0
             var reimbursed: Decimal = 0
             for m in members {
                 let eur = m.amountEur.map { abs($0) } ?? 0
-                if let pid = primaryId, m.id == pid {
-                    gross = eur
-                } else {
-                    reimbursed += eur
-                }
+                if m.direction == .debit { gross += eur } else { reimbursed += eur }
             }
             return GroupNet(gross: gross, reimbursed: reimbursed, net: gross - reimbursed)
         }
@@ -230,17 +336,15 @@ extension CoreLogic {
             var out: [UUID: GroupSummary] = [:]
             var grossById: [UUID: Decimal] = [:]
             var reimbursedById: [UUID: Decimal] = [:]
-            var primaryByGroup: [UUID: UUID] = [:]
             for g in groups {
-                primaryByGroup[g.id] = g.primaryTx?.id
                 grossById[g.id] = 0
                 reimbursedById[g.id] = 0
             }
             for m in members {
                 guard let gid = m.sharedExpenseGroup?.id else { continue }
                 let eur = m.amountEur.map { abs($0) } ?? 0
-                if primaryByGroup[gid] == m.id {
-                    grossById[gid] = eur
+                if m.direction == .debit {
+                    grossById[gid, default: 0] += eur
                 } else {
                     reimbursedById[gid, default: 0] += eur
                 }
@@ -403,6 +507,29 @@ extension CoreLogic {
         ) throws {
             if total > primaryAmount + overcoverageEpsilon {
                 throw Error.overcoverage(reimbursed: total, primary: primaryAmount)
+            }
+        }
+
+        private static func validateExpense(
+            _ e: Transaction,
+            anchor: Transaction
+        ) throws -> Decimal {
+            if e.direction != .debit { throw Error.expenseNotDebit(txId: e.id) }
+            if e.isTransfer { throw Error.expenseIsTransfer(txId: e.id) }
+            if e.sharedExpenseGroup != nil { throw Error.expenseAlreadyInGroup(txId: e.id) }
+            if !withinWindow(e.bookedAt, anchor.bookedAt) {
+                throw Error.expenseOutsideWindow(txId: e.id, windowDays: reimbursementWindowDays)
+            }
+            guard let eur = e.amountEur else { throw Error.expenseHasNoEurAmount(txId: e.id) }
+            return abs(eur)
+        }
+
+        private static func assertCoversCredit(
+            _ expenseTotal: Decimal,
+            credited: Decimal
+        ) throws {
+            if expenseTotal + overcoverageEpsilon < credited {
+                throw Error.undercoverage(expenses: expenseTotal, credited: credited)
             }
         }
 

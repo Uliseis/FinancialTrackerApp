@@ -25,6 +25,11 @@ struct TransactionsView: View {
     @State private var visibleLimit = pageSize
     private static let pageSize = 100
     @State private var categorizing: CoreModel.Transaction?
+    @State private var adding: TransactionEdit?
+    // nil = no filter; .some(nil) = uncategorized only.
+    @State private var categoryFilter: UUID??
+    @Query(sort: [SortDescriptor(\CoreModel.Category.name)])
+    private var categories: [CoreModel.Category]
     @State private var path: [CoreModel.Transaction] = []
     #if DEBUG
     @State private var debugPartnerTx: CoreModel.Transaction?
@@ -41,12 +46,41 @@ struct TransactionsView: View {
             guard tx.routedFromTx == nil else { return false }
             if !showExcluded && (tx.account?.excluded ?? false) { return false }
             if !showTransfers && tx.isTransfer { return false }
+            if let wanted = categoryFilter, tx.category?.id != wanted { return false }
             return matches(tx)
         }
         // Net EUR of the current matches — shown only while searching (see body).
         filteredTotalEur = rows.reduce(Decimal(0)) { $0 + ($1.amountEur ?? 0) }
         // Filter inputs changed → scroll back to the first page.
         visibleLimit = Self.pageSize
+    }
+
+    private var categoryFilterMenu: some View {
+        Menu {
+            Button {
+                categoryFilter = nil
+            } label: {
+                Label("All Categories", systemImage: categoryFilter == nil ? "checkmark" : "")
+            }
+            Button {
+                categoryFilter = .some(nil)
+            } label: {
+                Label("Uncategorized",
+                      systemImage: categoryFilter == .some(nil) ? "checkmark" : "")
+            }
+            Divider()
+            ForEach(categories) { cat in
+                Button {
+                    categoryFilter = .some(cat.id)
+                } label: {
+                    Label(cat.name, systemImage: categoryFilter == .some(cat.id) ? "checkmark" : "")
+                }
+            }
+        } label: {
+            Label("Filter", systemImage: categoryFilter == nil
+                  ? "line.3.horizontal.decrease.circle"
+                  : "line.3.horizontal.decrease.circle.fill")
+        }
     }
 
     private func matches(_ tx: CoreModel.Transaction) -> Bool {
@@ -100,6 +134,11 @@ struct TransactionsView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { SpacePicker() }
                 ToolbarItem(placement: .topBarTrailing) {
+                    Button { adding = TransactionEdit() } label: {
+                        Label("New Transaction", systemImage: "plus")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Toggle(isOn: $showExcluded) {
                         Label("Excluded", systemImage: "eye.slash")
                     }
@@ -113,7 +152,9 @@ struct TransactionsView: View {
                     .toggleStyle(.button)
                     .sensoryFeedback(.selection, trigger: showTransfers)
                 }
+                ToolbarItem(placement: .topBarTrailing) { categoryFilterMenu }
             }
+            .sheet(item: $adding) { TransactionFormView(edit: $0) }
             .sheet(item: $categorizing) { tx in
                 CategoryPickerView(selectedId: tx.category?.id) { category in
                     try? CoreLogic.Categories.recategorize(tx, to: category, in: ctx)
@@ -159,6 +200,7 @@ struct TransactionsView: View {
             }
             #endif
         }
+        .onChange(of: categoryFilter) { recompute() }
         .onChange(of: search) { recompute() }
         .onChange(of: showTransfers) { recompute() }
         .onChange(of: showExcluded) { recompute() }
@@ -167,8 +209,10 @@ struct TransactionsView: View {
     }
 }
 
-private struct TransactionRow: View {
+struct TransactionRow: View {
     let tx: CoreModel.Transaction
+    // Off inside an account's own list, where every row would repeat the same name.
+    var showsAccount = true
 
     private var title: String {
         let d = tx.transactionDescription?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -179,7 +223,7 @@ private struct TransactionRow: View {
     }
 
     private var subtitle: String {
-        [tx.account?.name, tx.category?.name].compactMap { $0 }.joined(separator: " · ")
+        [tx.account?.displayName, tx.category?.name].compactMap { $0 }.joined(separator: " · ")
     }
 
     var body: some View {

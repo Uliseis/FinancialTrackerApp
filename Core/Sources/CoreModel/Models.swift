@@ -131,6 +131,9 @@ public final class Account {
     public var type: AccountType
     public var institution: String
     public var name: String
+    // User-chosen label. `name` is overwritten by every bank sync (Enable Banking returns
+    // the account-holder's name, identical across accounts); alias never is.
+    public var alias: String?
     public var currency: String
     public var iban: String?
     public var balance: Decimal?
@@ -157,6 +160,13 @@ public final class Account {
     @Relationship(deleteRule: .cascade, inverse: \TransferRoute.sourceAccount)
     public var outgoingRoutes: [TransferRoute] = []
 
+    // Every user-facing surface renders this, never `name`.
+    public var displayName: String {
+        let trimmed = alias?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let trimmed, !trimmed.isEmpty { return trimmed }
+        return name
+    }
+
     public init(
         id: UUID = UUID(),
         connection: Connection? = nil,
@@ -166,6 +176,7 @@ public final class Account {
         type: AccountType,
         institution: String,
         name: String,
+        alias: String? = nil,
         currency: String,
         iban: String? = nil,
         balance: Decimal? = nil,
@@ -187,6 +198,7 @@ public final class Account {
         self.type = type
         self.institution = institution
         self.name = name
+        self.alias = alias
         self.currency = currency
         self.iban = iban
         self.balance = balance

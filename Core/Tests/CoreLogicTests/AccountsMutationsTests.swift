@@ -177,4 +177,29 @@ final class AccountsMutationsTests: XCTestCase {
         XCTAssertTrue(try ctx.fetch(FetchDescriptor<Account>()).isEmpty)
         XCTAssertTrue(try ctx.fetch(FetchDescriptor<CoreModel.Transaction>()).isEmpty)
     }
+
+    func testAliasOverridesDisplayNameAndBlankAliasClearsIt() throws {
+        let ctx = try S.makeContext()
+        let space = S.makeSpace(ctx)
+        let a = try A.createManual(
+            name: "ULISES BERTOLO GARCIA", institution: "Revolut",
+            currency: "EUR", space: space, in: ctx)
+        XCTAssertEqual(a.displayName, "ULISES BERTOLO GARCIA")
+
+        _ = try A.update(a, name: a.name, alias: "  Revolut Daily  ", type: a.type,
+                         institution: a.institution, currency: a.currency,
+                         group: nil, space: space, excluded: false,
+                         openingBalance: nil, in: ctx)
+        XCTAssertEqual(a.alias, "Revolut Daily")
+        XCTAssertEqual(a.displayName, "Revolut Daily")
+        XCTAssertEqual(a.name, "ULISES BERTOLO GARCIA")
+
+        // Whitespace-only alias clears rather than storing "" (which would blank the UI).
+        _ = try A.update(a, name: a.name, alias: "   ", type: a.type,
+                         institution: a.institution, currency: a.currency,
+                         group: nil, space: space, excluded: false,
+                         openingBalance: nil, in: ctx)
+        XCTAssertNil(a.alias)
+        XCTAssertEqual(a.displayName, "ULISES BERTOLO GARCIA")
+    }
 }

@@ -8,8 +8,11 @@ struct TransactionDetailView: View {
     @Query(sort: [SortDescriptor(\Account.name)]) private var accounts: [Account]
     @Environment(\.modelContext) private var ctx
     @State private var picking = false
+    @State private var editing: TransactionEdit?
     @State private var pairing = false
     @State private var trackingShared = false
+    @State private var matchingIncome = false
+    @State private var creatingRule: RuleEdit?
     @State private var confirmingUnpair = false
     @State private var errorMessage = ""
     @State private var showingError = false
@@ -17,6 +20,13 @@ struct TransactionDetailView: View {
 
     private var canBeSharedPrimary: Bool {
         tx.direction == .debit && !tx.isTransfer && tx.routedFromTx == nil
+            && tx.sharedExpenseGroup == nil && tx.amountEur != nil
+    }
+
+    // Same shape from the other side: an unmatched incoming payment can be offset against
+    // the expenses it reimbursed.
+    private var canMatchIncome: Bool {
+        tx.direction == .credit && !tx.isTransfer && tx.routedFromTx == nil
             && tx.sharedExpenseGroup == nil && tx.amountEur != nil
     }
 
@@ -64,70 +74,16 @@ struct TransactionDetailView: View {
                     row("Value", valueAt.formatted(date: .abbreviated, time: .omitted))
                 }
                 if let account = tx.account {
-                    row("Account", account.name)
+                    row("Account", account.displayName)
                     row("Institution", account.institution)
                 }
             }
 
-            Section("Classification") {
-                Button { picking = true } label: {
-                    LabeledContent("Category") {
-                        HStack(spacing: 8) {
-                            Text(tx.category?.name ?? "Uncategorized")
-                                .foregroundStyle(tx.category == nil ? .secondary : .primary)
-                            Image(systemName: "chevron.right")
-                                .font(.footnote.weight(.semibold))
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                }
-                .tint(.primary)
-                row("Source", tx.categorySource.rawValue.capitalized)
-                if let cp = tx.counterparty, !cp.isEmpty {
-                    row("Counterparty", cp)
-                }
-                if let d = tx.transactionDescription, !d.isEmpty {
-                    row("Description", d)
-                }
-            }
+            classificationSection
 
-            Section("Transfer") {
-                if isMirrorLeg {
-                    row("Routed from", tx.routedFromTx?.account?.name ?? "—")
-                    Button("Remove Transfer", role: .destructive) { confirmingUnpair = true }
-                } else if hasTransfer {
-                    if let paired = tx.transferGroup?.pairedAt {
-                        row("Paired", paired.formatted(date: .abbreviated, time: .omitted))
-                    } else if tx.transferGroup != nil {
-                        row("Paired", "Manually")
-                    }
-                    if let route = tx.route {
-                        row("Route", route.pattern)
-                    }
-                    if !tx.mirrors.isEmpty {
-                        row("Mirror legs", "\(tx.mirrors.count)")
-                    }
-                    Button("Remove Transfer", role: .destructive) { confirmingUnpair = true }
-                } else if tx.sharedExpenseGroup == nil {
-                    Menu("Route to Account") {
-                        ForEach(routeTargets) { account in
-                            Button(account.name) { route(to: account) }
-                        }
-                    }
-                    Button("Pair with Transaction…") { pairing = true }
-                }
-            }
+            transferSection
 
-            if let seg = tx.sharedExpenseGroup {
-                Section("Shared expense") {
-                    row("Group", seg.label)
-                    row("Attribution", seg.attributionMonth.formatted(.dateTime.month(.wide).year()))
-                }
-            } else if canBeSharedPrimary {
-                Section("Shared expense") {
-                    Button("Track as Shared Expense") { trackingShared = true }
-                }
-            }
+            matchSection
 
             Section("Metadata") {
                 row("External ID", tx.externalId)
@@ -136,6 +92,17 @@ struct TransactionDetailView: View {
         }
         .navigationTitle(navTitle)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Edit") { editing = TransactionEdit(tx) }
+            }
+        }
+        .sheet(item: $editing) { TransactionFormView(edit: $0) }
+        // Deleting from the edit sheet leaves this view holding a dead model; pop before
+        // body can re-read it.
+        .onChange(of: editing == nil) { _, dismissed in
+            if dismissed, tx.isDeleted || tx.modelContext == nil { dismiss() }
+        }
         .sheet(isPresented: $picking) {
             CategoryPickerView(selectedId: tx.category?.id) { category in
                 try? CoreLogic.Categories.recategorize(tx, to: category, in: ctx)
@@ -147,6 +114,10 @@ struct TransactionDetailView: View {
         .sheet(isPresented: $trackingShared) {
             SharedExpenseCreateView(primaryTx: tx)
         }
+        .sheet(isPresented: $matchingIncome) {
+            MatchIncomeView(incomeTx: tx)
+        }
+        .sheet(item: $creatingRule) { RuleEditView(edit: $0) }
         .confirmationDialog("Remove this transfer?", isPresented: $confirmingUnpair,
                             titleVisibility: .visible) {
             Button("Remove Transfer", role: .destructive, action: unpair)
@@ -157,6 +128,96 @@ struct TransactionDetailView: View {
         }
         .alert("Couldn’t Complete", isPresented: $showingError) {} message: {
             Text(errorMessage)
+        }
+    }
+
+    @ViewBuilder
+    private var transferSection: some View {
+        if isMirrorLeg {
+            Section("Transfer") {
+                row("Routed from", tx.routedFromTx?.account?.displayName ?? "—")
+                Button("Remove Transfer", role: .destructive) { confirmingUnpair = true }
+            }
+        } else if hasTransfer {
+            Section("Transfer") {
+                if let paired = tx.transferGroup?.pairedAt {
+                    row("Paired", paired.formatted(date: .abbreviated, time: .omitted))
+                } else if tx.transferGroup != nil {
+                    row("Paired", "Manually")
+                }
+                if let route = tx.route {
+                    row("Route", route.pattern)
+                }
+                if !tx.mirrors.isEmpty {
+                    row("Mirror legs", "\(tx.mirrors.count)")
+                }
+                Button("Remove Transfer", role: .destructive) { confirmingUnpair = true }
+            }
+        } else if tx.sharedExpenseGroup == nil {
+            // A matched transaction can't also be routed or paired; without this the
+            // section renders a bare header over nothing.
+            Section("Transfer") {
+                Menu("Route to Account") {
+                    ForEach(routeTargets) { account in
+                        Button(account.displayName) { route(to: account) }
+                    }
+                }
+                Button("Pair with Transaction…") { pairing = true }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var classificationSection: some View {
+        Section("Classification") {
+            Button { picking = true } label: {
+                LabeledContent("Category") {
+                    HStack(spacing: 8) {
+                        Text(tx.category?.name ?? "Uncategorized")
+                            .foregroundStyle(tx.category == nil ? .secondary : .primary)
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
+            .tint(.primary)
+            row("Source", tx.categorySource.rawValue.capitalized)
+            if let cp = tx.counterparty, !cp.isEmpty {
+                row("Counterparty", cp)
+            }
+            if let d = tx.transactionDescription, !d.isEmpty {
+                row("Description", d)
+            }
+            Button("Always Categorize Like This…") {
+                creatingRule = RuleEdit(seededFrom: tx)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var matchSection: some View {
+        if let seg = tx.sharedExpenseGroup {
+            Section("Match") {
+                row("Group", seg.label)
+                row("Attribution", seg.attributionMonth.formatted(.dateTime.month(.wide).year()))
+            }
+        } else if canBeSharedPrimary {
+            Section {
+                Button("Match to Incoming Money…") { trackingShared = true }
+            } header: {
+                Text("Match")
+            } footer: {
+                Text("Offset this expense with the payments that reimbursed it.")
+            }
+        } else if canMatchIncome {
+            Section {
+                Button("Match to Expenses…") { matchingIncome = true }
+            } header: {
+                Text("Match")
+            } footer: {
+                Text("Mark what this money paid you back for, so it isn’t counted as income.")
+            }
         }
     }
 
@@ -179,7 +240,7 @@ struct TransactionDetailView: View {
     private func route(to account: Account) {
         do {
             if try CoreLogic.TransferRoutes.createMirror(from: tx, to: account, in: ctx) == nil {
-                showError("Couldn’t route into \(account.name). The target must be in the same space and not archived.")
+                showError("Couldn’t route into \(account.displayName). The target must be in the same space and not archived.")
             }
         } catch {
             showError("Couldn’t route this transfer.")

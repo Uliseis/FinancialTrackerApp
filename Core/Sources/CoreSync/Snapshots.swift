@@ -97,6 +97,7 @@ public struct AccountSnapshot: SyncSnapshot {
     public let type: AccountType
     public let institution: String
     public let name: String
+    public let alias: String?
     public let currency: String
     public let iban: String?
     public let balance: Decimal?
@@ -114,7 +115,8 @@ public struct AccountSnapshot: SyncSnapshot {
         id: UUID,
         connectionId: UUID? = nil, groupId: UUID? = nil, spaceId: UUID? = nil,
         externalId: String, type: AccountType,
-        institution: String, name: String, currency: String, iban: String? = nil,
+        institution: String, name: String, alias: String? = nil,
+        currency: String, iban: String? = nil,
         balance: Decimal? = nil, balanceUpdatedAt: Date? = nil,
         metadataJSON: Data? = nil,
         archived: Bool, excluded: Bool,
@@ -131,6 +133,7 @@ public struct AccountSnapshot: SyncSnapshot {
         self.type = type
         self.institution = institution
         self.name = name
+        self.alias = alias
         self.currency = currency
         self.iban = iban
         self.balance = balance

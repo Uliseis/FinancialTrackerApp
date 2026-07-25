@@ -105,8 +105,8 @@ private struct TransferGroupRow: View {
     let listing: CoreLogic.Transfers.GroupListing
 
     private var title: String {
-        let from = listing.legs.first?.account?.name ?? "—"
-        let to = listing.legs.count > 1 ? (listing.legs.last?.account?.name ?? "—") : "—"
+        let from = listing.legs.first?.account?.displayName ?? "—"
+        let to = listing.legs.count > 1 ? (listing.legs.last?.account?.displayName ?? "—") : "—"
         return "\(from) → \(to)"
     }
 

@@ -174,6 +174,26 @@ private struct PortfolioChart: View {
         }
     }
 
+    // Label real data points, never interpolated ones: with only a couple of valuations
+    // an automatic axis puts four ticks inside a single day and repeats the same label.
+    private var axisDates: [Date] {
+        let dates = series.map(\.date)
+        guard dates.count > 4 else { return dates }
+        let step = (dates.count - 1) / 3
+        return stride(from: 0, to: dates.count, by: max(step, 1)).map { dates[$0] }
+    }
+
+    // Days for a short window, months within a year, years beyond it.
+    private var axisFormat: Date.FormatStyle {
+        guard let first = series.first?.date, let last = series.last?.date else {
+            return .dateTime.month(.abbreviated)
+        }
+        let days = last.timeIntervalSince(first) / 86_400
+        if days > 720 { return .dateTime.year() }
+        if days > 60 { return .dateTime.month(.abbreviated).year(.twoDigits) }
+        return .dateTime.day().month(.abbreviated)
+    }
+
     var body: some View {
         Chart {
             ForEach(series, id: \.date) { p in
@@ -193,6 +213,18 @@ private struct PortfolioChart: View {
             }
         }
         .chartForegroundStyleScale(["Market value": Color.accentColor, "Cost basis": Color.secondary])
+        // Without an explicit stride Swift Charts labels a multi-year series with
+        // day-of-month numbers ("02 08 14 20").
+        .chartXAxis {
+            AxisMarks(values: axisDates) { value in
+                AxisGridLine()
+                if let date = value.as(Date.self) {
+                    AxisValueLabel {
+                        Text(date, format: axisFormat)
+                    }
+                }
+            }
+        }
         .chartLegend(.visible)
         .frame(height: 200)
         .padding(.vertical, 4)

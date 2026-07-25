@@ -39,7 +39,7 @@ struct SharedExpenseCreateView: View {
                 }
             }
             .searchable(text: $search, prompt: "Filter credits")
-            .navigationTitle("Shared Expense")
+            .navigationTitle("Match Expense")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -94,7 +94,7 @@ enum SharedExpenseMessages {
         case .primaryIsAlsoReimbursement: return "The expense can’t also be a reimbursement."
         case .primaryMustBeDebit: return "The primary must be an expense (debit)."
         case .primaryIsTransfer: return "The primary is a transfer."
-        case .primaryAlreadyInGroup: return "The primary is already in a shared expense."
+        case .primaryAlreadyInGroup: return "That expense is already matched."
         case .primaryHasNoEurAmount: return "The primary has no EUR amount yet."
         case .reimbursementNotCredit: return "A reimbursement must be a credit."
         case .reimbursementIsTransfer: return "A reimbursement is a transfer."
@@ -106,8 +106,21 @@ enum SharedExpenseMessages {
             return "Reimbursements (\(Money.format(reimbursed, currency: "EUR"))) exceed the expense (\(Money.format(primary, currency: "EUR")))."
         case .txNotFound: return "A transaction was not found."
         case .groupNotFound: return "Group not found."
-        case .cannotRemovePrimary: return "You can’t remove the primary expense."
+        case .cannotRemovePrimary: return "A match needs at least one expense."
         case .startingTxNotCredit: return "Start from a credit transaction."
+        case .noExpenses: return "Pick at least one expense."
+        case .creditIsAlsoExpense: return "The income can’t also be one of the expenses."
+        case .creditMustBeCredit: return "The starting transaction must be income."
+        case .creditIsTransfer: return "The income is a transfer."
+        case .creditAlreadyInGroup: return "The income is already matched."
+        case .creditHasNoEurAmount: return "The income has no EUR amount yet."
+        case .expenseNotDebit: return "Only expenses can go on the expense side."
+        case .expenseIsTransfer: return "An expense is a transfer."
+        case .expenseAlreadyInGroup: return "An expense is already matched."
+        case .expenseOutsideWindow(_, let days): return "An expense is outside the \(days)-day window."
+        case .expenseHasNoEurAmount: return "An expense has no EUR amount yet."
+        case .undercoverage(let expenses, let credited):
+            return "The expenses (\(Money.format(expenses, currency: "EUR"))) don’t cover the income (\(Money.format(credited, currency: "EUR")))."
         }
     }
 }

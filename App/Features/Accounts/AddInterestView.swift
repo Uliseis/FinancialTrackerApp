@@ -24,7 +24,7 @@ struct AddInterestView: View {
                     DatePicker("Date", selection: $date, displayedComponents: .date)
                     TextField("Note (optional)", text: $note)
                 } footer: {
-                    Text("Adds an interest credit to \(account.name).")
+                    Text("Adds an interest credit to \(account.displayName).")
                 }
             }
             .navigationTitle("Add Interest")

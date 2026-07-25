@@ -11,9 +11,9 @@ struct SharedExpenseGroupDetailView: View {
     // fires reloadOnModelChange before dismiss() lands, so the view must survive a render
     // cycle while `group` is already deleted.
     @State private var net: CoreLogic.SharedExpenses.GroupNet?
-    @State private var members: [CoreModel.Transaction] = []
+    @State private var expenses: [CoreModel.Transaction] = []
+    @State private var incoming: [CoreModel.Transaction] = []
     @State private var title = ""
-    @State private var primary: CoreModel.Transaction?
     @State private var adding = false
     @State private var renaming = false
     @State private var newLabel = ""
@@ -24,23 +24,30 @@ struct SharedExpenseGroupDetailView: View {
     var body: some View {
         Form {
             Section("Summary") {
-                LabeledContent("Expense", value: Money.format(net?.gross ?? 0, currency: "EUR"))
-                LabeledContent("Reimbursed", value: Money.format(net?.reimbursed ?? 0, currency: "EUR"))
+                LabeledContent("Expenses", value: Money.format(net?.gross ?? 0, currency: "EUR"))
+                LabeledContent("Covered by", value: Money.format(net?.reimbursed ?? 0, currency: "EUR"))
                 LabeledContent("Net") { MoneyText(amount: net?.net ?? 0) }
                     .font(.headline)
             }
 
-            if let primary {
-                Section("Primary expense") {
-                    MemberRow(tx: primary)
+            // Split by direction, not by is-it-the-primary: a match can hold several
+            // expenses on one side and several incoming payments on the other.
+            Section("Expenses") {
+                ForEach(expenses) { tx in
+                    MemberRow(tx: tx)
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) { remove(tx) } label: {
+                                Label("Remove", systemImage: "minus.circle")
+                            }
+                        }
                 }
             }
 
-            Section("Reimbursements") {
-                if members.isEmpty {
-                    Text("No reimbursements.").foregroundStyle(.secondary)
+            Section("Incoming money") {
+                if incoming.isEmpty {
+                    Text("Nothing offsetting these yet.").foregroundStyle(.secondary)
                 }
-                ForEach(members) { tx in
+                ForEach(incoming) { tx in
                     MemberRow(tx: tx)
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) { remove(tx) } label: {
@@ -51,12 +58,12 @@ struct SharedExpenseGroupDetailView: View {
                 Button {
                     adding = true
                 } label: {
-                    Label("Add Reimbursements", systemImage: "plus")
+                    Label("Add Incoming Money", systemImage: "plus")
                 }
             }
 
             Section {
-                Button("Delete Shared Expense", role: .destructive) { confirmingDelete = true }
+                Button("Delete Match", role: .destructive) { confirmingDelete = true }
                     .frame(maxWidth: .infinity, alignment: .center)
             }
         }
@@ -77,7 +84,7 @@ struct SharedExpenseGroupDetailView: View {
             Button("Cancel", role: .cancel) {}
             Button("Save") { rename() }
         }
-        .confirmationDialog("Delete this shared expense?", isPresented: $confirmingDelete,
+        .confirmationDialog("Delete this match?", isPresented: $confirmingDelete,
                             titleVisibility: .visible) {
             Button("Delete", role: .destructive) { deleteGroup() }
         } message: {
@@ -88,11 +95,10 @@ struct SharedExpenseGroupDetailView: View {
     private func reload() {
         guard groupIsLive else { return }
         title = group.label
-        primary = group.primaryTx
         net = try? CoreLogic.SharedExpenses.netForGroup(group.id, in: ctx)
-        members = group.members
-            .filter { $0.id != group.primaryTx?.id }
-            .sorted { $0.bookedAt > $1.bookedAt }
+        let sorted = group.members.sorted { $0.bookedAt > $1.bookedAt }
+        expenses = sorted.filter { $0.direction == .debit }
+        incoming = sorted.filter { $0.direction == .credit }
     }
 
     private func remove(_ tx: CoreModel.Transaction) {
@@ -116,7 +122,7 @@ private struct MemberRow: View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(tx.transactionDescription ?? tx.counterparty ?? "—").lineLimit(1)
-                Text("\(tx.bookedAt.formatted(.dateTime.day().month(.abbreviated).year(.twoDigits))) · \(tx.account?.name ?? "—")")
+                Text("\(tx.bookedAt.formatted(.dateTime.day().month(.abbreviated).year(.twoDigits))) · \(tx.account?.displayName ?? "—")")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -143,7 +149,7 @@ private struct AddReimbursementsView: View {
         NavigationStack {
             List {
                 if candidates.isEmpty {
-                    Text("No matching credits near this expense.")
+                    Text("No matching income near these expenses.")
                         .foregroundStyle(.secondary)
                 }
                 ForEach(candidates, id: \.id) { candidate in
@@ -153,8 +159,8 @@ private struct AddReimbursementsView: View {
                     .tint(.primary)
                 }
             }
-            .searchable(text: $search, prompt: "Filter credits")
-            .navigationTitle("Add Reimbursements")
+            .searchable(text: $search, prompt: "Search income")
+            .navigationTitle("Add Incoming Money")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

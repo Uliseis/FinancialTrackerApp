@@ -70,7 +70,7 @@ struct ConnectionDetailView: View {
                 } else {
                     ForEach(accounts) { account in
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(account.name).lineLimit(1)
+                            Text(account.displayName).lineLimit(1)
                             Text([account.type.rawValue.capitalized, account.iban]
                                 .compactMap { $0 }.joined(separator: " · "))
                                 .font(.caption).foregroundStyle(.secondary)
