@@ -83,6 +83,36 @@ struct TransactionsView: View {
         }
     }
 
+    // Month buckets over the currently-paged window, newest first. Each header carries the
+    // month's net so the list reads as a statement rather than an undifferentiated feed.
+    struct MonthSection: Identifiable {
+        let id: Date
+        let title: String
+        let net: Decimal
+        let rows: [CoreModel.Transaction]
+    }
+
+    private var monthSections: [MonthSection] {
+        var cal = Calendar(identifier: .iso8601)
+        cal.timeZone = .current
+        var order: [Date] = []
+        var buckets: [Date: [CoreModel.Transaction]] = [:]
+        for tx in rows.prefix(visibleLimit) {
+            let key = cal.date(from: cal.dateComponents([.year, .month], from: tx.bookedAt))
+                ?? tx.bookedAt
+            if buckets[key] == nil { order.append(key) }
+            buckets[key, default: []].append(tx)
+        }
+        return order.map { key in
+            let rows = buckets[key] ?? []
+            return MonthSection(
+                id: key,
+                title: key.formatted(.dateTime.month(.wide).year()),
+                net: rows.reduce(Decimal(0)) { $0 + ($1.amountEur ?? 0) },
+                rows: rows)
+        }
+    }
+
     private func matches(_ tx: CoreModel.Transaction) -> Bool {
         guard !search.isEmpty else { return true }
         return (tx.transactionDescription?.localizedStandardContains(search) ?? false)
@@ -92,17 +122,23 @@ struct TransactionsView: View {
     var body: some View {
         NavigationStack(path: $path) {
             List {
-                ForEach(rows.prefix(visibleLimit)) { tx in
-                    NavigationLink(value: tx) {
-                        TransactionRow(tx: tx)
-                    }
-                    .swipeActions(edge: .leading) {
-                        Button {
-                            categorizing = tx
-                        } label: {
-                            Label("Categorize", systemImage: "tag")
+                ForEach(monthSections) { month in
+                    Section {
+                        ForEach(month.rows) { tx in
+                            NavigationLink(value: tx) {
+                                TransactionRow(tx: tx)
+                            }
+                            .swipeActions(edge: .leading) {
+                                Button {
+                                    categorizing = tx
+                                } label: {
+                                    Label("Categorize", systemImage: "tag")
+                                }
+                                .tint(.brand)
+                            }
                         }
-                        .tint(.brand)
+                    } header: {
+                        MonthHeader(title: month.title, net: month.net)
                     }
                 }
                 if visibleLimit < rows.count {
@@ -172,7 +208,10 @@ struct TransactionsView: View {
                 if rows.isEmpty {
                     ContentUnavailableView(
                         search.isEmpty ? "No Transactions" : "No Matches",
-                        systemImage: "list.bullet.rectangle"
+                        systemImage: "list.bullet.rectangle",
+                        description: Text(search.isEmpty
+                            ? "Nothing in this space yet. Sync a bank, or add a transaction with the + button."
+                            : "Nothing matches “\(search)”.")
                     )
                 }
             }
@@ -209,6 +248,27 @@ struct TransactionsView: View {
     }
 }
 
+// Serif month heading with the month's net — the one editorial moment on this screen.
+private struct MonthHeader: View {
+    let title: String
+    let net: Decimal
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+                .font(.display(.title3, weight: .semibold))
+                .foregroundStyle(.primary)
+            Spacer(minLength: Theme.Space.s)
+            Text(Money.format(net, currency: "EUR"))
+                .font(.readout(.subheadline, weight: .medium))
+                .foregroundStyle(Theme.amountColor(net))
+        }
+        .textCase(nil)
+        .padding(.top, Theme.Space.s)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 struct TransactionRow: View {
     let tx: CoreModel.Transaction
     // Off inside an account's own list, where every row would repeat the same name.
@@ -222,18 +282,21 @@ struct TransactionRow: View {
         return "—"
     }
 
+    // Category is carried by the badge; repeating its name here only crowded out the
+    // account, which is the part you can't infer from the glyph.
     private var subtitle: String {
-        [tx.account?.displayName, tx.category?.name].compactMap { $0 }.joined(separator: " · ")
+        showsAccount ? (tx.account?.displayName ?? "") : ""
     }
 
     var body: some View {
         HStack(spacing: Theme.Space.m) {
-            ColorDot(hex: tx.category?.color, size: 9)
-            VStack(alignment: .leading, spacing: 3) {
+            CategoryBadge(category: tx.category)
+            VStack(alignment: .leading, spacing: 2) {
                 Text(title)
+                    .font(.subheadline.weight(.medium))
                     .lineLimit(1)
                 HStack(spacing: 6) {
-                    Text(tx.bookedAt, format: .dateTime.day().month(.abbreviated).year(.twoDigits))
+                    Text(tx.bookedAt, format: .dateTime.day().month(.abbreviated))
                     if !subtitle.isEmpty {
                         Text("· \(subtitle)").lineLimit(1)
                     }
@@ -241,7 +304,7 @@ struct TransactionRow: View {
                         Image(systemName: "arrow.left.arrow.right")
                     }
                     if tx.sharedExpenseGroup != nil {
-                        Image(systemName: "person.2")
+                        Image(systemName: "link")
                     }
                 }
                 .font(.caption)
@@ -249,11 +312,11 @@ struct TransactionRow: View {
             }
             Spacer(minLength: Theme.Space.s)
             Text(amount)
-                .font(.callout.monospacedDigit())
-                .fontDesign(.rounded)
+                .font(.readout(.body))
                 .foregroundStyle(color)
                 .lineLimit(1)
         }
+        .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
     }
 

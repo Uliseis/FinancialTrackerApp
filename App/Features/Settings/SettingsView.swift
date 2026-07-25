@@ -28,7 +28,7 @@ struct SettingsView: View {
                 }
                 Section("Money") {
                     SettingsLinkRow(title: "Transfers", systemImage: "arrow.left.arrow.right", destination: .transfers)
-                    SettingsLinkRow(title: "Matches", systemImage: "arrow.trianglehead.branch", destination: .sharedExpenses)
+                    SettingsLinkRow(title: "Matches", systemImage: "plusminus.circle", destination: .sharedExpenses)
                     SettingsLinkRow(title: "Budgets", systemImage: "chart.pie", destination: .budgets)
                 }
                 Section("Manage") {

@@ -68,7 +68,8 @@ struct AccountsView: View {
             .sheet(item: $interestAccount, content: AddInterestView.init)
             .overlay {
                 if sections.isEmpty {
-                    ContentUnavailableView("No Accounts", systemImage: "creditcard")
+                    ContentUnavailableView("No Accounts", systemImage: "creditcard",
+                                           description: Text("Connect a bank in Settings, or add one by hand with the + button."))
                 }
             }
         }

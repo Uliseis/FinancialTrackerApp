@@ -61,6 +61,24 @@ extension Font {
     static func readout(_ style: Font.TextStyle, weight: Font.Weight = .semibold) -> Font {
         .system(style, design: .rounded).weight(weight).monospacedDigit()
     }
+
+    // Editorial voice for titles and section headings — New York, which ships with iOS
+    // via `design: .serif`. Deliberately NOT used for numbers: the contrast between a
+    // serif heading and a rounded tabular readout is the whole idea, and mixing faces
+    // inside the figures themselves would just make them harder to scan.
+    static func display(_ style: Font.TextStyle, weight: Font.Weight = .semibold) -> Font {
+        .system(style, design: .serif).weight(weight)
+    }
+}
+
+extension View {
+    // Serif section heading for the Dashboard's in-content sections. Form/List section
+    // headers keep the system face — serif reads as a mistake at 13pt uppercase.
+    func displaySectionHeader() -> some View {
+        font(.display(.title3, weight: .semibold))
+            .foregroundStyle(.primary)
+            .textCase(nil)
+    }
 }
 
 extension Decimal {

@@ -35,8 +35,7 @@ struct AccountDetailView: View {
         List {
             Section {
                 AccountDetailHeader(account: account)
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
+                    .instrumentPanelRow()
             }
             Section("Transactions") {
                 ForEach(rows.prefix(visibleLimit)) { tx in
@@ -76,7 +75,10 @@ struct AccountDetailView: View {
             if rows.isEmpty {
                 ContentUnavailableView(
                     search.isEmpty ? "No Transactions" : "No Matches",
-                    systemImage: "list.bullet.rectangle")
+                    systemImage: "list.bullet.rectangle",
+                    description: Text(search.isEmpty
+                        ? "Nothing booked to this account yet."
+                        : "Nothing matches “\(search)”."))
             }
         }
     }
@@ -88,31 +90,30 @@ private struct AccountDetailHeader: View {
     private var balance: Decimal { account.balance ?? account.manualOpeningBalance ?? 0 }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Space.xs) {
-            Text(account.institution.uppercased())
-                .font(.caption.weight(.semibold))
-                .tracking(0.8)
-                .foregroundStyle(.secondary)
-            Text(Money.format(balance, currency: account.currency))
-                .font(.largeTitle.weight(.semibold).monospacedDigit())
-                .fontDesign(.rounded)
-            HStack(spacing: Theme.Space.s) {
-                Text(account.type.label)
-                if account.alias != nil {
-                    Text("· \(account.name)").lineLimit(1)
+        InstrumentPanel {
+            VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                PanelLabel(text: account.institution)
+                Text(Money.format(balance, currency: account.currency))
+                    .font(.readout(.largeTitle, weight: .bold))
+                    .foregroundStyle(balance < 0 ? Theme.heroAccent : .white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                HStack(spacing: Theme.Space.s) {
+                    Text(account.type.label)
+                    if account.alias != nil {
+                        Text("· \(account.name)").lineLimit(1)
+                    }
+                    if account.excluded {
+                        Text("· excluded")
+                    }
+                    if account.archived {
+                        Text("· archived")
+                    }
                 }
-                if account.excluded {
-                    Text("· excluded")
-                }
-                if account.archived {
-                    Text("· archived")
-                }
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.6))
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, Theme.Space.s)
         .accessibilityElement(children: .combine)
     }
 }
