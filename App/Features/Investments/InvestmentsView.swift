@@ -11,6 +11,7 @@ struct InvestmentsView: View {
     private var spaces: [AccountSpace]
     @AppStorage(SpaceSelection.key) private var currentSpaceId = ""
     @State private var vm: InvestmentsModel?
+    @State private var valuing: Account?
     @State private var period: CoreLogic.Investments.Period = .all
 
     private func reload() {
@@ -44,8 +45,19 @@ struct InvestmentsView: View {
                                 .pickerStyle(.segmented)
                             }
                         }
-                        Section("Accounts") {
-                            ForEach(vm.rows) { AccountMetricRow(row: $0) }
+                        Section {
+                            ForEach(vm.rows) { row in
+                                Button {
+                                    valuing = account(for: row.id)
+                                } label: {
+                                    AccountMetricRow(row: row)
+                                }
+                                .tint(.primary)
+                            }
+                        } header: {
+                            Text("Accounts")
+                        } footer: {
+                            Text("Tap an account to record what it's worth today.")
                         }
                     }
                 } else {
@@ -63,9 +75,14 @@ struct InvestmentsView: View {
                 ToolbarItem(placement: .topBarTrailing) { SpacePicker() }
             }
         }
+        .sheet(item: $valuing) { RecordValuationView(account: $0) }
         .task { reload() }
         .onChange(of: currentSpaceId) { reload() }
         .reloadOnModelChange { reload() }
+    }
+
+    private func account(for id: UUID) -> Account? {
+        try? ctx.fetch(FetchDescriptor<Account>(predicate: #Predicate { $0.id == id })).first
     }
 
     private func filteredSeries(_ vm: InvestmentsModel) -> [CoreLogic.Investments.PortfolioSeriesPoint] {

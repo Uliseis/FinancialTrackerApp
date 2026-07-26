@@ -103,6 +103,9 @@ struct OdysseyFinanceApp: App {
                         print("CoreSync start failed: \(error)")
                     }
                     BackgroundSync.schedule()
+                    // Cold launch: scenePhase never transitions into the initial .active.
+                    await ForegroundBankSync.runIfDue(
+                        modelContainer.mainContext, engine: syncEngine)
                 }
         }
         .modelContainer(modelContainer)
@@ -146,6 +149,11 @@ struct RootView: View {
             // launch-time drain handles that case).
             if phase == .active, syncEngine.isRunning {
                 QuickAddDrain.run(modelContext, engine: syncEngine)
+            }
+            // Refresh bank data on every foreground (throttled). The BGProcessingTask alone
+            // left the app showing stale transactions until Connections was tapped by hand.
+            if phase == .active {
+                Task { await ForegroundBankSync.runIfDue(modelContext, engine: syncEngine) }
             }
             if phase == .background, requireUnlock, !authGateBypassed {
                 unlocked = false

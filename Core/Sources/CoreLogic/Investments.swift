@@ -257,6 +257,62 @@ extension CoreLogic {
 
         // MARK: - Helpers
 
+
+        // Records "what this account is worth today". Snapshots are the only investment
+        // data the app keeps (Instrument/Holding/Price were deliberately not ported), so
+        // without a way to add one the displayed value silently ages — contributions after
+        // the last snapshot never show up.
+        // Same-day re-entry overwrites rather than stacking, so correcting a typo doesn't
+        // leave two snapshots fighting over the same point on the chart.
+        @MainActor
+        @discardableResult
+        public static func recordValuation(
+            account: Account,
+            marketValueEur: Decimal,
+            cashValueEur: Decimal? = nil,
+            asOf: Date = .now,
+            notes: String? = nil,
+            in ctx: ModelContext,
+            now: Date = .now
+        ) throws -> PortfolioValuation {
+            let accountId = account.id
+            let day = dayStart(asOf)
+            let nextDay = day.addingTimeInterval(86_400)
+            let existing = try ctx.fetch(FetchDescriptor<PortfolioValuation>(
+                predicate: #Predicate {
+                    $0.account?.id == accountId && $0.asOf >= day && $0.asOf < nextDay
+                }
+            )).first
+
+            if let existing {
+                existing.marketValueEur = marketValueEur
+                existing.cashValueEur = cashValueEur
+                existing.notes = notes
+                existing.asOf = asOf
+                existing.updatedAt = now
+                try ctx.saveTouchingChanges()
+                return existing
+            }
+
+            let valuation = PortfolioValuation(
+                account: account,
+                asOf: asOf,
+                marketValueEur: marketValueEur,
+                cashValueEur: cashValueEur,
+                notes: notes,
+                createdAt: now
+            )
+            ctx.insert(valuation)
+            try ctx.saveTouchingChanges()
+            return valuation
+        }
+
+        private static func dayStart(_ date: Date) -> Date {
+            var cal = Calendar(identifier: .iso8601)
+            cal.timeZone = TimeZone(identifier: "UTC")!
+            return cal.startOfDay(for: date)
+        }
+
         public static func periodStartDate(_ period: Period, now: Date = .now) -> Date? {
             var cal = Calendar(identifier: .iso8601)
             cal.timeZone = TimeZone(identifier: "UTC")!
