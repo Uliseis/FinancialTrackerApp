@@ -132,6 +132,9 @@ struct RuleEdit: Identifiable {
     var field: RuleField
     var matchType: RuleMatch
     var categoryId: UUID?
+    // Set when the rule was seeded from a transaction, so that transaction can adopt the
+    // category even though applyRules deliberately skips categorySource == .manual.
+    var seedTxId: UUID?
 
     init() {
         id = UUID()
@@ -166,6 +169,7 @@ struct RuleEdit: Identifiable {
         }
         matchType = .contains
         categoryId = tx.category?.id
+        seedTxId = tx.id
     }
 }
 
@@ -246,6 +250,18 @@ struct RuleEditView: View {
                     pattern: edit.pattern, category: category,
                     field: edit.field, matchType: edit.matchType,
                     priority: nextPriority(), in: ctx)
+            }
+            // A rule the user just wrote should take effect now, not at the next bank sync.
+            _ = try? CoreLogic.Categorize.applyRulesToTransactions(in: ctx)
+            // applyRules skips categorySource == .manual — which is exactly what the
+            // transaction you said "always categorize like this" about usually is. Without
+            // this, the one transaction you were looking at is the only one left unchanged.
+            if let seedId = edit.seedTxId {
+                let seed = try? ctx.fetch(FetchDescriptor<CoreModel.Transaction>(
+                    predicate: #Predicate { $0.id == seedId })).first
+                if let seed {
+                    try? CoreLogic.Categories.recategorize(seed, to: category, in: ctx)
+                }
             }
             dismiss()
         } catch {

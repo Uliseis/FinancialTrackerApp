@@ -410,4 +410,33 @@ final class InvestmentsTests: XCTestCase {
         XCTAssertEqual(cal.component(.year, from: oneY), 2025)
         XCTAssertEqual(cal.component(.year, from: threeY), 2023)
     }
+
+    func testRecordValuationInsertsThenOverwritesSameDay() throws {
+        let ctx = try TransferTestSupport.makeContext()
+        let space = TransferTestSupport.makeSpace(ctx)
+        let acct = try CoreLogic.Accounts.createManual(
+            name: "Broker", institution: "Trading212", currency: "EUR", space: space, in: ctx)
+
+        let day = Date(timeIntervalSince1970: 1_770_000_000)
+        try CoreLogic.Investments.recordValuation(
+            account: acct, marketValueEur: 100, cashValueEur: 10, asOf: day, in: ctx)
+        var all = try ctx.fetch(FetchDescriptor<PortfolioValuation>())
+        XCTAssertEqual(all.count, 1)
+        XCTAssertEqual(all[0].marketValueEur, 100)
+
+        // Same UTC day ⇒ correction, not a second point on the chart.
+        try CoreLogic.Investments.recordValuation(
+            account: acct, marketValueEur: 250, cashValueEur: nil,
+            asOf: day.addingTimeInterval(3_600), in: ctx)
+        all = try ctx.fetch(FetchDescriptor<PortfolioValuation>())
+        XCTAssertEqual(all.count, 1)
+        XCTAssertEqual(all[0].marketValueEur, 250)
+        XCTAssertNil(all[0].cashValueEur)
+
+        // A different day is a new snapshot.
+        try CoreLogic.Investments.recordValuation(
+            account: acct, marketValueEur: 300, asOf: day.addingTimeInterval(86_400 * 2), in: ctx)
+        all = try ctx.fetch(FetchDescriptor<PortfolioValuation>())
+        XCTAssertEqual(all.count, 2)
+    }
 }

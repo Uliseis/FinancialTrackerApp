@@ -10,6 +10,31 @@ import CoreLogic
 // context so SaveObserver pushes to CloudKit, then runs category rules. Idempotent:
 // dedup on (account, externalId); the JSON is deleted after a successful run.
 enum CCStatementImport {
+    // Optional rule seeds, applied before the inserted rows are categorized. Lets an
+    // import bring merchants the rule engine has never seen (Bolt, Zalando…) without a
+    // second deploy — and they keep working for future charges.
+    struct RuleSeed: Decodable {
+        let pattern: String
+        let category: String
+        let priority: Int?
+    }
+
+    // Backward compatible: a bare [Row] array still decodes, as do the older payloads.
+    struct Payload: Decodable {
+        let rules: [RuleSeed]?
+        let transactions: [Row]
+
+        init(from decoder: Decoder) throws {
+            if let bare = try? [Row](from: decoder) {
+                rules = nil; transactions = bare; return
+            }
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            rules = try c.decodeIfPresent([RuleSeed].self, forKey: .rules)
+            transactions = try c.decode([Row].self, forKey: .transactions)
+        }
+        private enum CodingKeys: String, CodingKey { case rules, transactions }
+    }
+
     struct Row: Decodable {
         let externalId: String
         let bookedAt: String
@@ -31,9 +56,10 @@ enum CCStatementImport {
                 for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false),
               case let url = docs.appendingPathComponent("cc-import.json"),
               let data = try? Data(contentsOf: url),
-              let rows = try? JSONDecoder().decode([Row].self, from: data) else {
+              let payload = try? JSONDecoder().decode(Payload.self, from: data) else {
             print("[CCImport] no Documents/cc-import.json — nothing to do"); return
         }
+        let rows = payload.transactions
         let ctx = container.mainContext
         let acctId = accountId
         guard let account = try? ctx.fetch(FetchDescriptor<Account>(
@@ -42,6 +68,25 @@ enum CCStatementImport {
         }
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime]
+
+        // Seed rules first so the inserted rows categorize on this same run. Skips any
+        // pattern that already exists, so a replayed import doesn't stack duplicates.
+        var seededRules = 0
+        for seed in payload.rules ?? [] {
+            let pattern = seed.pattern
+            let already = ((try? ctx.fetchCount(FetchDescriptor<CategoryRule>(
+                predicate: #Predicate { $0.pattern == pattern }))) ?? 0) > 0
+            if already { continue }
+            let name = seed.category
+            guard let category = try? ctx.fetch(FetchDescriptor<CoreModel.Category>(
+                predicate: #Predicate { $0.name == name })).first else {
+                print("[CCImport] no category named \(name) for rule \(pattern)"); continue
+            }
+            _ = try? CoreLogic.CategoryRules.create(
+                pattern: pattern, category: category,
+                priority: seed.priority ?? -1000, in: ctx)
+            seededRules += 1
+        }
 
         var insertedIds: [UUID] = []
         var skipped = 0
@@ -82,7 +127,7 @@ enum CCStatementImport {
         do { try ctx.save() } catch { print("[CCImport] save failed: \(error)"); return }
         let cats = (try? CoreLogic.Categorize.applyRulesToTransactions(in: ctx, txIds: insertedIds))?.updated ?? 0
         try? ctx.save()
-        print("[CCImport] inserted=\(insertedIds.count) skipped=\(skipped) categorized=\(cats)")
+        print("[CCImport] rules=\(seededRules) inserted=\(insertedIds.count) skipped=\(skipped) categorized=\(cats)")
         try? FileManager.default.removeItem(at: url)   // don't re-run
     }
 }

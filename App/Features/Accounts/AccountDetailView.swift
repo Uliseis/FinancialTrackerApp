@@ -15,6 +15,7 @@ struct AccountDetailView: View {
     @State private var editing: AccountEdit?
     @State private var adding: TransactionEdit?
     @State private var visibleLimit = pageSize
+    @State private var nativeBalance: Decimal?
     private static let pageSize = 100
 
     private var accountIsLive: Bool { account.modelContext != nil && !account.isDeleted }
@@ -34,7 +35,7 @@ struct AccountDetailView: View {
     var body: some View {
         List {
             Section {
-                AccountDetailHeader(account: account)
+                AccountDetailHeader(account: account, balance: nativeBalance)
                     .instrumentPanelRow()
             }
             Section("Transactions") {
@@ -69,6 +70,8 @@ struct AccountDetailView: View {
                 Button("Edit") { editing = AccountEdit(account) }
             }
         }
+        .task { reloadBalance() }
+        .reloadOnModelChange { reloadBalance() }
         .sheet(item: $editing, content: AccountFormView.init)
         .sheet(item: $adding) { TransactionFormView(edit: $0) }
         .overlay {
@@ -82,20 +85,26 @@ struct AccountDetailView: View {
             }
         }
     }
+    private func reloadBalance() {
+        guard accountIsLive else { return }
+        nativeBalance = CoreLogic.Accounts.computeNativeBalances([account], in: ctx)[account.id]
+    }
 }
 
 private struct AccountDetailHeader: View {
     let account: Account
-
-    private var balance: Decimal { account.balance ?? account.manualOpeningBalance ?? 0 }
+    // Computed by CoreLogic (anchor + Σ since anchor, or opening + Σ all). Reading
+    // `account.balance` here showed 0,00 on every manual/anchored account, because that
+    // column only holds a bank-reported figure.
+    let balance: Decimal?
 
     var body: some View {
         InstrumentPanel {
             VStack(alignment: .leading, spacing: Theme.Space.xs) {
                 PanelLabel(text: account.institution)
-                Text(Money.format(balance, currency: account.currency))
+                Text(balance.map { Money.format($0, currency: account.currency) } ?? "—")
                     .font(.readout(.largeTitle, weight: .bold))
-                    .foregroundStyle(balance < 0 ? Theme.heroAccent : .white)
+                    .foregroundStyle((balance ?? 0) < 0 ? Theme.heroAccent : .white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
                 HStack(spacing: Theme.Space.s) {
