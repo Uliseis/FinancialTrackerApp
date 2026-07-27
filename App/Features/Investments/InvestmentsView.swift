@@ -13,6 +13,7 @@ struct InvestmentsView: View {
     @State private var vm: InvestmentsModel?
     @State private var valuing: Account?
     @State private var period: CoreLogic.Investments.Period = .all
+    @State private var refreshError: String?
 
     private func reload() {
         let scope = SpaceScope.resolve(rawCurrentId: currentSpaceId, spaces: spaces)
@@ -57,7 +58,11 @@ struct InvestmentsView: View {
                         } header: {
                             Text("Accounts")
                         } footer: {
-                            Text("Tap an account to record what it's worth today.")
+                            if let refreshError {
+                                Text(refreshError).foregroundStyle(.orange)
+                            } else {
+                                Text("Tap an account to set what it's worth and what you've paid in. Pull down to refresh live prices.")
+                            }
                         }
                     }
                 } else {
@@ -69,7 +74,14 @@ struct InvestmentsView: View {
                 }
             }
             .scrollEdgeEffectStyle(.soft, for: .all)
-            .refreshable { reload() }
+            // Pull-to-refresh fetches live prices immediately. The foreground sync is throttled
+            // to 15 minutes, which is right for a background refresh but wrong for someone who
+            // just pulled the list down asking for today's number.
+            .refreshable {
+                let outcome = await CoreLogic.InvestmentRefresh.run(in: ctx)
+                refreshError = outcome.failures.first
+                reload()
+            }
             .navigationTitle("Investments")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { SpacePicker() }
@@ -148,11 +160,17 @@ private struct AccountMetricRow: View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.name).lineLimit(1)
-                Text(row.group).font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    if row.isLive {
+                        Image(systemName: "bolt.fill").font(.caption2)
+                            .foregroundStyle(Theme.heroAccent)
+                    }
+                    Text(subtitle).font(.caption).foregroundStyle(.secondary)
+                }
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 2) {
-                if let v = row.latestEur {
+                if let v = row.valueEur {
                     MoneyText(amount: v)
                 } else {
                     Text("—").font(.body.monospacedDigit()).foregroundStyle(.secondary)
@@ -162,9 +180,22 @@ private struct AccountMetricRow: View {
                         .font(.caption.monospacedDigit())
                         .fontDesign(.rounded)
                         .foregroundStyle(Theme.amountColor(pnl))
+                } else {
+                    Text("No cost basis")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
+    }
+
+    // Surfaces the two things a typed valuation can't tell you on its own: money that landed
+    // after it, and that it's old enough to be worth refreshing.
+    private var subtitle: String {
+        if row.contributionsSinceValueEur != 0 {
+            return "incl. \(Money.format(row.contributionsSinceValueEur, currency: "EUR")) paid in"
+        }
+        if row.isStale { return "\(row.group) · needs a refresh" }
+        return row.group
     }
 
     private func pnlLabel(_ pnl: Decimal, _ pct: Decimal?) -> String {
@@ -184,20 +215,35 @@ private struct PortfolioChart: View {
         let kind: String
     }
 
+    // A flat zero line for every account that has no opening figure reads as "you invested
+    // nothing", which is worse than not drawing it.
+    private var hasCostBasis: Bool { series.contains { $0.costBasisEur != 0 } }
+
     private var points: [Point] {
         series.flatMap { p in
-            [Point(date: p.date, value: p.marketValueEur.doubleValue, kind: "Market value"),
-             Point(date: p.date, value: p.costBasisEur.doubleValue, kind: "Cost basis")]
+            var out = [Point(date: p.date, value: p.marketValueEur.doubleValue, kind: "Market value")]
+            if hasCostBasis {
+                out.append(Point(date: p.date, value: p.costBasisEur.doubleValue, kind: "Cost basis"))
+            }
+            return out
         }
     }
 
     // Label real data points, never interpolated ones: with only a couple of valuations
     // an automatic axis puts four ticks inside a single day and repeats the same label.
+    // Also drops picks that render the same label as the one before: at month resolution
+    // several deposit days collapse to "May 26" and the axis reads as a stutter.
     private var axisDates: [Date] {
         let dates = series.map(\.date)
-        guard dates.count > 4 else { return dates }
-        let step = (dates.count - 1) / 3
-        return stride(from: 0, to: dates.count, by: max(step, 1)).map { dates[$0] }
+        let picked: [Date]
+        if dates.count > 4 {
+            let step = (dates.count - 1) / 3
+            picked = stride(from: 0, to: dates.count, by: max(step, 1)).map { dates[$0] }
+        } else {
+            picked = dates
+        }
+        var seen = Set<String>()
+        return picked.filter { seen.insert($0.formatted(axisFormat)).inserted }
     }
 
     // Days for a short window, months within a year, years beyond it.
@@ -242,7 +288,7 @@ private struct PortfolioChart: View {
                 }
             }
         }
-        .chartLegend(.visible)
+        .chartLegend(hasCostBasis ? .visible : .hidden)
         .frame(height: 200)
         .padding(.vertical, 4)
     }

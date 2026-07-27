@@ -166,6 +166,9 @@ public enum ModelSnapshots {
             archived: m.archived, excluded: m.excluded,
             manualOpeningBalance: m.manualOpeningBalance,
             balanceAnchor: m.balanceAnchor, balanceAnchorAt: m.balanceAnchorAt,
+            costBasisOpeningEur: m.costBasisOpeningEur,
+            costBasisOpeningAt: m.costBasisOpeningAt,
+            liveValueSource: m.liveValueSource, assetQuantity: m.assetQuantity,
             createdAt: m.createdAt, clock: m.updatedAt
         )
     }
@@ -190,6 +193,10 @@ public enum ModelSnapshots {
         m.manualOpeningBalance = s.manualOpeningBalance
         m.balanceAnchor = s.balanceAnchor
         m.balanceAnchorAt = s.balanceAnchorAt
+        m.costBasisOpeningEur = s.costBasisOpeningEur
+        m.costBasisOpeningAt = s.costBasisOpeningAt
+        m.liveValueSource = s.liveValueSource
+        m.assetQuantity = s.assetQuantity
         m.createdAt = s.createdAt
         m.updatedAt = s.clock
     }

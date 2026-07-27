@@ -142,6 +142,28 @@ extension CoreLogic {
             return d
         }
 
+        // Quantities are not money: 0,06033031 BTC is eight decimals, and parseAmount's
+        // "1-2 digits after the separator" rule would read that comma as grouping and return
+        // 6033031. Here the LAST separator is always the decimal point, whatever follows it.
+        public static func parseQuantity(_ raw: String) -> Decimal? {
+            var s = raw.trimmingCharacters(in: .whitespaces)
+            s.removeAll { $0 == " " || $0 == "\u{00A0}" }
+            guard !s.isEmpty else { return nil }
+
+            var normalized = ""
+            let lastSeparator = s.lastIndex(where: { $0 == "," || $0 == "." })
+            for idx in s.indices {
+                let ch = s[idx]
+                if ch == "," || ch == "." {
+                    if idx == lastSeparator { normalized.append(".") }
+                    continue
+                }
+                normalized.append(ch)
+            }
+            guard let d = Decimal(string: normalized), d > 0 else { return nil }
+            return d
+        }
+
         private static func cleaned(_ s: String?) -> String? {
             let t = s?.trimmingCharacters(in: .whitespacesAndNewlines)
             return (t?.isEmpty ?? true) ? nil : t

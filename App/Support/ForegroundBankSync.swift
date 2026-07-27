@@ -34,9 +34,13 @@ enum ForegroundBankSync {
     @MainActor
     static func runIfDue(_ ctx: ModelContext, engine: CloudKitSyncEngine?) async {
         guard isDue() else { return }
-        guard let signer = try? EBKeychain().loadSigner() else { return }
         lastRun = .now
-        _ = await CoreLogic.EBSync.syncAll(api: EBClient(tokenProvider: signer), in: ctx)
+        if let signer = try? EBKeychain().loadSigner() {
+            _ = await CoreLogic.EBSync.syncAll(api: EBClient(tokenProvider: signer), in: ctx)
+        }
+        // Independent of Enable Banking: brokers and crypto have their own sources, and an
+        // unconfigured bank connection shouldn't stop them refreshing.
+        _ = await CoreLogic.InvestmentRefresh.run(in: ctx)
         // Rows inserted on the main context push via SaveObserver, but nudge the engine so
         // they leave the device on this run rather than the next save.
         await engine?.sendPendingChanges()

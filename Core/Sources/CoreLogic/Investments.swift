@@ -16,24 +16,80 @@ extension CoreLogic {
             public let group: AccountGroup
         }
 
+        // A leg is either capital (money in, or capital handed back) or a distribution —
+        // rent, dividends, coupons. The difference matters: a €250 payout from a property
+        // doesn't reduce what you have invested in it, it IS the return. Netting the two
+        // would make a yielding asset look like it was being sold off a slice at a time.
         public struct ContributionLeg: Equatable, Sendable {
             public let accountId: UUID
             public let bookedAt: Date
             public let netEur: Decimal
+            public let isDistribution: Bool
+
+            // The one definition of a payout, used by both the value and the cost-basis pass —
+            // when they disagreed, an income-tagged inflow was dropped from value while still
+            // counting as capital. Only money leaving can be a payout.
+            public var isPayout: Bool { isDistribution && netEur < 0 }
+
+            public init(
+                accountId: UUID, bookedAt: Date, netEur: Decimal, isDistribution: Bool = false
+            ) {
+                self.accountId = accountId
+                self.bookedAt = bookedAt
+                self.netEur = netEur
+                self.isDistribution = isDistribution
+            }
         }
 
+        // Both sides of an investment account are an anchor plus every leg booked after it —
+        // the same shape as Account.balanceAnchor for cash. Cost basis anchors on
+        // costBasisOpeningEur, market value on the newest snapshot. A deposit therefore lifts
+        // value and cost by the identical amount and leaves P&L alone, which is the whole
+        // point: paying money in is not a loss.
         public struct AccountMetrics: Equatable, Sendable {
             public let accountId: UUID
-            public let baselineAsOf: Date?
-            public let baselineEur: Decimal?
             public let latestAsOf: Date?
-            public let latestEur: Decimal?
+            // Snapshot (or live) figure, before contributions booked after it.
+            public let anchorValueEur: Decimal?
+            // anchorValueEur + contributions since. What the UI shows.
+            public let valueEur: Decimal?
             public let latestCashEur: Decimal?
             public let latestPositionsEur: Decimal?
-            public let netContributionsSinceBaselineEur: Decimal
+            // Paid in since the value anchor — the part the snapshot can't know about.
+            public let contributionsSinceValueEur: Decimal
             public let costBasisEur: Decimal?
             public let pnlEur: Decimal?
             public let pnlPct: Decimal?
+            // Gross money ever put in, before anything was handed back. The denominator for
+            // return on an asset that has already repaid some capital.
+            public let capitalInEur: Decimal?
+            public let capitalReturnedEur: Decimal
+            // Rent, dividends, coupons — realised return that never touched cost basis.
+            public let distributionsEur: Decimal
+            // True when the value came from a live feed rather than a typed snapshot.
+            public let isLive: Bool
+
+            // Everything the asset has produced: what it's worth, plus what it has already
+            // paid out and handed back, less what went in. Correct before, during and after
+            // an exit — a sold holding worth nothing still shows what it made.
+            public var totalReturnEur: Decimal? {
+                guard let value = valueEur, let capitalIn = capitalInEur else { return nil }
+                return value + capitalReturnedEur + distributionsEur - capitalIn
+            }
+
+            public var totalReturnPct: Decimal? {
+                guard let r = totalReturnEur, let capitalIn = capitalInEur,
+                      capitalIn > Decimal(string: "0.000001")! else { return nil }
+                return r / capitalIn
+            }
+
+            public var isStale: Bool {
+                guard !isLive else { return false }
+                // Never valued but funded counts as stale: the account is standing in at what
+                // was paid in, which is a placeholder, not a reading.
+                guard let latestAsOf else { return valueEur != nil }
+                return Date.now.timeIntervalSince(latestAsOf) > 45 * 86_400
+            }
         }
 
         public struct PortfolioSeriesPoint: Equatable, Sendable {
@@ -96,48 +152,91 @@ extension CoreLogic {
         ) throws -> [ContributionLeg] {
             if accountIds.isEmpty { return [] }
             let idSet = Set(accountIds)
+            // No transferGroup requirement: an unpaired leg is still money that left one
+            // account and landed here. Requiring the pair silently dropped contributions.
+            // isTransfer stays, so interest/dividends booked on the account read as return,
+            // not as new money paid in.
             let candidates = try ctx.fetch(FetchDescriptor<Transaction>(
                 predicate: #Predicate {
-                    $0.isTransfer == true &&
-                    $0.transferGroup != nil &&
-                    $0.amountEur != nil
+                    $0.isTransfer == true && $0.amountEur != nil
                 },
                 sortBy: [SortDescriptor(\.bookedAt, order: .forward)]
             ))
             return candidates.compactMap { tx in
                 guard let accId = tx.account?.id, idSet.contains(accId) else { return nil }
                 guard let eur = tx.amountEur else { return nil }
-                return ContributionLeg(accountId: accId, bookedAt: tx.bookedAt, netEur: eur)
+                return ContributionLeg(
+                    accountId: accId, bookedAt: tx.bookedAt, netEur: eur,
+                    isDistribution: isDistribution(tx))
             }
         }
 
+        // Categorising the payout as income is what marks it a distribution — no new field to
+        // learn, and a rule can do it automatically. Route mirrors carry no category of their
+        // own, so the originating bank row is consulted too.
+        static func isDistribution(_ tx: Transaction) -> Bool {
+            tx.category?.kind == "income" || tx.routedFromTx?.category?.kind == "income"
+        }
+
+        public static func basis(for account: Account) -> AccountBasis {
+            AccountBasis(
+                accountId: account.id,
+                costBasisOpeningEur: account.costBasisOpeningEur,
+                costBasisOpeningAt: account.costBasisOpeningAt,
+                isLiveValued: account.liveValueSource?.isEmpty == false
+            )
+        }
+
+        @MainActor
+        public static func loadMetrics(
+            for accounts: [Account],
+            in ctx: ModelContext
+        ) throws -> [UUID: AccountMetrics] {
+            let ids = accounts.map(\.id)
+            return computeAccountMetrics(
+                bases: accounts.map(basis(for:)),
+                valuations: try listValuations(for: ids, in: ctx),
+                legs: try listContributionLegs(for: ids, in: ctx)
+            )
+        }
+
+        // Net worth's investment slice. Uses the same snapshot + contributions-since figure the
+        // Investments tab shows, so the two can't disagree.
         @MainActor
         public static func sumLatestValue(
-            for accountIds: [UUID],
+            for accounts: [Account],
             in ctx: ModelContext
         ) throws -> Decimal {
-            if accountIds.isEmpty { return 0 }
-            let idSet = Set(accountIds)
-            let valuations = try ctx.fetch(FetchDescriptor<PortfolioValuation>(
-                predicate: #Predicate { $0.account != nil },
-                sortBy: [SortDescriptor(\.asOf, order: .reverse)]
-            ))
-            var seen = Set<UUID>()
-            var total: Decimal = 0
-            for v in valuations {
-                guard let accId = v.account?.id, idSet.contains(accId), !seen.contains(accId) else {
-                    continue
-                }
-                seen.insert(accId)
-                total += v.marketValueEur
-            }
-            return total
+            if accounts.isEmpty { return 0 }
+            return try loadMetrics(for: accounts, in: ctx)
+                .values.reduce(Decimal(0)) { $0 + ($1.valueEur ?? 0) }
         }
 
         // MARK: - Pure compute
 
+        // The per-account inputs computeAccountMetrics needs from Account, so the maths stays
+        // pure and testable without a ModelContext.
+        public struct AccountBasis: Equatable, Sendable {
+            public let accountId: UUID
+            public let costBasisOpeningEur: Decimal?
+            public let costBasisOpeningAt: Date?
+            public let isLiveValued: Bool
+
+            public init(
+                accountId: UUID,
+                costBasisOpeningEur: Decimal? = nil,
+                costBasisOpeningAt: Date? = nil,
+                isLiveValued: Bool = false
+            ) {
+                self.accountId = accountId
+                self.costBasisOpeningEur = costBasisOpeningEur
+                self.costBasisOpeningAt = costBasisOpeningAt
+                self.isLiveValued = isLiveValued
+            }
+        }
+
         public static func computeAccountMetrics(
-            investmentAccountIds: [UUID],
+            bases: [AccountBasis],
             valuations: [PortfolioValuation],
             legs: [ContributionLeg]
         ) -> [UUID: AccountMetrics] {
@@ -146,58 +245,114 @@ extension CoreLogic {
                 guard let id = v.account?.id else { continue }
                 byAccount[id, default: []].append(v)
             }
+            // This is pure and public: don't inherit the caller's ordering for something that
+            // decides which reading is current.
+            for id in byAccount.keys {
+                byAccount[id]?.sort { $0.asOf < $1.asOf }
+            }
 
             var out: [UUID: AccountMetrics] = [:]
-            for accId in investmentAccountIds {
+            for basis in bases {
+                let accId = basis.accountId
                 let list = byAccount[accId] ?? []
-                if list.isEmpty {
+                let latest = list.last
+
+                // Cost basis: opening figure plus every capital leg after it. With no opening
+                // date the account's whole ledger counts, which is right for one opened
+                // inside the data. Distributions are tallied separately — they are return,
+                // not a withdrawal of capital.
+                // Without an opening figure there is no cost basis at all: deriving one from
+                // the legs alone would silently omit whatever the account held before the
+                // ledger starts, and quietly report that gap as profit.
+                var capitalIn: Decimal? = basis.costBasisOpeningEur
+                var capitalReturned: Decimal = 0
+                var distributions: Decimal = 0
+                for leg in legs where leg.accountId == accId {
+                    if let since = basis.costBasisOpeningAt, leg.bookedAt <= since { continue }
+                    if leg.isPayout {
+                        distributions += -leg.netEur
+                    } else if leg.netEur < 0 {
+                        capitalReturned += -leg.netEur
+                    } else if let running = capitalIn {
+                        capitalIn = running + leg.netEur
+                    }
+                }
+                let costBasis: Decimal? = capitalIn.map { $0 - capitalReturned }
+
+                guard let latest else {
+                    // Never valued, but money has gone in: worth what was paid in until told
+                    // otherwise. Reporting nil here dropped the account out of net worth
+                    // entirely, so transferring into a new investment made net worth fall by
+                    // the amount transferred. anchorValueEur stays nil — nothing was read.
                     out[accId] = AccountMetrics(
-                        accountId: accId,
-                        baselineAsOf: nil, baselineEur: nil,
-                        latestAsOf: nil, latestEur: nil,
+                        accountId: accId, latestAsOf: nil,
+                        anchorValueEur: nil, valueEur: costBasis,
                         latestCashEur: nil, latestPositionsEur: nil,
-                        netContributionsSinceBaselineEur: 0,
-                        costBasisEur: nil, pnlEur: nil, pnlPct: nil
+                        contributionsSinceValueEur: 0,
+                        costBasisEur: costBasis,
+                        pnlEur: costBasis == nil ? nil : 0, pnlPct: nil,
+                        capitalInEur: capitalIn, capitalReturnedEur: capitalReturned,
+                        distributionsEur: distributions,
+                        isLive: basis.isLiveValued
                     )
                     continue
                 }
-                let baseline = list.first!
-                let latest = list.last!
-                let baselineTime = baseline.asOf
 
-                // Strict >: baseline already reflects same-day moves; don't double-count.
-                var net: Decimal = 0
-                for leg in legs where leg.accountId == accId && leg.bookedAt > baselineTime {
-                    net += leg.netEur
+                // Strict >: the snapshot already reflects same-instant moves.
+                // A live-valued account is current by definition — adding legs would
+                // double-count money the feed already sees. Distributions are skipped: a
+                // property paying rent is not worth less afterwards.
+                var sinceValue: Decimal = 0
+                if !basis.isLiveValued {
+                    for leg in legs where leg.accountId == accId
+                        && leg.bookedAt > latest.asOf && !leg.isPayout {
+                        sinceValue += leg.netEur
+                    }
                 }
 
-                let baselineEur = baseline.marketValueEur
-                let latestEur = latest.marketValueEur
-                let latestCash = latest.cashValueEur
-                let latestPositions: Decimal? = latestCash.map { max(0, latestEur - $0) }
-                let costBasis = baselineEur + net
-                let pnl = latestEur - costBasis
-                let pnlPct: Decimal? = abs(costBasis) > Decimal(string: "0.000001")! ? pnl / costBasis : nil
+                let anchor = latest.marketValueEur
+                let value = anchor + sinceValue
+                // Money that arrived after the reading is sitting as cash at the broker until
+                // it's invested — crediting it to positions would overstate what's at market.
+                let latestCash: Decimal? = latest.cashValueEur.map { max(0, $0 + sinceValue) }
+                // Always known once the value is: an unreported cash figure means no cash we
+                // know of, not an unknown split. Leaving it nil dropped the whole account out
+                // of the positions/cash breakdown, so the two stopped adding up to the total.
+                let latestPositions: Decimal? = max(0, value - (latestCash ?? 0))
+                let pnl: Decimal? = costBasis.map { value - $0 }
+                let epsilon = Decimal(string: "0.000001")!
+                // Against cost basis normally, but once capital has been handed back that can
+                // reach zero or go negative and the ratio stops meaning anything; gross
+                // capital in is the stable denominator there.
+                let pnlPct: Decimal? = {
+                    guard let pnl else { return nil }
+                    if let costBasis, costBasis > epsilon { return pnl / costBasis }
+                    if let capitalIn, capitalIn > epsilon { return pnl / capitalIn }
+                    return nil
+                }()
 
                 out[accId] = AccountMetrics(
                     accountId: accId,
-                    baselineAsOf: baseline.asOf,
-                    baselineEur: baselineEur,
                     latestAsOf: latest.asOf,
-                    latestEur: latestEur,
+                    anchorValueEur: anchor,
+                    valueEur: value,
                     latestCashEur: latestCash,
                     latestPositionsEur: latestPositions,
-                    netContributionsSinceBaselineEur: net,
+                    contributionsSinceValueEur: sinceValue,
                     costBasisEur: costBasis,
                     pnlEur: pnl,
-                    pnlPct: pnlPct
+                    pnlPct: pnlPct,
+                    capitalInEur: capitalIn,
+                    capitalReturnedEur: capitalReturned,
+                    distributionsEur: distributions,
+                    isLive: basis.isLiveValued
                 )
             }
             return out
         }
 
         public static func computePortfolioSeries(
-            investmentAccountIds: [UUID],
+            bases: [AccountBasis],
             valuations: [PortfolioValuation],
             legs: [ContributionLeg]
         ) -> [PortfolioSeriesPoint] {
@@ -212,7 +367,13 @@ extension CoreLogic {
                 byAccount[id, default: []].append(v)
             }
 
-            let dateSet = Set(valuations.map { cal.startOfDay(for: $0.asOf) })
+            // Deposit days are plotted too, so paying money in visibly steps the line rather
+            // than staying flat until the next snapshot.
+            let firstSnapshot = valuations.map(\.asOf).min()!
+            var dateSet = Set(valuations.map { cal.startOfDay(for: $0.asOf) })
+            for leg in legs where leg.bookedAt > firstSnapshot {
+                dateSet.insert(cal.startOfDay(for: leg.bookedAt))
+            }
             let dates = dateSet.sorted()
 
             var out: [PortfolioSeriesPoint] = []
@@ -221,27 +382,43 @@ extension CoreLogic {
                 var marketValue: Decimal = 0
                 var cashTotal: Decimal = 0
                 var costBasisTotal: Decimal = 0
-                for accId in investmentAccountIds {
-                    guard let list = byAccount[accId], !list.isEmpty else { continue }
-                    let baseline = list.first!
-                    if baseline.asOf >= endOfDay { continue }
-                    var mv: Decimal = 0
+                for basis in bases {
+                    let accId = basis.accountId
+                    guard let list = byAccount[accId], let first = list.first,
+                          first.asOf < endOfDay else { continue }
+                    var anchor: Decimal = 0
+                    var anchorAt = first.asOf
                     var cash: Decimal = 0
                     for v in list {
                         if v.asOf < endOfDay {
-                            mv = v.marketValueEur
+                            anchor = v.marketValueEur
+                            anchorAt = v.asOf
                             cash = v.cashValueEur ?? 0
                         } else { break }
                     }
-                    marketValue += mv
-                    cashTotal += cash
-                    var contrib: Decimal = 0
-                    for leg in legs where leg.accountId == accId {
-                        if leg.bookedAt > baseline.asOf && leg.bookedAt < endOfDay {
-                            contrib += leg.netEur
+                    var sinceValue: Decimal = 0
+                    if !basis.isLiveValued {
+                        for leg in legs where leg.accountId == accId && !leg.isPayout
+                            && leg.bookedAt > anchorAt && leg.bookedAt < endOfDay {
+                            sinceValue += leg.netEur
                         }
                     }
-                    costBasisTotal += baseline.marketValueEur + contrib
+                    marketValue += anchor + sinceValue
+                    cashTotal += cash
+
+                    if let opening = basis.costBasisOpeningEur {
+                        // Same payout rule as computeAccountMetrics, or the chart's cost
+                        // line drifts away from the figure on the account row.
+                        var contrib: Decimal = 0
+                        for leg in legs where leg.accountId == accId && !leg.isPayout
+                            && leg.bookedAt < endOfDay {
+                            if let since = basis.costBasisOpeningAt, leg.bookedAt <= since {
+                                continue
+                            }
+                            contrib += leg.netEur
+                        }
+                        costBasisTotal += opening + contrib
+                    }
                 }
                 let positions = max(0, marketValue - cashTotal)
                 out.append(PortfolioSeriesPoint(
@@ -308,8 +485,34 @@ extension CoreLogic {
         }
 
 
-        // A wrong snapshot isn't just cosmetic: the OLDEST one is the P&L baseline, so a
-        // partial import silently reads as profit forever.
+        // The money-in anchor. Everything transferred in after `at` is added automatically,
+        // so this is only ever set once, for whatever was already in the account before the
+        // ledger starts.
+        @MainActor
+        public static func setCostBasisOpening(
+            _ account: Account, amountEur: Decimal?, at date: Date?, in ctx: ModelContext
+        ) throws {
+            account.costBasisOpeningEur = amountEur
+            // Normalised to the UTC start of day. A date picker hands back whatever
+            // time-of-day it was opened at, and that time is the cut-off deciding which legs
+            // count — so re-saving the same figure at a different hour would silently move
+            // cost basis. Same boundary the valuation anchors use.
+            account.costBasisOpeningAt = (amountEur == nil ? nil : date).map(dayStart)
+            try ctx.saveTouchingChanges()
+        }
+
+        @MainActor
+        public static func setLiveSource(
+            _ account: Account, source: String?, quantity: Decimal?, in ctx: ModelContext
+        ) throws {
+            let clean = source?.trimmingCharacters(in: .whitespacesAndNewlines)
+            account.liveValueSource = (clean?.isEmpty ?? true) ? nil : clean
+            account.assetQuantity = account.liveValueSource == nil ? nil : quantity
+            try ctx.saveTouchingChanges()
+        }
+
+        // Safe now that cost basis lives on the account: deleting a snapshot only drops a
+        // market-value reading, it can't destroy the P&L baseline the way it used to.
         @MainActor
         public static func deleteValuation(_ valuation: PortfolioValuation, in ctx: ModelContext) throws {
             ctx.delete(valuation)

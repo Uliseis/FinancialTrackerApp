@@ -13,6 +13,7 @@ struct TransfersView: View {
     @State private var confirmingUnpair = false
     @State private var resultMessage = ""
     @State private var showingResult = false
+    @State private var recordingMove = false
 
     var body: some View {
         List {
@@ -33,10 +34,13 @@ struct TransfersView: View {
         .overlay {
             if listings.isEmpty {
                 ContentUnavailableView("No Transfers", systemImage: "arrow.left.arrow.right",
-                                       description: Text("Paired transfers between accounts appear here."))
+                                       description: Text("Paired transfers between accounts appear here. Tap + to record a move the bank can't see."))
             }
         }
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Move Money", systemImage: "plus") { recordingMove = true }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button("Detect Transfers", systemImage: "sparkle.magnifyingglass", action: detect)
@@ -58,6 +62,7 @@ struct TransfersView: View {
                  ? "The mirrored transaction is deleted. Backfill the route to recreate it."
                  : "The transactions stay; only the pairing is removed.")
         }
+        .sheet(isPresented: $recordingMove, onDismiss: reload) { InternalTransferView() }
         .alert("Transfers", isPresented: $showingResult) {} message: {
             Text(resultMessage)
         }

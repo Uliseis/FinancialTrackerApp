@@ -235,6 +235,64 @@ extension CoreLogic {
         }
 
         // Manually pair exactly one debit + one credit into a transfer group. The group's
+        // Both legs of a move between two accounts the bank can't see, created and paired in
+        // one step. Needed wherever a single external transfer is split internally afterwards:
+        // money arrives at a broker's cash account and is then allocated between, say, a fund
+        // account and a pension wrapper, and only the arrival has a bank row.
+        //
+        // Booking it as a transfer means the debit lowers the source's cost basis by exactly
+        // what it raises the target's, so nothing is invented or lost. Set `isDistribution` to
+        // book it as income (rent, dividends) instead of a capital move.
+        @MainActor @discardableResult
+        public static func createInternalTransfer(
+            from source: Account,
+            to target: Account,
+            amountEur: Decimal,
+            bookedAt: Date = .now,
+            note: String? = nil,
+            category: CoreModel.Category? = nil,
+            in ctx: ModelContext,
+            now: Date = .now
+        ) throws -> TransferGroup {
+            guard source.id != target.id else { throw PairError.sameTransaction }
+            guard amountEur > 0 else { throw Transactions.MutationError.amountMustBePositive }
+            guard !source.archived, !target.archived else { throw PairError.accountArchived }
+            guard source.space?.id == target.space?.id else { throw PairError.differentSpace }
+
+            let group = TransferGroup()
+            ctx.insert(group)
+            let label = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let description = (label?.isEmpty == false)
+                ? label! : "\(source.displayName) → \(target.displayName)"
+            let shared = UUID().uuidString
+
+            for (account, signed, direction) in [
+                (source, -amountEur, TxDirection.debit),
+                (target, amountEur, TxDirection.credit),
+            ] {
+                let tx = Transaction(
+                    account: account,
+                    externalId: "internal-transfer:\(shared):\(direction.rawValue)",
+                    bookedAt: bookedAt,
+                    amount: signed,
+                    currency: "EUR",
+                    amountEur: signed,
+                    fxRateUsed: 1,
+                    direction: direction,
+                    description: description,
+                    counterparty: account.id == source.id
+                        ? target.displayName : source.displayName,
+                    category: category,
+                    categorySource: category == nil ? .bank : .manual,
+                    isTransfer: true,
+                    transferGroup: group,
+                    createdAt: now)
+                ctx.insert(tx)
+            }
+            try ctx.saveTouchingChanges()
+            return group
+        }
+
         // pairedAt stays nil (nil = manually grouped; auto-paired groups carry a timestamp).
         @MainActor @discardableResult
         public static func pairManual(

@@ -144,6 +144,16 @@ public final class Account {
     public var manualOpeningBalance: Decimal?
     public var balanceAnchor: Decimal?
     public var balanceAnchorAt: Date?
+    // Investment cost basis works exactly like balanceAnchor: an opening figure plus every
+    // transfer leg booked after it. Money paid in is therefore never entered by hand — the
+    // ledger already knows. Nil on non-investment accounts.
+    public var costBasisOpeningEur: Decimal?
+    public var costBasisOpeningAt: Date?
+    // "t212" or "crypto:<coingecko-id>". Set means the market value is fetched rather than
+    // typed; nil means the newest valuation snapshot is the anchor.
+    public var liveValueSource: String?
+    // Units held, for crypto:* sources. Value = assetQuantity x live price.
+    public var assetQuantity: Decimal?
     public var createdAt: Date
     // Last-modified clock for LWW sync. Bumped by CoreLogic mutations via touch().
     public var updatedAt: Date
@@ -187,6 +197,10 @@ public final class Account {
         manualOpeningBalance: Decimal? = nil,
         balanceAnchor: Decimal? = nil,
         balanceAnchorAt: Date? = nil,
+        costBasisOpeningEur: Decimal? = nil,
+        costBasisOpeningAt: Date? = nil,
+        liveValueSource: String? = nil,
+        assetQuantity: Decimal? = nil,
         createdAt: Date = .now,
         updatedAt: Date? = nil
     ) {
@@ -209,6 +223,10 @@ public final class Account {
         self.manualOpeningBalance = manualOpeningBalance
         self.balanceAnchor = balanceAnchor
         self.balanceAnchorAt = balanceAnchorAt
+        self.costBasisOpeningEur = costBasisOpeningEur
+        self.costBasisOpeningAt = costBasisOpeningAt
+        self.liveValueSource = liveValueSource
+        self.assetQuantity = assetQuantity
         self.createdAt = createdAt
         self.updatedAt = updatedAt ?? createdAt
     }
