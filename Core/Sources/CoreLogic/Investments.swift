@@ -26,6 +26,11 @@ extension CoreLogic {
             public let netEur: Decimal
             public let isDistribution: Bool
 
+            // The one definition of a payout, used by both the value and the cost-basis pass —
+            // when they disagreed, an income-tagged inflow was dropped from value while still
+            // counting as capital. Only money leaving can be a payout.
+            public var isPayout: Bool { isDistribution && netEur < 0 }
+
             public init(
                 accountId: UUID, bookedAt: Date, netEur: Decimal, isDistribution: Bool = false
             ) {
@@ -79,7 +84,10 @@ extension CoreLogic {
             }
 
             public var isStale: Bool {
-                guard !isLive, let latestAsOf else { return false }
+                guard !isLive else { return false }
+                // Never valued but funded counts as stale: the account is standing in at what
+                // was paid in, which is a placeholder, not a reading.
+                guard let latestAsOf else { return valueEur != nil }
                 return Date.now.timeIntervalSince(latestAsOf) > 45 * 86_400
             }
         }
@@ -237,6 +245,11 @@ extension CoreLogic {
                 guard let id = v.account?.id else { continue }
                 byAccount[id, default: []].append(v)
             }
+            // This is pure and public: don't inherit the caller's ordering for something that
+            // decides which reading is current.
+            for id in byAccount.keys {
+                byAccount[id]?.sort { $0.asOf < $1.asOf }
+            }
 
             var out: [UUID: AccountMetrics] = [:]
             for basis in bases {
@@ -256,8 +269,8 @@ extension CoreLogic {
                 var distributions: Decimal = 0
                 for leg in legs where leg.accountId == accId {
                     if let since = basis.costBasisOpeningAt, leg.bookedAt <= since { continue }
-                    if leg.isDistribution {
-                        distributions += abs(leg.netEur)
+                    if leg.isPayout {
+                        distributions += -leg.netEur
                     } else if leg.netEur < 0 {
                         capitalReturned += -leg.netEur
                     } else if let running = capitalIn {
@@ -267,12 +280,17 @@ extension CoreLogic {
                 let costBasis: Decimal? = capitalIn.map { $0 - capitalReturned }
 
                 guard let latest else {
+                    // Never valued, but money has gone in: worth what was paid in until told
+                    // otherwise. Reporting nil here dropped the account out of net worth
+                    // entirely, so transferring into a new investment made net worth fall by
+                    // the amount transferred. anchorValueEur stays nil — nothing was read.
                     out[accId] = AccountMetrics(
                         accountId: accId, latestAsOf: nil,
-                        anchorValueEur: nil, valueEur: nil,
+                        anchorValueEur: nil, valueEur: costBasis,
                         latestCashEur: nil, latestPositionsEur: nil,
                         contributionsSinceValueEur: 0,
-                        costBasisEur: costBasis, pnlEur: nil, pnlPct: nil,
+                        costBasisEur: costBasis,
+                        pnlEur: costBasis == nil ? nil : 0, pnlPct: nil,
                         capitalInEur: capitalIn, capitalReturnedEur: capitalReturned,
                         distributionsEur: distributions,
                         isLive: basis.isLiveValued
@@ -287,15 +305,20 @@ extension CoreLogic {
                 var sinceValue: Decimal = 0
                 if !basis.isLiveValued {
                     for leg in legs where leg.accountId == accId
-                        && leg.bookedAt > latest.asOf && !leg.isDistribution {
+                        && leg.bookedAt > latest.asOf && !leg.isPayout {
                         sinceValue += leg.netEur
                     }
                 }
 
                 let anchor = latest.marketValueEur
                 let value = anchor + sinceValue
-                let latestCash = latest.cashValueEur
-                let latestPositions: Decimal? = latestCash.map { max(0, value - $0) }
+                // Money that arrived after the reading is sitting as cash at the broker until
+                // it's invested — crediting it to positions would overstate what's at market.
+                let latestCash: Decimal? = latest.cashValueEur.map { max(0, $0 + sinceValue) }
+                // Always known once the value is: an unreported cash figure means no cash we
+                // know of, not an unknown split. Leaving it nil dropped the whole account out
+                // of the positions/cash breakdown, so the two stopped adding up to the total.
+                let latestPositions: Decimal? = max(0, value - (latestCash ?? 0))
                 let pnl: Decimal? = costBasis.map { value - $0 }
                 let epsilon = Decimal(string: "0.000001")!
                 // Against cost basis normally, but once capital has been handed back that can
@@ -375,7 +398,7 @@ extension CoreLogic {
                     }
                     var sinceValue: Decimal = 0
                     if !basis.isLiveValued {
-                        for leg in legs where leg.accountId == accId
+                        for leg in legs where leg.accountId == accId && !leg.isPayout
                             && leg.bookedAt > anchorAt && leg.bookedAt < endOfDay {
                             sinceValue += leg.netEur
                         }
@@ -384,8 +407,11 @@ extension CoreLogic {
                     cashTotal += cash
 
                     if let opening = basis.costBasisOpeningEur {
+                        // Same payout rule as computeAccountMetrics, or the chart's cost
+                        // line drifts away from the figure on the account row.
                         var contrib: Decimal = 0
-                        for leg in legs where leg.accountId == accId && leg.bookedAt < endOfDay {
+                        for leg in legs where leg.accountId == accId && !leg.isPayout
+                            && leg.bookedAt < endOfDay {
                             if let since = basis.costBasisOpeningAt, leg.bookedAt <= since {
                                 continue
                             }
@@ -467,7 +493,11 @@ extension CoreLogic {
             _ account: Account, amountEur: Decimal?, at date: Date?, in ctx: ModelContext
         ) throws {
             account.costBasisOpeningEur = amountEur
-            account.costBasisOpeningAt = amountEur == nil ? nil : date
+            // Normalised to the UTC start of day. A date picker hands back whatever
+            // time-of-day it was opened at, and that time is the cut-off deciding which legs
+            // count — so re-saving the same figure at a different hour would silently move
+            // cost basis. Same boundary the valuation anchors use.
+            account.costBasisOpeningAt = (amountEur == nil ? nil : date).map(dayStart)
             try ctx.saveTouchingChanges()
         }
 

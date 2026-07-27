@@ -93,8 +93,14 @@ extension CoreLogic {
 
                 // Compare against the newest reading that wasn't itself written today, so a
                 // bad value recorded an hour ago can still be corrected by a good one.
+                // UTC day, matching recordValuation's overwrite window — on a local calendar
+                // the two disagree either side of midnight and the guard would compare
+                // against the very row about to be replaced.
+                var cal = Calendar(identifier: .iso8601)
+                cal.timeZone = TimeZone(identifier: "UTC")!
+                let today = cal.startOfDay(for: now)
                 let previous = (try? Investments.listValuations(for: [account.id], in: ctx))?
-                    .last(where: { Calendar.current.compare($0.asOf, to: now, toGranularity: .day) != .orderedSame })?
+                    .last(where: { $0.asOf < today })?
                     .marketValueEur
                 if isImplausible(market, previous: previous) {
                     outcome.failures.append(

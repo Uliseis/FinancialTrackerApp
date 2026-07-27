@@ -57,13 +57,20 @@ struct InvestmentsModel {
         var countedForCost = 0
         var lastUpdated: Date?
         var rows: [Row] = []
+        // Value counted against cost, not the portfolio total: an account with no cost basis
+        // (an asset whose entry price was never recorded) would otherwise have its entire
+        // value reported as profit.
+        var valueOfCostedAccounts: Decimal = 0
         for r in invRows {
             let m = metrics[r.account.id]
             if let v = m?.valueEur { totalValue += v }
-            if let c = m?.costBasisEur { totalCost += c; countedForCost += 1 }
-            if let cash = m?.latestCashEur, let pos = m?.latestPositionsEur {
-                totalCash += cash; totalPositions += pos
+            if let c = m?.costBasisEur {
+                totalCost += c
+                countedForCost += 1
+                valueOfCostedAccounts += m?.valueEur ?? 0
             }
+            totalCash += m?.latestCashEur ?? 0
+            totalPositions += m?.latestPositionsEur ?? 0
             if let la = m?.latestAsOf, lastUpdated == nil || la > lastUpdated! {
                 lastUpdated = la
             }
@@ -77,7 +84,7 @@ struct InvestmentsModel {
         }
         rows.sort { $0.name < $1.name }
 
-        let totalPnl: Decimal? = countedForCost > 0 ? totalValue - totalCost : nil
+        let totalPnl: Decimal? = countedForCost > 0 ? valueOfCostedAccounts - totalCost : nil
         let epsilon = Decimal(string: "0.000001")!
         let totalPnlPct: Decimal? =
             (totalPnl != nil && abs(totalCost) > epsilon) ? totalPnl! / totalCost : nil

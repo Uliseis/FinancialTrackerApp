@@ -390,6 +390,179 @@ final class InvestmentsTests: XCTestCase {
                 from: a, to: b, amountEur: 100, in: ctx))
     }
 
+    // MARK: - drift guards
+
+    func testFundedButNeverValuedAccountIsWorthWhatWentIn() throws {
+        let ctx = try S.makeContext()
+        let space = S.makeSpace(ctx)
+        let invGroup = makeGroup(ctx, name: "Invest", kind: .investment)
+        let acc = Account(
+            group: invGroup, space: space, externalId: "new",
+            type: .broker, institution: "X", name: "New", currency: "EUR",
+            costBasisOpeningEur: 0, costBasisOpeningAt: day(2026, 1, 1))
+        ctx.insert(acc)
+        let g = TransferGroup(pairedAt: .now); ctx.insert(g)
+        _ = S.makeTx(
+            ctx, account: acc, amount: 5_000, amountEur: 5_000, direction: .credit,
+            bookedAt: day(2026, 3, 1), isTransfer: true, transferGroup: g)
+        try ctx.save()
+
+        // Otherwise net worth falls by 5.000 the moment the money leaves the bank account.
+        let m = try XCTUnwrap(try I.loadMetrics(for: [acc], in: ctx)[acc.id])
+        XCTAssertEqual(m.valueEur, 5_000)
+        XCTAssertEqual(m.pnlEur, 0)
+        XCTAssertNil(m.anchorValueEur, "nothing has actually been read")
+        XCTAssertTrue(m.isStale, "a placeholder should ask to be replaced")
+        XCTAssertEqual(try I.sumLatestValue(for: [acc], in: ctx), 5_000)
+    }
+
+    func testContributionsAfterTheReadingCountAsCashNotPositions() throws {
+        let ctx = try S.makeContext()
+        let space = S.makeSpace(ctx)
+        let invGroup = makeGroup(ctx, name: "Invest", kind: .investment)
+        let acc = Account(
+            group: invGroup, space: space, externalId: "x",
+            type: .broker, institution: "T", name: "T", currency: "EUR")
+        ctx.insert(acc)
+        _ = makeValuation(
+            ctx, account: acc, asOf: day(2026, 1, 1), marketValueEur: 10_000, cashValueEur: 500)
+        let g = TransferGroup(pairedAt: .now); ctx.insert(g)
+        _ = S.makeTx(
+            ctx, account: acc, amount: 1_000, amountEur: 1_000, direction: .credit,
+            bookedAt: day(2026, 6, 1), isTransfer: true, transferGroup: g)
+        try ctx.save()
+
+        let m = try XCTUnwrap(try I.loadMetrics(for: [acc], in: ctx)[acc.id])
+        XCTAssertEqual(m.valueEur, 11_000)
+        XCTAssertEqual(m.latestCashEur, 1_500, "the new money hasn't been invested yet")
+        XCTAssertEqual(m.latestPositionsEur, 9_500, "positions are unchanged by a deposit")
+        XCTAssertEqual((m.latestCashEur ?? 0) + (m.latestPositionsEur ?? 0), m.valueEur)
+    }
+
+    // The summary card adds these up across accounts, so a nil on either side silently
+    // dropped a whole account out of the breakdown while it still counted in the total.
+    func testPositionsAreKnownEvenWhenCashIsNotReported() throws {
+        let ctx = try S.makeContext()
+        let space = S.makeSpace(ctx)
+        let invGroup = makeGroup(ctx, name: "Invest", kind: .investment)
+        let acc = Account(
+            group: invGroup, space: space, externalId: "x",
+            type: .broker, institution: "T", name: "T", currency: "EUR")
+        ctx.insert(acc)
+        // Crypto readings carry no cash figure at all.
+        _ = makeValuation(ctx, account: acc, asOf: day(2026, 1, 1), marketValueEur: 3_447)
+        try ctx.save()
+
+        let m = try XCTUnwrap(try I.loadMetrics(for: [acc], in: ctx)[acc.id])
+        XCTAssertNil(m.latestCashEur, "unknown, not zero")
+        XCTAssertEqual(m.latestPositionsEur, 3_447, "all of it is positions")
+        XCTAssertEqual((m.latestCashEur ?? 0) + (m.latestPositionsEur ?? 0), m.valueEur)
+    }
+
+    func testOpeningDateIsPinnedToStartOfDaySoResavingCantMoveCostBasis() throws {
+        let ctx = try S.makeContext()
+        let space = S.makeSpace(ctx)
+        let invGroup = makeGroup(ctx, name: "Invest", kind: .investment)
+        let acc = Account(
+            group: invGroup, space: space, externalId: "x",
+            type: .broker, institution: "T", name: "T", currency: "EUR")
+        ctx.insert(acc)
+        _ = makeValuation(ctx, account: acc, asOf: day(2026, 1, 1), marketValueEur: 10_000)
+        let g = TransferGroup(pairedAt: .now); ctx.insert(g)
+        // Booked at midday on the same day the opening figure is dated.
+        _ = S.makeTx(
+            ctx, account: acc, amount: 400, amountEur: 400, direction: .credit,
+            bookedAt: day(2026, 3, 1), isTransfer: true, transferGroup: g)
+        try ctx.save()
+
+        // Saved twice at different times of day — the picker hands back the current clock.
+        try I.setCostBasisOpening(
+            acc, amountEur: 9_000, at: day(2026, 3, 1).addingTimeInterval(-3 * 3600), in: ctx)
+        let first = try XCTUnwrap(try I.loadMetrics(for: [acc], in: ctx)[acc.id]).costBasisEur
+        try I.setCostBasisOpening(
+            acc, amountEur: 9_000, at: day(2026, 3, 1).addingTimeInterval(6 * 3600), in: ctx)
+        let second = try XCTUnwrap(try I.loadMetrics(for: [acc], in: ctx)[acc.id]).costBasisEur
+
+        XCTAssertEqual(first, second, "the hour the form happened to be open must not matter")
+        XCTAssertEqual(first, 9_400, "legs during that day count")
+    }
+
+    func testInflowTaggedAsIncomeIsStillCapital() throws {
+        let ctx = try S.makeContext()
+        let (acc, income) = try makeYieldingAsset(ctx)
+        let g = TransferGroup(pairedAt: .now); ctx.insert(g)
+        // A reinvested dividend arrives rather than being paid out.
+        _ = S.makeTx(
+            ctx, account: acc, amount: 500, amountEur: 500, direction: .credit,
+            bookedAt: day(2026, 4, 1), isTransfer: true, transferGroup: g, category: income)
+        try ctx.save()
+
+        let m = try XCTUnwrap(try I.loadMetrics(for: [acc], in: ctx)[acc.id])
+        XCTAssertEqual(m.distributionsEur, 0, "nothing was paid out")
+        XCTAssertEqual(m.capitalInEur, 25_500)
+        XCTAssertEqual(m.valueEur, 25_500)
+        XCTAssertEqual(m.totalReturnEur, 0, "arriving money is not a gain")
+    }
+
+    func testMetricsDoNotDependOnValuationOrdering() throws {
+        let ctx = try S.makeContext()
+        let space = S.makeSpace(ctx)
+        let invGroup = makeGroup(ctx, name: "Invest", kind: .investment)
+        let acc = Account(
+            group: invGroup, space: space, externalId: "x",
+            type: .broker, institution: "T", name: "T", currency: "EUR")
+        ctx.insert(acc)
+        let old = makeValuation(ctx, account: acc, asOf: day(2026, 1, 1), marketValueEur: 1_000)
+        let new = makeValuation(ctx, account: acc, asOf: day(2026, 6, 1), marketValueEur: 1_500)
+        try ctx.save()
+
+        let bases = [I.AccountBasis(accountId: acc.id)]
+        let forwards = I.computeAccountMetrics(bases: bases, valuations: [old, new], legs: [])
+        let backwards = I.computeAccountMetrics(bases: bases, valuations: [new, old], legs: [])
+        XCTAssertEqual(forwards[acc.id]?.valueEur, 1_500)
+        XCTAssertEqual(forwards[acc.id]?.valueEur, backwards[acc.id]?.valueEur)
+    }
+
+    // The chart and the account rows are computed by two separate functions; if they ever
+    // disagree, one of them is lying to the user.
+    func testChartsLastPointAgreesWithTheHeadlineFigures() throws {
+        let ctx = try S.makeContext()
+        let (bali, income) = try makeYieldingAsset(ctx)
+        let space = try XCTUnwrap(bali.space)
+        let invGroup = try XCTUnwrap(bali.group)
+        let broker = Account(
+            group: invGroup, space: space, externalId: "broker",
+            type: .broker, institution: "T", name: "Broker", currency: "EUR",
+            costBasisOpeningEur: 5_000, costBasisOpeningAt: day(2026, 1, 1))
+        ctx.insert(broker)
+        _ = makeValuation(ctx, account: broker, asOf: day(2026, 1, 1), marketValueEur: 5_000)
+        _ = makeValuation(ctx, account: broker, asOf: day(2026, 5, 1), marketValueEur: 6_000)
+        let g = TransferGroup(pairedAt: .now); ctx.insert(g)
+        _ = S.makeTx(
+            ctx, account: broker, amount: 800, amountEur: 800, direction: .credit,
+            bookedAt: day(2026, 6, 1), isTransfer: true, transferGroup: g)
+        _ = S.makeTx(
+            ctx, account: bali, amount: -250, amountEur: -250, direction: .debit,
+            bookedAt: day(2026, 6, 15), isTransfer: true, transferGroup: g, category: income)
+        try ctx.save()
+
+        let accounts = [bali, broker]
+        let ids = accounts.map(\.id)
+        let bases = accounts.map(I.basis(for:))
+        let valuations = try I.listValuations(for: ids, in: ctx)
+        let legs = try I.listContributionLegs(for: ids, in: ctx)
+        let metrics = I.computeAccountMetrics(bases: bases, valuations: valuations, legs: legs)
+        let series = I.computePortfolioSeries(bases: bases, valuations: valuations, legs: legs)
+
+        let headlineValue = metrics.values.reduce(Decimal(0)) { $0 + ($1.valueEur ?? 0) }
+        let headlineCost = metrics.values.reduce(Decimal(0)) { $0 + ($1.costBasisEur ?? 0) }
+        let last = try XCTUnwrap(series.last)
+        XCTAssertEqual(last.marketValueEur, headlineValue)
+        XCTAssertEqual(last.costBasisEur, headlineCost)
+        XCTAssertEqual(headlineValue, 31_800, "25.000 Bali + 6.000 + 800 paid in")
+        XCTAssertEqual(headlineCost, 30_800, "25.000 + 5.000 + 800; the payout is not a sale")
+    }
+
     func testCostBasisIsNilWithoutAnOpeningFigure() throws {
         let ctx = try S.makeContext()
         let space = S.makeSpace(ctx)
