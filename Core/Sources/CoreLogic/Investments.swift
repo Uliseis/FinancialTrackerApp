@@ -307,6 +307,15 @@ extension CoreLogic {
             return valuation
         }
 
+
+        // A wrong snapshot isn't just cosmetic: the OLDEST one is the P&L baseline, so a
+        // partial import silently reads as profit forever.
+        @MainActor
+        public static func deleteValuation(_ valuation: PortfolioValuation, in ctx: ModelContext) throws {
+            ctx.delete(valuation)
+            try ctx.saveTouchingChanges()
+        }
+
         private static func dayStart(_ date: Date) -> Date {
             var cal = Calendar(identifier: .iso8601)
             cal.timeZone = TimeZone(identifier: "UTC")!
