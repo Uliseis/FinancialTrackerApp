@@ -17,6 +17,18 @@ extension CoreLogic {
         public static let cryptoPrefix = "crypto:"
         public static let trading212Source = "t212"
 
+        // A mistyped holding quantity produces a plausible-looking number that is wrong by
+        // orders of magnitude (0,06033031 BTC read as 6033031 wrote a €345bn valuation).
+        // Automatic writes are refused past this factor; typing a value by hand is not
+        // guarded, because typing it IS the confirmation.
+        public static let implausibleFactor: Decimal = 100
+
+        public static func isImplausible(_ candidate: Decimal, previous: Decimal?) -> Bool {
+            guard let previous, previous > 0, candidate > 0 else { return false }
+            return candidate > previous * implausibleFactor
+                || candidate * implausibleFactor < previous
+        }
+
         public static func coinId(from source: String?) -> String? {
             guard let source, source.hasPrefix(cryptoPrefix) else { return nil }
             let id = String(source.dropFirst(cryptoPrefix.count))
@@ -78,6 +90,19 @@ extension CoreLogic {
                 }
 
                 guard let market, market > 0 else { continue }
+
+                // Compare against the newest reading that wasn't itself written today, so a
+                // bad value recorded an hour ago can still be corrected by a good one.
+                let previous = (try? Investments.listValuations(for: [account.id], in: ctx))?
+                    .last(where: { Calendar.current.compare($0.asOf, to: now, toGranularity: .day) != .orderedSame })?
+                    .marketValueEur
+                if isImplausible(market, previous: previous) {
+                    outcome.failures.append(
+                        "\(account.displayName): \(Self.plain(market)) is far from the last "
+                        + "reading (\(Self.plain(previous ?? 0))). Check the quantity; not saved.")
+                    continue
+                }
+
                 do {
                     try Investments.recordValuation(
                         account: account, marketValueEur: market, cashValueEur: cash,
@@ -88,6 +113,14 @@ extension CoreLogic {
                 }
             }
             return outcome
+        }
+
+        // No currency formatter in Core; the message only needs to be readable.
+        private static func plain(_ value: Decimal) -> String {
+            var rounded = Decimal()
+            var input = value
+            NSDecimalRound(&rounded, &input, 2, .plain)
+            return "\(rounded) EUR"
         }
     }
 }

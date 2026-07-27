@@ -61,6 +61,7 @@ enum TransferTestSupport {
         route: TransferRoute? = nil,
         sharedExpenseGroup: SharedExpenseGroup? = nil,
         categorySource: CategorySource = .bank,
+        category: CoreModel.Category? = nil,
         externalId: String? = nil
     ) -> Transaction {
         let tx = Transaction(
@@ -73,6 +74,7 @@ enum TransferTestSupport {
             direction: direction,
             description: description,
             counterparty: counterparty,
+            category: category,
             categorySource: categorySource,
             isTransfer: isTransfer,
             transferGroup: transferGroup,

@@ -118,7 +118,7 @@ struct RecordValuationView: View {
             }
             DatePicker("On", selection: $basisAt, displayedComponents: .date)
             if let m = metrics, let cost = m.costBasisEur {
-                LabeledContent("Total paid in") { MoneyText(amount: cost) }
+                LabeledContent("Still invested") { MoneyText(amount: cost) }
                     .foregroundStyle(.secondary)
             }
         } header: {
@@ -126,6 +126,37 @@ struct RecordValuationView: View {
         } footer: {
             Text("Set this once: what the account already held on that date. Every transfer booked afterwards is counted for you, so paying money in never shows up as a loss.")
         }
+
+        // Only meaningful once something has come back out — a fund account that has never
+        // paid a distribution would just show three zeros.
+        if let m = metrics, m.distributionsEur != 0 || m.capitalReturnedEur != 0 {
+            Section {
+                if m.distributionsEur != 0 {
+                    LabeledContent("Income received") { MoneyText(amount: m.distributionsEur) }
+                }
+                if m.capitalReturnedEur != 0 {
+                    LabeledContent("Capital returned") { MoneyText(amount: m.capitalReturnedEur) }
+                }
+                if let total = m.totalReturnEur {
+                    LabeledContent("Total return") {
+                        Text(signed(total, pct: m.totalReturnPct))
+                            .font(.readout(.body))
+                            .foregroundStyle(Theme.amountColor(total))
+                    }
+                }
+            } header: {
+                Text("What it's given back")
+            } footer: {
+                Text("Value today, plus everything paid out and handed back, less what went in. Money out counts as income when you categorise it as income — rent or dividends — and as capital returned otherwise.")
+            }
+        }
+    }
+
+    private func signed(_ amount: Decimal, pct: Decimal?) -> String {
+        let text = Money.format(amount, currency: "EUR")
+        let base = amount > 0 ? "+\(text)" : text
+        guard let pct else { return base }
+        return "\(base)  (\(pct.formatted(.percent.precision(.fractionLength(1)))))"
     }
 
     @ViewBuilder

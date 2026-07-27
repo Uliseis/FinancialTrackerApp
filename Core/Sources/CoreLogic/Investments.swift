@@ -16,10 +16,24 @@ extension CoreLogic {
             public let group: AccountGroup
         }
 
+        // A leg is either capital (money in, or capital handed back) or a distribution —
+        // rent, dividends, coupons. The difference matters: a €250 payout from a property
+        // doesn't reduce what you have invested in it, it IS the return. Netting the two
+        // would make a yielding asset look like it was being sold off a slice at a time.
         public struct ContributionLeg: Equatable, Sendable {
             public let accountId: UUID
             public let bookedAt: Date
             public let netEur: Decimal
+            public let isDistribution: Bool
+
+            public init(
+                accountId: UUID, bookedAt: Date, netEur: Decimal, isDistribution: Bool = false
+            ) {
+                self.accountId = accountId
+                self.bookedAt = bookedAt
+                self.netEur = netEur
+                self.isDistribution = isDistribution
+            }
         }
 
         // Both sides of an investment account are an anchor plus every leg booked after it —
@@ -41,8 +55,28 @@ extension CoreLogic {
             public let costBasisEur: Decimal?
             public let pnlEur: Decimal?
             public let pnlPct: Decimal?
+            // Gross money ever put in, before anything was handed back. The denominator for
+            // return on an asset that has already repaid some capital.
+            public let capitalInEur: Decimal?
+            public let capitalReturnedEur: Decimal
+            // Rent, dividends, coupons — realised return that never touched cost basis.
+            public let distributionsEur: Decimal
             // True when the value came from a live feed rather than a typed snapshot.
             public let isLive: Bool
+
+            // Everything the asset has produced: what it's worth, plus what it has already
+            // paid out and handed back, less what went in. Correct before, during and after
+            // an exit — a sold holding worth nothing still shows what it made.
+            public var totalReturnEur: Decimal? {
+                guard let value = valueEur, let capitalIn = capitalInEur else { return nil }
+                return value + capitalReturnedEur + distributionsEur - capitalIn
+            }
+
+            public var totalReturnPct: Decimal? {
+                guard let r = totalReturnEur, let capitalIn = capitalInEur,
+                      capitalIn > Decimal(string: "0.000001")! else { return nil }
+                return r / capitalIn
+            }
 
             public var isStale: Bool {
                 guard !isLive, let latestAsOf else { return false }
@@ -123,8 +157,17 @@ extension CoreLogic {
             return candidates.compactMap { tx in
                 guard let accId = tx.account?.id, idSet.contains(accId) else { return nil }
                 guard let eur = tx.amountEur else { return nil }
-                return ContributionLeg(accountId: accId, bookedAt: tx.bookedAt, netEur: eur)
+                return ContributionLeg(
+                    accountId: accId, bookedAt: tx.bookedAt, netEur: eur,
+                    isDistribution: isDistribution(tx))
             }
+        }
+
+        // Categorising the payout as income is what marks it a distribution — no new field to
+        // learn, and a rule can do it automatically. Route mirrors carry no category of their
+        // own, so the originating bank row is consulted too.
+        static func isDistribution(_ tx: Transaction) -> Bool {
+            tx.category?.kind == "income" || tx.routedFromTx?.category?.kind == "income"
         }
 
         public static func basis(for account: Account) -> AccountBasis {
@@ -201,16 +244,27 @@ extension CoreLogic {
                 let list = byAccount[accId] ?? []
                 let latest = list.last
 
-                // Cost basis: opening figure plus every leg after it. With no opening date the
-                // account's whole ledger counts, which is right for one opened inside the data.
-                let costBasis: Decimal? = basis.costBasisOpeningEur.map { opening in
-                    let since = basis.costBasisOpeningAt
-                    return legs.reduce(opening) { acc, leg in
-                        guard leg.accountId == accId else { return acc }
-                        if let since, leg.bookedAt <= since { return acc }
-                        return acc + leg.netEur
+                // Cost basis: opening figure plus every capital leg after it. With no opening
+                // date the account's whole ledger counts, which is right for one opened
+                // inside the data. Distributions are tallied separately — they are return,
+                // not a withdrawal of capital.
+                // Without an opening figure there is no cost basis at all: deriving one from
+                // the legs alone would silently omit whatever the account held before the
+                // ledger starts, and quietly report that gap as profit.
+                var capitalIn: Decimal? = basis.costBasisOpeningEur
+                var capitalReturned: Decimal = 0
+                var distributions: Decimal = 0
+                for leg in legs where leg.accountId == accId {
+                    if let since = basis.costBasisOpeningAt, leg.bookedAt <= since { continue }
+                    if leg.isDistribution {
+                        distributions += abs(leg.netEur)
+                    } else if leg.netEur < 0 {
+                        capitalReturned += -leg.netEur
+                    } else if let running = capitalIn {
+                        capitalIn = running + leg.netEur
                     }
                 }
+                let costBasis: Decimal? = capitalIn.map { $0 - capitalReturned }
 
                 guard let latest else {
                     out[accId] = AccountMetrics(
@@ -219,6 +273,8 @@ extension CoreLogic {
                         latestCashEur: nil, latestPositionsEur: nil,
                         contributionsSinceValueEur: 0,
                         costBasisEur: costBasis, pnlEur: nil, pnlPct: nil,
+                        capitalInEur: capitalIn, capitalReturnedEur: capitalReturned,
+                        distributionsEur: distributions,
                         isLive: basis.isLiveValued
                     )
                     continue
@@ -226,10 +282,12 @@ extension CoreLogic {
 
                 // Strict >: the snapshot already reflects same-instant moves.
                 // A live-valued account is current by definition — adding legs would
-                // double-count money the feed already sees.
+                // double-count money the feed already sees. Distributions are skipped: a
+                // property paying rent is not worth less afterwards.
                 var sinceValue: Decimal = 0
                 if !basis.isLiveValued {
-                    for leg in legs where leg.accountId == accId && leg.bookedAt > latest.asOf {
+                    for leg in legs where leg.accountId == accId
+                        && leg.bookedAt > latest.asOf && !leg.isDistribution {
                         sinceValue += leg.netEur
                     }
                 }
@@ -240,9 +298,14 @@ extension CoreLogic {
                 let latestPositions: Decimal? = latestCash.map { max(0, value - $0) }
                 let pnl: Decimal? = costBasis.map { value - $0 }
                 let epsilon = Decimal(string: "0.000001")!
+                // Against cost basis normally, but once capital has been handed back that can
+                // reach zero or go negative and the ratio stops meaning anything; gross
+                // capital in is the stable denominator there.
                 let pnlPct: Decimal? = {
-                    guard let pnl, let costBasis, abs(costBasis) > epsilon else { return nil }
-                    return pnl / costBasis
+                    guard let pnl else { return nil }
+                    if let costBasis, costBasis > epsilon { return pnl / costBasis }
+                    if let capitalIn, capitalIn > epsilon { return pnl / capitalIn }
+                    return nil
                 }()
 
                 out[accId] = AccountMetrics(
@@ -256,6 +319,9 @@ extension CoreLogic {
                     costBasisEur: costBasis,
                     pnlEur: pnl,
                     pnlPct: pnlPct,
+                    capitalInEur: capitalIn,
+                    capitalReturnedEur: capitalReturned,
+                    distributionsEur: distributions,
                     isLive: basis.isLiveValued
                 )
             }

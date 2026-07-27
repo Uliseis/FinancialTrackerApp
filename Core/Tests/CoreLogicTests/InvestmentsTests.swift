@@ -278,6 +278,118 @@ final class InvestmentsTests: XCTestCase {
         XCTAssertEqual(m.costBasisEur, 1300)
     }
 
+    // The Prophero Bali shape: capital in, then a yield, then an exit. Rent must not read as
+    // the asset being sold off in slices.
+    @MainActor
+    private func makeYieldingAsset(_ ctx: ModelContext) throws -> (Account, CoreModel.Category) {
+        let space = S.makeSpace(ctx)
+        let invGroup = makeGroup(ctx, name: "Real Estate", kind: .investment)
+        let acc = Account(
+            group: invGroup, space: space, externalId: "bali",
+            type: .broker, institution: "Prophero", name: "Bali", currency: "EUR",
+            costBasisOpeningEur: 25_000, costBasisOpeningAt: day(2026, 1, 1))
+        ctx.insert(acc)
+        let income = CoreModel.Category(name: "Investment income", kind: "income")
+        ctx.insert(income)
+        _ = makeValuation(ctx, account: acc, asOf: day(2026, 1, 1), marketValueEur: 25_000)
+        return (acc, income)
+    }
+
+    func testDistributionsAreReturnNotAWithdrawalOfCapital() throws {
+        let ctx = try S.makeContext()
+        let (acc, income) = try makeYieldingAsset(ctx)
+        let g = TransferGroup(pairedAt: .now); ctx.insert(g)
+        for month in 4...6 {
+            _ = S.makeTx(
+                ctx, account: acc, amount: -250, amountEur: -250, direction: .debit,
+                bookedAt: day(2026, month, 1), isTransfer: true, transferGroup: g,
+                category: income)
+        }
+        try ctx.save()
+
+        let m = try XCTUnwrap(try I.loadMetrics(for: [acc], in: ctx)[acc.id])
+        XCTAssertEqual(m.costBasisEur, 25_000, "rent doesn't reduce what's invested")
+        XCTAssertEqual(m.distributionsEur, 750)
+        XCTAssertEqual(m.valueEur, 25_000, "the property isn't worth less for having paid out")
+        XCTAssertEqual(m.totalReturnEur, 750)
+        XCTAssertEqual(m.totalReturnPct, Decimal(750) / Decimal(25_000))
+    }
+
+    func testExitReturnsCapitalAndKeepsTotalReturnHonest() throws {
+        let ctx = try S.makeContext()
+        let (acc, income) = try makeYieldingAsset(ctx)
+        let g = TransferGroup(pairedAt: .now); ctx.insert(g)
+        _ = S.makeTx(
+            ctx, account: acc, amount: -3_200, amountEur: -3_200, direction: .debit,
+            bookedAt: day(2026, 6, 1), isTransfer: true, transferGroup: g, category: income)
+        // Sold: 28.000 back, uncategorised, so it reads as capital returned.
+        _ = S.makeTx(
+            ctx, account: acc, amount: -28_000, amountEur: -28_000, direction: .debit,
+            bookedAt: day(2028, 6, 1), isTransfer: true, transferGroup: g)
+        _ = makeValuation(ctx, account: acc, asOf: day(2028, 6, 2), marketValueEur: 0)
+        try ctx.save()
+
+        let m = try XCTUnwrap(try I.loadMetrics(for: [acc], in: ctx)[acc.id])
+        XCTAssertEqual(m.valueEur, 0, "nothing left to hold")
+        XCTAssertEqual(m.capitalInEur, 25_000)
+        XCTAssertEqual(m.capitalReturnedEur, 28_000)
+        XCTAssertEqual(m.distributionsEur, 3_200)
+        XCTAssertEqual(m.totalReturnEur, 6_200, "3.000 on the sale + 3.200 of yield")
+        XCTAssertEqual(m.totalReturnPct, Decimal(6_200) / Decimal(25_000))
+    }
+
+    // MyInvestor's shape: one bank transfer arrives, then part of it is allocated to the
+    // pension wrapper. Only the arrival has a bank row, so the split has to be recordable.
+    func testInternalTransferMovesCostBasisBetweenTwoAccounts() throws {
+        let ctx = try S.makeContext()
+        let space = S.makeSpace(ctx)
+        let invGroup = makeGroup(ctx, name: "Invest", kind: .investment)
+        let funds = Account(
+            group: invGroup, space: space, externalId: "funds",
+            type: .broker, institution: "MyInvestor", name: "Funds", currency: "EUR",
+            costBasisOpeningEur: 20_000, costBasisOpeningAt: day(2026, 1, 1))
+        let pension = Account(
+            group: invGroup, space: space, externalId: "pension",
+            type: .broker, institution: "MyInvestor", name: "Pension", currency: "EUR",
+            costBasisOpeningEur: 2_000, costBasisOpeningAt: day(2026, 1, 1))
+        ctx.insert(funds); ctx.insert(pension)
+        _ = makeValuation(ctx, account: funds, asOf: day(2026, 2, 1), marketValueEur: 20_500)
+        _ = makeValuation(ctx, account: pension, asOf: day(2026, 2, 1), marketValueEur: 2_100)
+        try ctx.save()
+
+        try CoreLogic.Transfers.createInternalTransfer(
+            from: funds, to: pension, amountEur: 1_500,
+            bookedAt: day(2026, 3, 1), note: "2026 pension contribution", in: ctx)
+
+        let metrics = try I.loadMetrics(for: [funds, pension], in: ctx)
+        let f = try XCTUnwrap(metrics[funds.id])
+        let p = try XCTUnwrap(metrics[pension.id])
+        XCTAssertEqual(f.costBasisEur, 18_500, "20.000 − 1.500")
+        XCTAssertEqual(p.costBasisEur, 3_500, "2.000 + 1.500")
+        XCTAssertEqual(
+            (f.costBasisEur ?? 0) + (p.costBasisEur ?? 0), 22_000,
+            "nothing invented, nothing lost")
+        XCTAssertEqual(f.valueEur, 19_000, "the money left the funds account")
+        XCTAssertEqual(p.valueEur, 3_600)
+    }
+
+    func testInternalTransferRefusesAcrossSpaces() throws {
+        let ctx = try S.makeContext()
+        let invGroup = makeGroup(ctx, name: "Invest", kind: .investment)
+        let a = Account(
+            group: invGroup, space: S.makeSpace(ctx), externalId: "a",
+            type: .broker, institution: "X", name: "A", currency: "EUR")
+        let b = Account(
+            group: invGroup, space: S.makeSpace(ctx), externalId: "b",
+            type: .broker, institution: "X", name: "B", currency: "EUR")
+        ctx.insert(a); ctx.insert(b)
+        try ctx.save()
+
+        XCTAssertThrowsError(
+            try CoreLogic.Transfers.createInternalTransfer(
+                from: a, to: b, amountEur: 100, in: ctx))
+    }
+
     func testCostBasisIsNilWithoutAnOpeningFigure() throws {
         let ctx = try S.makeContext()
         let space = S.makeSpace(ctx)
