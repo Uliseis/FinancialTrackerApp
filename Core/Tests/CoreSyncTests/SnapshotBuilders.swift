@@ -60,6 +60,11 @@ enum Build {
             archived: false, excluded: false,
             manualOpeningBalance: nil,
             balanceAnchor: nil, balanceAnchorAt: nil,
+            // Non-nil so the round-trip test fails if a field is missed in encode/decode.
+            costBasisOpeningEur: Decimal(string: "21902.59"),
+            costBasisOpeningAt: epoch,
+            liveValueSource: "crypto:bitcoin",
+            assetQuantity: Decimal(string: "0.07123456"),
             createdAt: epoch, clock: clock
         )
     }

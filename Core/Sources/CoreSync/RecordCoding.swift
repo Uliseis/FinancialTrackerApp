@@ -118,6 +118,10 @@ public enum RecordCoding {
         r["manualOpeningBalance"] = s.manualOpeningBalance.map(decimalString) as CKRecordValue?
         r["balanceAnchor"] = s.balanceAnchor.map(decimalString) as CKRecordValue?
         r["balanceAnchorAt"] = s.balanceAnchorAt as CKRecordValue?
+        r["costBasisOpeningEur"] = s.costBasisOpeningEur.map(decimalString) as CKRecordValue?
+        r["costBasisOpeningAt"] = s.costBasisOpeningAt as CKRecordValue?
+        r["liveValueSource"] = s.liveValueSource as CKRecordValue?
+        r["assetQuantity"] = s.assetQuantity.map(decimalString) as CKRecordValue?
         r["createdAt"] = s.createdAt as CKRecordValue
         r["clock"] = s.clock as CKRecordValue
         return r
@@ -145,6 +149,10 @@ public enum RecordCoding {
             manualOpeningBalance: try optionalDecimal(r, "manualOpeningBalance"),
             balanceAnchor: try optionalDecimal(r, "balanceAnchor"),
             balanceAnchorAt: optionalDate(r, "balanceAnchorAt"),
+            costBasisOpeningEur: try optionalDecimal(r, "costBasisOpeningEur"),
+            costBasisOpeningAt: optionalDate(r, "costBasisOpeningAt"),
+            liveValueSource: optionalString(r, "liveValueSource"),
+            assetQuantity: try optionalDecimal(r, "assetQuantity"),
             createdAt: try requireDate(r, "createdAt"),
             clock: try requireDate(r, "clock")
         )

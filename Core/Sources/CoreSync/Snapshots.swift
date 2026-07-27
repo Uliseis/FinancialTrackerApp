@@ -108,6 +108,10 @@ public struct AccountSnapshot: SyncSnapshot {
     public let manualOpeningBalance: Decimal?
     public let balanceAnchor: Decimal?
     public let balanceAnchorAt: Date?
+    public let costBasisOpeningEur: Decimal?
+    public let costBasisOpeningAt: Date?
+    public let liveValueSource: String?
+    public let assetQuantity: Decimal?
     public let createdAt: Date
     public let clock: Date
 
@@ -122,6 +126,8 @@ public struct AccountSnapshot: SyncSnapshot {
         archived: Bool, excluded: Bool,
         manualOpeningBalance: Decimal? = nil,
         balanceAnchor: Decimal? = nil, balanceAnchorAt: Date? = nil,
+        costBasisOpeningEur: Decimal? = nil, costBasisOpeningAt: Date? = nil,
+        liveValueSource: String? = nil, assetQuantity: Decimal? = nil,
         createdAt: Date,
         clock: Date
     ) {
@@ -144,6 +150,10 @@ public struct AccountSnapshot: SyncSnapshot {
         self.manualOpeningBalance = manualOpeningBalance
         self.balanceAnchor = balanceAnchor
         self.balanceAnchorAt = balanceAnchorAt
+        self.costBasisOpeningEur = costBasisOpeningEur
+        self.costBasisOpeningAt = costBasisOpeningAt
+        self.liveValueSource = liveValueSource
+        self.assetQuantity = assetQuantity
         self.createdAt = createdAt
         self.clock = clock
     }

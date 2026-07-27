@@ -25,6 +25,7 @@ struct SettingsView: View {
                 }
                 Section {
                     SettingsLinkRow(title: "Connections", systemImage: "link", destination: .connections)
+                    SettingsLinkRow(title: "Trading 212", systemImage: "chart.line.uptrend.xyaxis", destination: .trading212)
                 }
                 Section("Money") {
                     SettingsLinkRow(title: "Transfers", systemImage: "arrow.left.arrow.right", destination: .transfers)
@@ -65,6 +66,7 @@ struct SettingsView: View {
                 case .transferRoutes: ManageTransferRoutesView()
                 case .spaces: ManageSpacesView()
                 case .groups: ManageGroupsView()
+                case .trading212: Trading212SettingsView()
                 }
             }
             .navigationDestination(for: Connection.self) { ConnectionDetailView(connection: $0) }
@@ -126,7 +128,7 @@ struct SettingsView: View {
 }
 
 enum SettingsDestination: Hashable {
-    case connections, transfers, sharedExpenses, budgets, categories, rules, transferRoutes, spaces, groups
+    case connections, transfers, sharedExpenses, budgets, categories, rules, transferRoutes, spaces, groups, trading212
 }
 
 // A Settings navigation row: teal icon chip + title, pushing a destination.

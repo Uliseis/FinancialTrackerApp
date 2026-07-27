@@ -18,9 +18,13 @@ struct InvestmentsModel {
         let id: UUID
         let name: String
         let group: String
-        let latestEur: Decimal?
+        let valueEur: Decimal?
         let pnlEur: Decimal?
         let pnlPct: Decimal?
+        let contributionsSinceValueEur: Decimal
+        let isLive: Bool
+        let isStale: Bool
+        let hasCostBasis: Bool
     }
 
     static let empty = InvestmentsModel(
@@ -34,14 +38,16 @@ struct InvestmentsModel {
             spaceId: spaceId, defaultSpaceId: defaultId, in: ctx
         ), !invRows.isEmpty else { return empty }
 
-        let ids = invRows.map { $0.account.id }
+        let accounts = invRows.map(\.account)
+        let ids = accounts.map(\.id)
+        let bases = accounts.map(CoreLogic.Investments.basis(for:))
         let valuations = (try? CoreLogic.Investments.listValuations(for: ids, in: ctx)) ?? []
         let legs = (try? CoreLogic.Investments.listContributionLegs(for: ids, in: ctx)) ?? []
         let metrics = CoreLogic.Investments.computeAccountMetrics(
-            investmentAccountIds: ids, valuations: valuations, legs: legs
+            bases: bases, valuations: valuations, legs: legs
         )
         let series = CoreLogic.Investments.computePortfolioSeries(
-            investmentAccountIds: ids, valuations: valuations, legs: legs
+            bases: bases, valuations: valuations, legs: legs
         )
 
         var totalValue: Decimal = 0
@@ -53,7 +59,7 @@ struct InvestmentsModel {
         var rows: [Row] = []
         for r in invRows {
             let m = metrics[r.account.id]
-            if let v = m?.latestEur { totalValue += v }
+            if let v = m?.valueEur { totalValue += v }
             if let c = m?.costBasisEur { totalCost += c; countedForCost += 1 }
             if let cash = m?.latestCashEur, let pos = m?.latestPositionsEur {
                 totalCash += cash; totalPositions += pos
@@ -63,7 +69,10 @@ struct InvestmentsModel {
             }
             rows.append(Row(
                 id: r.account.id, name: r.account.displayName, group: r.group.name,
-                latestEur: m?.latestEur, pnlEur: m?.pnlEur, pnlPct: m?.pnlPct
+                valueEur: m?.valueEur, pnlEur: m?.pnlEur, pnlPct: m?.pnlPct,
+                contributionsSinceValueEur: m?.contributionsSinceValueEur ?? 0,
+                isLive: m?.isLive ?? false, isStale: m?.isStale ?? false,
+                hasCostBasis: m?.costBasisEur != nil
             ))
         }
         rows.sort { $0.name < $1.name }

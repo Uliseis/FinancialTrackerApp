@@ -103,9 +103,10 @@ struct DashboardModel {
 
         // Investment value ignores `excluded` (investment accounts are typically off cash
         // net worth but still counted as investments) — same scoping as the Investments tab.
-        let investmentIds = (try? CoreLogic.Investments.listAccountIdsInSpace(
-            spaceId: currentId, defaultSpaceId: defaultId, in: ctx)) ?? []
-        let investmentValue = (try? CoreLogic.Investments.sumLatestValue(for: investmentIds, in: ctx)) ?? 0
+        let investmentAccounts = (try? CoreLogic.Investments.listAccountsInSpace(
+            spaceId: currentId, defaultSpaceId: defaultId, in: ctx))?.map(\.account) ?? []
+        let investmentValue =
+            (try? CoreLogic.Investments.sumLatestValue(for: investmentAccounts, in: ctx)) ?? 0
 
         let accountIds = Set(inScope.map { $0.id })
         let incomeIds = CoreLogic.Dashboard.incomeAccountIds(from: inScope)

@@ -96,6 +96,7 @@ struct OdysseyFinanceApp: App {
                         CCFinalize.runIfRequested(modelContainer)
                         CCAudit.runIfRequested(modelContainer)
                         QuickAddSignFix.runIfRequested(modelContainer)
+                        InvestmentBasisMigration.runIfRequested(modelContainer)
                         #endif
                     } catch {
                         // Engine may fail to start if iCloud isn't available; the app still works
