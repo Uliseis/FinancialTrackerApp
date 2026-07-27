@@ -373,6 +373,35 @@ final class InvestmentsTests: XCTestCase {
         XCTAssertEqual(p.valueEur, 3_600)
     }
 
+    func testLastInternalTransferOffersTheRecurringTopUp() throws {
+        let ctx = try S.makeContext()
+        let space = S.makeSpace(ctx)
+        let invGroup = makeGroup(ctx, name: "Invest", kind: .investment)
+        let funds = Account(
+            group: invGroup, space: space, externalId: "funds",
+            type: .broker, institution: "MyInvestor", name: "Funds", currency: "EUR")
+        let pension = Account(
+            group: invGroup, space: space, externalId: "pension",
+            type: .broker, institution: "MyInvestor", name: "Pension", currency: "EUR")
+        ctx.insert(funds); ctx.insert(pension)
+        try ctx.save()
+
+        XCTAssertNil(try CoreLogic.Transfers.lastInternalTransfer(into: pension, in: ctx))
+
+        try CoreLogic.Transfers.createInternalTransfer(
+            from: funds, to: pension, amountEur: 125, bookedAt: day(2026, 5, 26), in: ctx)
+        try CoreLogic.Transfers.createInternalTransfer(
+            from: funds, to: pension, amountEur: 125, bookedAt: day(2026, 6, 19), in: ctx)
+
+        let s = try XCTUnwrap(try CoreLogic.Transfers.lastInternalTransfer(into: pension, in: ctx))
+        XCTAssertEqual(s.amountEur, 125)
+        XCTAssertEqual(s.sourceId, funds.id)
+        XCTAssertEqual(s.lastBookedAt, day(2026, 6, 19), "the most recent one")
+
+        // The suggestion must not fire on the account the money came FROM.
+        XCTAssertNil(try CoreLogic.Transfers.lastInternalTransfer(into: funds, in: ctx))
+    }
+
     func testInternalTransferRefusesAcrossSpaces() throws {
         let ctx = try S.makeContext()
         let invGroup = makeGroup(ctx, name: "Invest", kind: .investment)

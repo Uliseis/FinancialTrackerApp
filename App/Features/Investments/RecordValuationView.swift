@@ -58,10 +58,15 @@ struct RecordValuationView: View {
         try? CoreLogic.Investments.loadMetrics(for: [account], in: ctx)[account.id]
     }
 
+    private var repeatSuggestion: CoreLogic.Transfers.RepeatSuggestion? {
+        try? CoreLogic.Transfers.lastInternalTransfer(into: account, in: ctx)
+    }
+
     var body: some View {
         NavigationStack {
             Form {
                 valueSection
+                topUpSection
                 costBasisSection
                 liveSourceSection
                 historySection
@@ -104,6 +109,32 @@ struct RecordValuationView: View {
             Text("What it's worth")
         } footer: {
             Text("Positions and cash as your broker shows them. Money transferred in after this date is added on top automatically, so this figure only has to keep up with the market. Recording twice on the same day replaces the earlier entry.")
+        }
+    }
+
+    // An account fed by hand from another one — a pension wrapper topped up from the broker's
+    // cash — gets its recurring move as a single tap, taken from the last one made.
+    @ViewBuilder
+    private var topUpSection: some View {
+        if let suggestion = repeatSuggestion {
+            Section {
+                Button {
+                    repeat_(suggestion)
+                } label: {
+                    LabeledContent {
+                        Text(Money.format(suggestion.amountEur, currency: "EUR"))
+                            .font(.readout(.body))
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Label("Top Up Again", systemImage: "arrow.trianglehead.2.clockwise")
+                            Text("from \(suggestion.sourceName)")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            } footer: {
+                Text("Books the same move again, dated today. Last one \(suggestion.lastBookedAt.formatted(date: .abbreviated, time: .omitted)).")
+            }
         }
     }
 
@@ -246,6 +277,23 @@ struct RecordValuationView: View {
     // have to be parsed back out again.
     private func decimalField(_ value: Decimal) -> String {
         "\(value)"
+    }
+
+    private func repeat_(_ suggestion: CoreLogic.Transfers.RepeatSuggestion) {
+        // #Predicate can't reach through a struct property; bind it first.
+        let sourceId = suggestion.sourceId
+        guard let source = try? ctx.fetch(FetchDescriptor<Account>(
+            predicate: #Predicate { $0.id == sourceId })).first else {
+            saveError = "That account is no longer available."
+            return
+        }
+        do {
+            try CoreLogic.Transfers.createInternalTransfer(
+                from: source, to: account, amountEur: suggestion.amountEur, in: ctx)
+            dismiss()
+        } catch {
+            saveError = "The top-up wasn’t saved."
+        }
     }
 
     private func delete(_ valuation: PortfolioValuation) {

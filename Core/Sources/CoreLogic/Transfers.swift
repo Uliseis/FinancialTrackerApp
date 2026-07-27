@@ -293,6 +293,43 @@ extension CoreLogic {
             return group
         }
 
+        public static let internalPrefix = "internal-transfer:"
+
+        public struct RepeatSuggestion: Equatable, Sendable {
+            public let sourceId: UUID
+            public let sourceName: String
+            public let amountEur: Decimal
+            public let lastBookedAt: Date
+        }
+
+        // The last move made into this account, offered so a recurring one is a single tap.
+        // Read from history rather than stored on the account: a persisted "funded from" link
+        // is one more thing to keep in step with archives, deletions and sync, and it would
+        // say nothing this doesn't already know.
+        @MainActor
+        public static func lastInternalTransfer(
+            into account: Account, in ctx: ModelContext
+        ) throws -> RepeatSuggestion? {
+            let accountId = account.id
+            let credits = try ctx.fetch(FetchDescriptor<Transaction>(
+                predicate: #Predicate {
+                    $0.account?.id == accountId && $0.transferGroup != nil
+                },
+                sortBy: [SortDescriptor(\.bookedAt, order: .reverse)]
+            ))
+            for credit in credits where credit.direction == .credit
+                && credit.externalId.hasPrefix(internalPrefix) {
+                guard let peers = credit.transferGroup?.transactions else { continue }
+                guard let debit = peers.first(where: {
+                    $0.id != credit.id && $0.direction == .debit
+                }), let source = debit.account, !source.archived else { continue }
+                return RepeatSuggestion(
+                    sourceId: source.id, sourceName: source.displayName,
+                    amountEur: abs(credit.amountEur ?? 0), lastBookedAt: credit.bookedAt)
+            }
+            return nil
+        }
+
         // pairedAt stays nil (nil = manually grouped; auto-paired groups carry a timestamp).
         @MainActor @discardableResult
         public static func pairManual(

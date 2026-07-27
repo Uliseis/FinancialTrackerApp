@@ -78,6 +78,10 @@ struct OdysseyFinanceApp: App {
                     // separately in RootView.onChange(scenePhase == .active).
                     guard CloudKitGate.isAvailable else {
                         QuickAddDrain.run(modelContainer.mainContext, engine: nil)
+                        // These mutate data, so they get a dry run against a copy of the real
+                        // store in the simulator before they are ever pointed at the phone.
+                        // Behind the CloudKit gate they could only ever be tested in anger.
+                        runDebugRoutines()
                         return
                     }
                     do {
@@ -90,14 +94,8 @@ struct OdysseyFinanceApp: App {
                         if ProcessInfo.processInfo.environment["OFSYNC_SEED_INITIAL_PUSH"] == "1" {
                             syncEngine.seedInitialPush()
                         }
-                        #if DEBUG
-                        CCStatementImport.runIfRequested(modelContainer)
-                        CCBalanceFix.runIfRequested(modelContainer)
-                        CCFinalize.runIfRequested(modelContainer)
-                        CCAudit.runIfRequested(modelContainer)
-                        QuickAddSignFix.runIfRequested(modelContainer)
-                        InvestmentBasisMigration.runIfRequested(modelContainer)
-                        #endif
+                        // After start() so anything they write enqueues for CloudKit push.
+                        runDebugRoutines()
                     } catch {
                         // Engine may fail to start if iCloud isn't available; the app still works
                         // locally. Log and carry on; next launch retries.
@@ -110,6 +108,20 @@ struct OdysseyFinanceApp: App {
                 }
         }
         .modelContainer(modelContainer)
+    }
+
+    // Env-gated one-shot data routines. Each checks its own flag and is idempotent.
+    @MainActor
+    private func runDebugRoutines() {
+        #if DEBUG
+        CCStatementImport.runIfRequested(modelContainer)
+        CCBalanceFix.runIfRequested(modelContainer)
+        CCFinalize.runIfRequested(modelContainer)
+        CCAudit.runIfRequested(modelContainer)
+        QuickAddSignFix.runIfRequested(modelContainer)
+        InvestmentBasisMigration.runIfRequested(modelContainer)
+        PensionSplitBackfill.runIfRequested(modelContainer)
+        #endif
     }
 }
 
