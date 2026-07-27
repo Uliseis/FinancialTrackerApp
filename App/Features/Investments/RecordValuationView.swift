@@ -17,9 +17,10 @@ struct RecordValuationView: View {
     @State private var asOf = Date.now
     @State private var saveError: String?
 
-    private var latest: PortfolioValuation? {
-        allValuations.first { $0.account?.id == account.id }
+    private var history: [PortfolioValuation] {
+        allValuations.filter { $0.account?.id == account.id }
     }
+    private var latest: PortfolioValuation? { history.first }
 
     private var market: Decimal? { CoreLogic.Transactions.parseAmount(marketText) }
     private var cash: Decimal? {
@@ -60,19 +61,42 @@ struct RecordValuationView: View {
                     Text("Positions and cash as your broker shows them today. Recording twice on the same day replaces the earlier entry.")
                 }
 
-                if let latest {
-                    Section("Last recorded") {
-                        LabeledContent(
-                            latest.asOf.formatted(date: .abbreviated, time: .omitted),
-                            value: Money.format(latest.marketValueEur, currency: "EUR"))
-                        if let cash = latest.cashValueEur, cash != 0 {
-                            LabeledContent("Cash", value: Money.format(cash, currency: "EUR"))
+                if latest != nil, contributedSinceLatest != 0 {
+                    Section {
+                        LabeledContent("Paid in since last snapshot") {
+                            MoneyText(amount: contributedSinceLatest)
                         }
-                        if contributedSinceLatest != 0 {
-                            LabeledContent("Paid in since") {
-                                MoneyText(amount: contributedSinceLatest)
+                    }
+                }
+
+                if !history.isEmpty {
+                    Section {
+                        ForEach(history) { v in
+                            LabeledContent {
+                                Text(Money.format(v.marketValueEur, currency: "EUR"))
+                                    .font(.readout(.body, weight: .regular))
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(v.asOf.formatted(date: .abbreviated, time: .omitted))
+                                    if let cash = v.cashValueEur, cash != 0 {
+                                        Text("incl. \(Money.format(cash, currency: "EUR")) cash")
+                                            .font(.caption).foregroundStyle(.secondary)
+                                    } else if v.id == history.last?.id, history.count > 1 {
+                                        Text("P&L baseline")
+                                            .font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) { delete(v) } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
                             }
                         }
+                    } header: {
+                        Text("History")
+                    } footer: {
+                        Text("The oldest snapshot is the profit/loss baseline. Delete one that was recorded wrong — swipe left.")
                     }
                 }
             }
@@ -86,6 +110,11 @@ struct RecordValuationView: View {
             }
             .saveErrorAlert($saveError)
         }
+    }
+
+    private func delete(_ valuation: PortfolioValuation) {
+        do { try CoreLogic.Investments.deleteValuation(valuation, in: ctx) }
+        catch { saveError = "The snapshot wasn’t deleted." }
     }
 
     private func save() {
