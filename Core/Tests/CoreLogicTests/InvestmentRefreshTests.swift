@@ -8,6 +8,24 @@ final class InvestmentRefreshTests: XCTestCase {
     private typealias R = CoreLogic.InvestmentRefresh
     private typealias S = TransferTestSupport
 
+    // Regression: parseAmount reads "0,06033031" as 6033031 — its 1-2-digits rule treats that
+    // comma as grouping, which is right for money and catastrophic for a BTC holding.
+    func testParseQuantityKeepsEightDecimals() {
+        let q = CoreLogic.Transactions.parseQuantity("0,06033031")
+        XCTAssertEqual(q, Decimal(string: "0.06033031"))
+        XCTAssertEqual(CoreLogic.Transactions.parseQuantity("0.06033031"), q)
+        XCTAssertNotEqual(CoreLogic.Transactions.parseAmount("0,06033031"), q, "the money parser is the bug")
+    }
+
+    func testParseQuantityTreatsTheLastSeparatorAsDecimal() {
+        XCTAssertEqual(CoreLogic.Transactions.parseQuantity("1.234,5"), Decimal(string: "1234.5"))
+        XCTAssertEqual(CoreLogic.Transactions.parseQuantity("1,234.5"), Decimal(string: "1234.5"))
+        XCTAssertEqual(CoreLogic.Transactions.parseQuantity("12"), 12)
+        XCTAssertNil(CoreLogic.Transactions.parseQuantity(""))
+        XCTAssertNil(CoreLogic.Transactions.parseQuantity("0"))
+        XCTAssertNil(CoreLogic.Transactions.parseQuantity("abc"))
+    }
+
     func testCoinIdParsing() {
         XCTAssertEqual(R.coinId(from: "crypto:bitcoin"), "bitcoin")
         XCTAssertNil(R.coinId(from: "crypto:"), "empty id is not a source")

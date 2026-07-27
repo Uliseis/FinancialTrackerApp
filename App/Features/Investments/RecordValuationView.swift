@@ -43,7 +43,11 @@ struct RecordValuationView: View {
     private var market: Decimal? { CoreLogic.Transactions.parseAmount(marketText) }
     private var cash: Decimal? { optionalAmount(cashText) }
     private var basis: Decimal? { optionalAmount(basisText) }
-    private var quantity: Decimal? { optionalAmount(quantityText) }
+    // Not optionalAmount: a holding has more than two decimals.
+    private var quantity: Decimal? {
+        quantityText.trimmingCharacters(in: .whitespaces).isEmpty
+            ? nil : CoreLogic.Transactions.parseQuantity(quantityText)
+    }
 
     private func optionalAmount(_ text: String) -> Decimal? {
         text.trimmingCharacters(in: .whitespaces).isEmpty
