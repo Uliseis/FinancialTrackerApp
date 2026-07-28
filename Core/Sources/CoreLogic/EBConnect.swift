@@ -76,19 +76,21 @@ extension CoreLogic {
         // access.valid_until is absent the expiry simply isn't updated — the web's
         // optional-chained behavior, not a guess.
         @MainActor
+        // `status` is passed in because POST /sessions doesn't return one — the caller reads
+        // it from GET /sessions/{id}.
         public static func applySession(
-            _ session: CreateSessionResponse, to connection: Connection,
+            _ session: CreateSessionResponse, status: String, to connection: Connection,
             expectedState: String, in ctx: ModelContext, now: Date = .now
         ) throws {
             guard storedState(of: connection) == expectedState else {
                 throw CallbackError.stateMismatch
             }
             connection.sessionId = session.sessionId
-            connection.status = session.status == "AUTHORIZED" ? .active : .pending
+            connection.status = status == "AUTHORIZED" ? .active : .pending
             if let valid = session.access?.validUntil, let date = parseISO(valid) {
                 connection.expiresAt = date
             }
-            var meta: [String: Any] = ["sessionStatus": session.status]
+            var meta: [String: Any] = ["sessionStatus": status]
             if let aspsp = session.aspsp {
                 meta["aspsp"] = ["name": aspsp.name, "country": aspsp.country]
             }

@@ -44,10 +44,13 @@ enum BankLink {
         let callback = try await BankAuthSession.authenticate(url: authURL)
         let (code, returnedState) = try CoreLogic.EBConnect.parseCallback(callback)
         let session = try await client.createSession(code: code)
+        // POST /sessions returns no status, so the freshly created session is asked for its
+        // own — the same GET the sync uses, and the only authority on whether it's usable.
+        let status = try await client.getSession(session.sessionId).status
         try CoreLogic.EBConnect.applySession(
-            session, to: connection, expectedState: returnedState, in: ctx)
+            session, status: status, to: connection, expectedState: returnedState, in: ctx)
         return Outcome(
-            authorized: session.status == "AUTHORIZED",
+            authorized: status == "AUTHORIZED",
             accountCount: EBHelpers.sessionAccounts(session).count)
     }
 }
