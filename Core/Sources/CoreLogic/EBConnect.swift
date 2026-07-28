@@ -87,6 +87,7 @@ extension CoreLogic {
             }
             connection.sessionId = session.sessionId
             connection.status = status == "AUTHORIZED" ? .active : .pending
+            connection.lastError = nil
             if let valid = session.access?.validUntil, let date = parseISO(valid) {
                 connection.expiresAt = date
             }

@@ -99,9 +99,11 @@ final class EBConnectTests: XCTestCase {
         let conn = try C.prepareConnection(
             aspspName: "Revolut", country: "ES", state: "st-4", authorizationId: "a",
             validUntil: .now, in: ctx)
+        conn.lastError = "stale failure from a previous attempt"
         try C.applySession(makeSession(), status: "AUTHORIZED",
                            to: conn, expectedState: "st-4", in: ctx)
         XCTAssertEqual(conn.sessionId, "sess-1")
+        XCTAssertNil(conn.lastError)
         XCTAssertEqual(conn.status, .active)
         XCTAssertEqual(conn.expiresAt, ISO8601DateFormatter().date(from: "2026-09-08T10:00:00Z"))
         let meta = try JSONSerialization.jsonObject(
