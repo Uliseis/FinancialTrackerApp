@@ -37,6 +37,12 @@ targets:
         UILaunchScreen:
           UIColorName: LaunchBackground
         NSFaceIDUsageDescription: "Unlock Odyssey Finance with Face ID."
+        # Enable Banking's redirect target. ASWebAuthenticationSession intercepts it
+        # in-session, so this only claims the scheme — see EBConfig in BankLink.swift.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.uliseis.odysseyfinance
+            CFBundleURLSchemes:
+              - odysseyfinance
         UIBackgroundModes:
           - processing
         BGTaskSchedulerPermittedIdentifiers:

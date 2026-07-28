@@ -5,12 +5,13 @@ import CoreModel
 import CoreLogic
 import CoreIntegrations
 
-// The registered Enable Banking redirect URL for iOS. Intercepted in-session by
-// ASWebAuthenticationSession's https callback — no page, AASA file, or signing involved.
+// The registered Enable Banking redirect URL for iOS. A private-use scheme keeps the whole
+// round trip on the device — no domain, no hosting, nothing to squat. An https callback
+// would need an Associated Domains entitlement (webcredentials) plus an AASA file served at
+// that host; ASWebAuthenticationSession refuses the redirect without it.
 enum EBConfig {
-    static let redirectURL = URL(string: "https://financialtracker-uliseis.vercel.app/enablebanking/ios-callback")!
-    static var callbackHost: String { redirectURL.host() ?? "" }
-    static var callbackPath: String { redirectURL.path() }
+    static let callbackScheme = "odysseyfinance"
+    static let redirectURL = URL(string: "\(callbackScheme)://enablebanking/callback")!
 }
 
 // Full bank-link round trip: startAuth → in-app browser → callback code → createSession →
@@ -61,7 +62,7 @@ private enum BankAuthSession {
             let context = WebAuthContext()
             let session = ASWebAuthenticationSession(
                 url: url,
-                callback: .https(host: EBConfig.callbackHost, path: EBConfig.callbackPath)
+                callback: .customScheme(EBConfig.callbackScheme)
             ) { callbackURL, error in
                 Task { @MainActor in active = nil }
                 if let callbackURL {
