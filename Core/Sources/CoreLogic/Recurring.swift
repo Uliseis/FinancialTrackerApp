@@ -19,6 +19,10 @@ extension CoreLogic {
             public let bookedAt: Date?
         }
 
+        // A subscription lands on the same day give or take a weekend; a bar that happens to
+        // take the same €16 on the 31st and the 3rd is not one.
+        public static let maxDaySpread = 5
+
         public static func detect(
             _ transactions: [Transaction],
             month reference: Date = .now,
@@ -53,6 +57,7 @@ extension CoreLogic {
                       past.count == months.count,
                       let latest = months.max(), latest >= refMonth - 2 else { continue }
                 let days = past.map(\.day).sorted()
+                guard days.last! - days.first! <= maxDaySpread else { continue }
                 let current = occurrences.filter { $0.month == refMonth }
                     .max { $0.tx.bookedAt < $1.tx.bookedAt }
                 let newest = past.max { $0.tx.bookedAt < $1.tx.bookedAt }!
