@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import UIKit
 import CoreLogic
 import CoreIntegrations
 import CoreSync
@@ -33,6 +34,10 @@ enum ForegroundBankSync {
     // up yet, or Keychain locked) — the next foreground retries.
     @MainActor
     static func runIfDue(_ ctx: ModelContext, engine: CloudKitSyncEngine?) async {
+        // The Wallet automation launches the app in the background to run the quick-add
+        // intent; a bank sync started there is suspended seconds later and shows up as an
+        // "abandoned" run, having also burned the 15-minute window for the real foreground.
+        guard UIApplication.shared.applicationState != .background else { return }
         guard isDue() else { return }
         lastRun = .now
         if let signer = try? EBKeychain().loadSigner() {

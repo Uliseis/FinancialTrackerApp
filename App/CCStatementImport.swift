@@ -4,35 +4,44 @@ import SwiftData
 import CoreModel
 import CoreLogic
 
-// One-shot Revolut-CSV statement import, gated on OFCC_IMPORT=1 (set via devicectl on a
-// single launch). Reads pre-computed rows (externalId/dates/amount already in the exact
-// web `revolutcsv:v1` scheme) from Documents/cc-import.json, inserts through the main
-// context so SaveObserver pushes to CloudKit, then runs category rules. Idempotent:
-// dedup on (account, externalId); the JSON is deleted after a successful run.
+// One-shot data load for the manual credit card, gated on OFCC_IMPORT=1 (set via devicectl
+// on a single launch). Two optional inputs in Documents/, both deleted after a successful run:
+//   statement.csv   — a Revolut statement, fed through the same StatementImport the UI uses
+//   cc-import.json  — {"rules":[…],"transactions":[…],"valuations":[…]} (a bare row array
+//                     still decodes). Rows carry pre-computed externalIds (e.g. screenshot
+//                     rows as revolutshot:v1:…). Rule seeds are created first so everything
+//                     inserted this run categorizes; then every still-uncategorized row on the
+//                     account is re-run against the rules so older quick-adds catch up too.
+// Inserts go through the main context so SaveObserver pushes to CloudKit. Idempotent.
 enum CCStatementImport {
-    // Optional rule seeds, applied before the inserted rows are categorized. Lets an
-    // import bring merchants the rule engine has never seen (Bolt, Zalando…) without a
-    // second deploy — and they keep working for future charges.
     struct RuleSeed: Decodable {
         let pattern: String
         let category: String
         let priority: Int?
     }
 
-    // Backward compatible: a bare [Row] array still decodes, as do the older payloads.
+    struct ValuationSeed: Decodable {
+        let accountId: String
+        let marketValueEur: String
+        let cashValueEur: String?
+        let notes: String?
+    }
+
     struct Payload: Decodable {
         let rules: [RuleSeed]?
         let transactions: [Row]
+        let valuations: [ValuationSeed]?
 
         init(from decoder: Decoder) throws {
             if let bare = try? [Row](from: decoder) {
-                rules = nil; transactions = bare; return
+                rules = nil; transactions = bare; valuations = nil; return
             }
             let c = try decoder.container(keyedBy: CodingKeys.self)
             rules = try c.decodeIfPresent([RuleSeed].self, forKey: .rules)
-            transactions = try c.decode([Row].self, forKey: .transactions)
+            transactions = try c.decodeIfPresent([Row].self, forKey: .transactions) ?? []
+            valuations = try c.decodeIfPresent([ValuationSeed].self, forKey: .valuations)
         }
-        private enum CodingKeys: String, CodingKey { case rules, transactions }
+        private enum CodingKeys: String, CodingKey { case rules, transactions, valuations }
     }
 
     struct Row: Decodable {
@@ -46,20 +55,19 @@ enum CCStatementImport {
     }
 
     static let accountId = UUID(uuidString: "038A3B64-DBA8-4BB3-923D-DB1B29AC1384")!
-    // The manual "Card Fee (rent)" row: statement fee was €35.40, logged as €35.00.
-    static let feeFixExternalId = "manual:f17b5a72-b898-46ae-9b6d-083e358ce887"
 
     @MainActor
     static func runIfRequested(_ container: ModelContainer) {
         guard ProcessInfo.processInfo.environment["OFCC_IMPORT"] == "1" else { return }
         guard let docs = try? FileManager.default.url(
-                for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false),
-              case let url = docs.appendingPathComponent("cc-import.json"),
-              let data = try? Data(contentsOf: url),
-              let payload = try? JSONDecoder().decode(Payload.self, from: data) else {
-            print("[CCImport] no Documents/cc-import.json — nothing to do"); return
+            for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false) else { return }
+        let jsonURL = docs.appendingPathComponent("cc-import.json")
+        let csvURL = docs.appendingPathComponent("statement.csv")
+        let payload = (try? Data(contentsOf: jsonURL)).flatMap { try? JSONDecoder().decode(Payload.self, from: $0) }
+        let csv = try? String(contentsOf: csvURL, encoding: .utf8)
+        guard payload != nil || csv != nil else {
+            print("[CCImport] nothing in Documents — nothing to do"); return
         }
-        let rows = payload.transactions
         let ctx = container.mainContext
         let acctId = accountId
         guard let account = try? ctx.fetch(FetchDescriptor<Account>(
@@ -69,10 +77,8 @@ enum CCStatementImport {
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime]
 
-        // Seed rules first so the inserted rows categorize on this same run. Skips any
-        // pattern that already exists, so a replayed import doesn't stack duplicates.
         var seededRules = 0
-        for seed in payload.rules ?? [] {
+        for seed in payload?.rules ?? [] {
             let pattern = seed.pattern
             let already = ((try? ctx.fetchCount(FetchDescriptor<CategoryRule>(
                 predicate: #Predicate { $0.pattern == pattern }))) ?? 0) > 0
@@ -87,10 +93,21 @@ enum CCStatementImport {
                 priority: seed.priority ?? -1000, in: ctx)
             seededRules += 1
         }
+        try? ctx.save()
+
+        if let csv {
+            do {
+                let s = try CoreLogic.StatementImport.importRevolutCSV(csv, into: account, in: ctx)
+                print("[CCImport] csv parsed=\(s.parsed) inserted=\(s.inserted) matched=\(s.matchedManual) dup=\(s.skippedDuplicate) transfers=\(s.skippedTransfers) categorized=\(s.categorized) errors=\(s.errors)")
+                try? FileManager.default.removeItem(at: csvURL)
+            } catch {
+                print("[CCImport] csv failed: \(error)")
+            }
+        }
 
         var insertedIds: [UUID] = []
         var skipped = 0
-        for r in rows {
+        for r in payload?.transactions ?? [] {
             let eid = r.externalId
             let exists = ((try? ctx.fetchCount(FetchDescriptor<Transaction>(
                 predicate: #Predicate { $0.account?.id == acctId && $0.externalId == eid }))) ?? 0) > 0
@@ -105,7 +122,7 @@ enum CCStatementImport {
                 valueAt: r.valueAt.flatMap { iso.date(from: $0) },
                 amount: amount,
                 currency: r.currency,
-                amountEur: amount,              // EUR account ⇒ EUR identity, no FX needed
+                amountEur: amount,
                 fxRateUsed: 1,
                 direction: r.direction == "credit" ? .credit : .debit,
                 description: r.description,
@@ -114,21 +131,29 @@ enum CCStatementImport {
             ctx.insert(tx)
             insertedIds.append(tx.id)
         }
+        do { try ctx.save() } catch { print("[CCImport] save failed: \(error)"); return }
 
-        // €35.00 → €35.40 fee correction.
-        let feeEid = feeFixExternalId
-        if let fee = try? ctx.fetch(FetchDescriptor<Transaction>(
-            predicate: #Predicate { $0.externalId == feeEid })).first {
-            fee.amount = Decimal(string: "-35.40")!
-            fee.amountEur = Decimal(string: "-35.40")!
-            fee.updatedAt = .now
+        var valuations = 0
+        for v in payload?.valuations ?? [] {
+            guard let id = UUID(uuidString: v.accountId), let value = Decimal(string: v.marketValueEur),
+                  let target = try? ctx.fetch(FetchDescriptor<Account>(
+                    predicate: #Predicate { $0.id == id })).first else {
+                print("[CCImport] bad valuation \(v.accountId)"); continue
+            }
+            _ = try? CoreLogic.Investments.recordValuation(
+                account: target, marketValueEur: value,
+                cashValueEur: v.cashValueEur.flatMap { Decimal(string: $0) },
+                notes: v.notes, in: ctx)
+            valuations += 1
         }
 
-        do { try ctx.save() } catch { print("[CCImport] save failed: \(error)"); return }
-        let cats = (try? CoreLogic.Categorize.applyRulesToTransactions(in: ctx, txIds: insertedIds))?.updated ?? 0
+        let uncategorized = (try? ctx.fetch(FetchDescriptor<Transaction>(
+            predicate: #Predicate { $0.account?.id == acctId && $0.category == nil }))) ?? []
+        let cats = (try? CoreLogic.Categorize.applyRulesToTransactions(
+            in: ctx, txIds: uncategorized.map(\.id) + insertedIds))?.updated ?? 0
         try? ctx.save()
-        print("[CCImport] rules=\(seededRules) inserted=\(insertedIds.count) skipped=\(skipped) categorized=\(cats)")
-        try? FileManager.default.removeItem(at: url)   // don't re-run
+        print("[CCImport] rules=\(seededRules) inserted=\(insertedIds.count) skipped=\(skipped) valuations=\(valuations) categorized=\(cats)")
+        if payload != nil { try? FileManager.default.removeItem(at: jsonURL) }
     }
 }
 #endif

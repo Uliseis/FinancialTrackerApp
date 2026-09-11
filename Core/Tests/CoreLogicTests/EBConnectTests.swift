@@ -10,14 +10,12 @@ final class EBConnectTests: XCTestCase {
     typealias C = CoreLogic.EBConnect
 
     private func makeSession(
-        status: String = "AUTHORIZED",
         validUntil: String? = "2026-09-08T10:00:00Z",
         uids: [String] = ["uid-1", "uid-2"]
     ) -> CreateSessionResponse {
         let json = """
         {
           "session_id": "sess-1",
-          "status": "\(status)",
           "accounts": ["acc-raw-1"],
           "accounts_data": [\(uids.map { #"{"uid": "\#($0)"}"# }.joined(separator: ","))],
           "access": {\(validUntil.map { #""valid_until": "\#($0)""# } ?? "")},
@@ -101,8 +99,11 @@ final class EBConnectTests: XCTestCase {
         let conn = try C.prepareConnection(
             aspspName: "Revolut", country: "ES", state: "st-4", authorizationId: "a",
             validUntil: .now, in: ctx)
-        try C.applySession(makeSession(), to: conn, expectedState: "st-4", in: ctx)
+        conn.lastError = "stale failure from a previous attempt"
+        try C.applySession(makeSession(), status: "AUTHORIZED",
+                           to: conn, expectedState: "st-4", in: ctx)
         XCTAssertEqual(conn.sessionId, "sess-1")
+        XCTAssertNil(conn.lastError)
         XCTAssertEqual(conn.status, .active)
         XCTAssertEqual(conn.expiresAt, ISO8601DateFormatter().date(from: "2026-09-08T10:00:00Z"))
         let meta = try JSONSerialization.jsonObject(
@@ -117,7 +118,7 @@ final class EBConnectTests: XCTestCase {
         let conn = try C.prepareConnection(
             aspspName: "Revolut", country: "ES", state: "st-5", authorizationId: "a",
             validUntil: .now, in: ctx)
-        try C.applySession(makeSession(status: "PENDING_AUTHORIZATION"),
+        try C.applySession(makeSession(), status: "PENDING_AUTHORIZATION",
                            to: conn, expectedState: "st-5", in: ctx)
         XCTAssertEqual(conn.status, .pending)
     }
@@ -128,7 +129,8 @@ final class EBConnectTests: XCTestCase {
             aspspName: "Revolut", country: "ES", state: "st-6", authorizationId: "a",
             validUntil: .now, in: ctx)
         XCTAssertThrowsError(try C.applySession(
-            makeSession(), to: conn, expectedState: "WRONG", in: ctx)) {
+            makeSession(), status: "AUTHORIZED",
+            to: conn, expectedState: "WRONG", in: ctx)) {
             XCTAssertEqual($0 as? C.CallbackError, .stateMismatch)
         }
         XCTAssertNil(conn.sessionId)

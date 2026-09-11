@@ -109,7 +109,7 @@ extension CoreLogic {
                     connection.status = expired ? .expired : .error
                     connection.lastError = "Session status: \(session.status)"
                     connection.updatedAt = now
-                    finish(run, status: .error, error: "session \(session.status)", now: now)
+                    finish(run, status: .error, error: "session \(session.status)")
                     try ctx.saveTouchingChanges()
                     result.errors.append("session \(session.status)")
                     return result
@@ -133,6 +133,8 @@ extension CoreLogic {
                         result.errors.append("\(label): \(describe(error))")
                     }
                 }
+
+                let fetchFailed = !result.errors.isEmpty
 
                 var post = PostProcess()
                 if !insertedIds.isEmpty {
@@ -171,15 +173,18 @@ extension CoreLogic {
                     connection.expiresAt = expiresAt
                 }
                 connection.status = result.errors.isEmpty ? .active : .error
-                connection.lastSyncAt = now
+                // Holding the watermark when an account's fetch failed makes the next run
+                // re-cover the missed window, so a timeout can't silently skip transactions.
+                // ponytail: watermark is per-connection, so one bad account widens the window
+                // for its siblings too; per-account watermarks if that ever gets expensive.
+                if !fetchFailed { connection.lastSyncAt = now }
                 connection.lastError = result.errors.isEmpty
                     ? nil : result.errors.joined(separator: "; ")
                 connection.updatedAt = now
 
                 run.insertedTransactions = result.transactionsInserted
                 finish(run, status: result.errors.isEmpty ? .ok : .partial,
-                       error: result.errors.isEmpty ? nil : result.errors.joined(separator: "; "),
-                       now: now)
+                       error: result.errors.isEmpty ? nil : result.errors.joined(separator: "; "))
                 try ctx.saveTouchingChanges()
                 return result
             } catch {
@@ -188,7 +193,7 @@ extension CoreLogic {
                 connection.status = expired ? .expired : .error
                 connection.lastError = describe(error)
                 connection.updatedAt = now
-                finish(run, status: .error, error: describe(error), now: now)
+                finish(run, status: .error, error: describe(error))
                 try? ctx.saveTouchingChanges()
                 throw error
             }
@@ -373,9 +378,11 @@ extension CoreLogic {
 
         // MARK: - small utilities
 
-        private static func finish(_ run: SyncRun, status: SyncRunStatus, error: String?, now: Date) {
+        // finishedAt is wall-clock, not the injected `now`: every run recorded a 0s duration
+        // otherwise, which is the one number you want when diagnosing a timeout.
+        private static func finish(_ run: SyncRun, status: SyncRunStatus, error: String?) {
             run.status = status
-            run.finishedAt = now
+            run.finishedAt = .now
             run.error = error
         }
 

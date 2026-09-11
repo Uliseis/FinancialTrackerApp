@@ -5,10 +5,12 @@ import CoreModel
 import CoreLogic
 import CoreIntegrations
 
-// The registered Enable Banking redirect URL for iOS. Intercepted in-session by
-// ASWebAuthenticationSession's https callback — no page, AASA file, or signing involved.
+// The registered Enable Banking redirect URL for iOS. EB rejects private-use schemes, so
+// this is https — which means the app must be associated with the host: the entitlement in
+// project.yml plus the AASA in Vercel/. Nothing is served at the path itself;
+// ASWebAuthenticationSession matches host+path and cancels the load.
 enum EBConfig {
-    static let redirectURL = URL(string: "https://financialtracker-uliseis.vercel.app/enablebanking/ios-callback")!
+    static let redirectURL = URL(string: "https://odysseyfinance.vercel.app/enablebanking/ios-callback")!
     static var callbackHost: String { redirectURL.host() ?? "" }
     static var callbackPath: String { redirectURL.path() }
 }
@@ -42,10 +44,13 @@ enum BankLink {
         let callback = try await BankAuthSession.authenticate(url: authURL)
         let (code, returnedState) = try CoreLogic.EBConnect.parseCallback(callback)
         let session = try await client.createSession(code: code)
+        // POST /sessions returns no status, so the freshly created session is asked for its
+        // own — the same GET the sync uses, and the only authority on whether it's usable.
+        let status = try await client.getSession(session.sessionId).status
         try CoreLogic.EBConnect.applySession(
-            session, to: connection, expectedState: returnedState, in: ctx)
+            session, status: status, to: connection, expectedState: returnedState, in: ctx)
         return Outcome(
-            authorized: session.status == "AUTHORIZED",
+            authorized: status == "AUTHORIZED",
             accountCount: EBHelpers.sessionAccounts(session).count)
     }
 }

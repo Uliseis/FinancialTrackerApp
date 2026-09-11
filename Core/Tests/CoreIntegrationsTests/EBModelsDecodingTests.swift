@@ -21,15 +21,25 @@ final class EBModelsDecodingTests: XCTestCase {
 
     func test_createSession_withAccountsData() throws {
         let s = try decode(CreateSessionResponse.self, """
-        {"session_id":"sess-1","status":"AUTHORIZED","accounts":["uid-1"],
+        {"session_id":"sess-1","accounts":["uid-1"],
          "accounts_data":[{"uid":"uid-1","account_id":{"iban":"ES1234"},"currency":"EUR","name":"Main"}],
          "access":{"valid_until":"2026-09-01T00:00:00.000+00:00","transactions":true},
          "aspsp":{"name":"BBVA","country":"ES"},"psu_type":"personal"}
         """)
         XCTAssertEqual(s.sessionId, "sess-1")
-        XCTAssertEqual(s.status, "AUTHORIZED")
         XCTAssertEqual(s.accountsData?.first?.accountId?.iban, "ES1234")
         XCTAssertEqual(s.access?.validUntil, "2026-09-01T00:00:00.000+00:00")
+    }
+
+    // POST /sessions carries no status — a real re-auth on 2026-07-28 died on
+    // keyNotFound("status") because this struct demanded one. GET is where status lives.
+    func test_createSession_hasNoStatus() throws {
+        let s = try decode(CreateSessionResponse.self, """
+        {"session_id":"sess-1","accounts":["uid-1"],"psu_type":"personal",
+         "aspsp":{"name":"Abanca","country":"ES"},
+         "access":{"valid_until":"2026-10-26T10:00:00.000+00:00"}}
+        """)
+        XCTAssertEqual(s.sessionId, "sess-1")
     }
 
     // A created session without an id is unusable — the decode must fail loudly.

@@ -51,6 +51,10 @@ targets:
         com.apple.developer.icloud-container-identifiers:
           - iCloud.com.uliseis.odysseyfinance
         aps-environment: development
+        # ASWebAuthenticationSession's https callback only fires if the app is associated
+        # with the redirect host. Served from Vercel/aasa.json.
+        com.apple.developer.associated-domains:
+          - webcredentials:odysseyfinance.vercel.app
     dependencies:
       - package: Core
         product: CoreModel

@@ -129,6 +129,7 @@ struct BudgetEdit: Identifiable {
 
 private struct BudgetEditView: View {
     @State private var edit: BudgetEdit
+    @State private var amountText = ""
     @State private var saveError: String?
     @Query(sort: [SortDescriptor(\CoreModel.Category.name)])
     private var categories: [CoreModel.Category]
@@ -148,7 +149,7 @@ private struct BudgetEditView: View {
                         ForEach(categories) { Text($0.name).tag(UUID?.some($0.id)) }
                     }
                     LabeledContent("Amount (EUR)") {
-                        TextField("Amount", value: $edit.amount, format: .number)
+                        TextField("Amount", text: $amountText)
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                     }
@@ -172,6 +173,8 @@ private struct BudgetEditView: View {
                 }
             }
             .saveErrorAlert($saveError)
+            .onAppear { amountText = Money.plainAmountText(edit.amount) }
+            .onChange(of: amountText) { edit.amount = CoreLogic.Transactions.parseAmount(amountText) ?? 0 }
         }
     }
 

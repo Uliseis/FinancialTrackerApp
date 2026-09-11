@@ -13,6 +13,7 @@ struct AccountFormView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var confirmingDelete = false
     @State private var saveError: String?
+    @State private var openingText = ""
 
     init(edit: AccountEdit) { _edit = State(initialValue: edit) }
 
@@ -70,7 +71,7 @@ struct AccountFormView: View {
                 if edit.isManual {
                     Section("Opening balance") {
                         LabeledContent(edit.currency.uppercased()) {
-                            TextField("0", value: $edit.openingBalance, format: .number)
+                            TextField("0", text: $openingText)
                                 .multilineTextAlignment(.trailing)
                                 .keyboardType(.numbersAndPunctuation)
                         }
@@ -107,6 +108,8 @@ struct AccountFormView: View {
             }
             .task { if edit.spaceId == nil { edit.spaceId = defaultSpaceId } }
             .saveErrorAlert($saveError)
+            .onAppear { openingText = Money.plainAmountText(edit.openingBalance) }
+            .onChange(of: openingText) { edit.openingBalance = CoreLogic.Transactions.parseAmount(openingText) ?? 0 }
         }
     }
 

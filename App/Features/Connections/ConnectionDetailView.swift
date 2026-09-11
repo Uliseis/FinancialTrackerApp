@@ -145,7 +145,11 @@ struct ConnectionDetailView: View {
                 resultMessage = "The bank declined the connection (\(reason))."
                 showingResult = true
             } catch {
-                resultMessage = "Couldn’t reconnect."
+                // Verbatim, and persisted: re-auth happens every 90 days and the alert
+                // truncates, so the full text needs to outlive the sheet.
+                connection.lastError = String(describing: error)
+                try? ctx.saveTouchingChanges()
+                resultMessage = "Couldn’t reconnect.\n\n\(error)"
                 showingResult = true
             }
         }

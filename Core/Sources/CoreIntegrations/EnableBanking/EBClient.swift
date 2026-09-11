@@ -23,6 +23,15 @@ public struct EBTransactionQuery: Equatable, Sendable {
 }
 
 public struct EBClient: Sendable {
+    // Enable Banking proxies to the bank, and Abanca's transactions endpoint routinely runs
+    // past URLSession's 60s default — a -1001 there drops the whole account from the run.
+    public static let defaultSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 120
+        config.timeoutIntervalForResource = 180
+        return URLSession(configuration: config)
+    }()
+
     public let baseURL: URL
     let tokenProvider: any EBTokenProvider
     let session: URLSession
@@ -31,7 +40,7 @@ public struct EBClient: Sendable {
     public init(
         tokenProvider: any EBTokenProvider,
         baseURL: URL = URL(string: "https://api.enablebanking.com")!,
-        session: URLSession = .shared,
+        session: URLSession = EBClient.defaultSession,
         psu: PsuHeaders? = nil
     ) {
         self.tokenProvider = tokenProvider

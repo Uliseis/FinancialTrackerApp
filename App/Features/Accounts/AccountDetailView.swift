@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 import CoreModel
 import CoreLogic
 
@@ -16,20 +17,32 @@ struct AccountDetailView: View {
     @State private var adding: TransactionEdit?
     @State private var visibleLimit = pageSize
     @State private var nativeBalance: Decimal?
+    @State private var importing = false
+    @State private var importSummary: CoreLogic.StatementImport.Summary?
+    @State private var saveError: String?
     private static let pageSize = 100
 
     private var accountIsLive: Bool { account.modelContext != nil && !account.isDeleted }
+    private var isManual: Bool { accountIsLive && CoreLogic.Accounts.isManual(account) }
 
-    private var rows: [CoreModel.Transaction] {
+    private var accountTx: [CoreModel.Transaction] {
         guard accountIsLive else { return [] }
         let id = account.id
-        return allTx.filter { tx in
-            guard tx.account?.id == id else { return false }
-            guard tx.routedFromTx == nil else { return false }
-            guard !search.isEmpty else { return true }
-            return (tx.transactionDescription?.localizedStandardContains(search) ?? false)
+        return allTx.filter { $0.account?.id == id && $0.routedFromTx == nil }
+    }
+
+    private var rows: [CoreModel.Transaction] {
+        guard !search.isEmpty else { return accountTx }
+        return accountTx.filter { tx in
+            (tx.transactionDescription?.localizedStandardContains(search) ?? false)
                 || (tx.counterparty?.localizedStandardContains(search) ?? false)
         }
+    }
+
+    // Only manual accounts have charges nobody else records; a synced account's
+    // subscriptions arrive from the bank.
+    private var recurring: [CoreLogic.Recurring.Item] {
+        isManual ? CoreLogic.Recurring.detect(accountTx) : []
     }
 
     var body: some View {
@@ -37,6 +50,9 @@ struct AccountDetailView: View {
             Section {
                 AccountDetailHeader(account: account, balance: nativeBalance)
                     .instrumentPanelRow()
+            }
+            if !recurring.isEmpty, search.isEmpty {
+                recurringSection
             }
             Section("Transactions") {
                 ForEach(rows.prefix(visibleLimit)) { tx in
@@ -66,6 +82,13 @@ struct AccountDetailView: View {
                     Label("New Transaction", systemImage: "plus")
                 }
             }
+            if isManual {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { importing = true } label: {
+                        Label("Import Statement", systemImage: "square.and.arrow.down")
+                    }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Edit") { editing = AccountEdit(account) }
             }
@@ -74,6 +97,18 @@ struct AccountDetailView: View {
         .reloadOnModelChange { reloadBalance() }
         .sheet(item: $editing, content: AccountFormView.init)
         .sheet(item: $adding) { TransactionFormView(edit: $0) }
+        .fileImporter(isPresented: $importing,
+                      allowedContentTypes: [.commaSeparatedText, .plainText]) { result in
+            importStatement(result)
+        }
+        .alert("Statement Imported", isPresented: Binding(
+            get: { importSummary != nil }, set: { if !$0 { importSummary = nil } }),
+               presenting: importSummary) { _ in
+            Button("OK") {}
+        } message: { summary in
+            Text(summaryText(summary))
+        }
+        .saveErrorAlert($saveError)
         .overlay {
             if rows.isEmpty {
                 ContentUnavailableView(
@@ -85,9 +120,99 @@ struct AccountDetailView: View {
             }
         }
     }
+
+    private var recurringSection: some View {
+        Section {
+            ForEach(recurring) { item in
+                RecurringRow(item: item, currency: account.currency) { book(item) }
+            }
+        } header: {
+            HStack {
+                Text("Recurring")
+                Spacer()
+                let unbooked = recurring.filter { $0.bookedAt == nil }.reduce(Decimal(0)) { $0 + $1.amount }
+                if unbooked != 0 {
+                    Text("\(Money.format(unbooked, currency: account.currency)) not booked yet")
+                }
+            }
+        }
+    }
+
+    private func book(_ item: CoreLogic.Recurring.Item) {
+        do {
+            let tx = try CoreLogic.Transactions.createManual(
+                account: account, amount: -item.amount, bookedAt: .now,
+                description: item.merchant, counterparty: item.merchant, in: ctx)
+            _ = try? CoreLogic.Categorize.applyRulesToTransactions(in: ctx, txIds: [tx.id])
+        } catch {
+            saveError = "The charge wasn’t booked."
+        }
+    }
+
+    private func importStatement(_ result: Result<URL, Error>) {
+        guard case let .success(url) = result else { return }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let text = try String(contentsOf: url, encoding: .utf8)
+            importSummary = try CoreLogic.StatementImport.importRevolutCSV(text, into: account, in: ctx)
+        } catch CoreLogic.RevolutCSV.ParseError.missingColumns(let columns) {
+            saveError = "That doesn’t look like a Revolut statement (missing \(columns.joined(separator: ", ")))."
+        } catch {
+            saveError = "The statement wasn’t imported."
+        }
+    }
+
+    private func summaryText(_ s: CoreLogic.StatementImport.Summary) -> String {
+        var lines = [
+            "\(s.inserted) new charges added.",
+            "\(s.matchedManual) already logged by hand, now linked to the statement.",
+        ]
+        if s.skippedDuplicate > 0 { lines.append("\(s.skippedDuplicate) already imported.") }
+        if s.skippedTransfers > 0 { lines.append("\(s.skippedTransfers) top-ups skipped (they come in as transfers).") }
+        if !s.errors.isEmpty { lines.append("\(s.errors.count) rows couldn’t be read.") }
+        return lines.joined(separator: "\n")
+    }
+
     private func reloadBalance() {
         guard accountIsLive else { return }
         nativeBalance = CoreLogic.Accounts.computeNativeBalances([account], in: ctx)[account.id]
+    }
+}
+
+private struct RecurringRow: View {
+    let item: CoreLogic.Recurring.Item
+    let currency: String
+    let onBook: () -> Void
+
+    private var isOverdue: Bool {
+        item.bookedAt == nil && Calendar.current.component(.day, from: .now) > item.expectedDay + 3
+    }
+
+    private var status: String {
+        if let booked = item.bookedAt {
+            return "Booked \(booked.formatted(.dateTime.day().month()))"
+        }
+        return (isOverdue ? "Overdue · " : "") + "Expected around day \(item.expectedDay)"
+    }
+
+    var body: some View {
+        HStack(spacing: Theme.Space.s) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.merchant).lineLimit(1)
+                Text(status)
+                    .font(.caption)
+                    .foregroundStyle(isOverdue ? Color.orange : Color.secondary)
+            }
+            Spacer()
+            Text(Money.format(item.amount, currency: currency))
+                .font(.readout(.body))
+            if item.bookedAt == nil {
+                Button("Book", action: onBook)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
+        }
     }
 }
 

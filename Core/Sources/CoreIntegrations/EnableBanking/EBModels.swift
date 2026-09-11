@@ -141,8 +141,8 @@ public struct SessionAccountRef: Codable, Equatable, Sendable {
 }
 
 // Shared shape of the two session payloads so helpers and the sync work on either.
+// Deliberately no `status`: only the GET payload carries one.
 public protocol EBSessionPayload {
-    var status: String { get }
     var accounts: [SessionAccountRef]? { get }
     var accountsData: [SessionAccount]? { get }
     var access: SessionAccess? { get }
@@ -152,9 +152,14 @@ public protocol EBSessionPayload {
 // POST /sessions. The one response that carries session_id — and the one place it is
 // genuinely required: a created session without an id is unusable, so a missing key
 // must fail the decode loudly rather than limp on.
+//
+// There is NO status here, mirroring how SessionResponse has no session_id. Confirmed by
+// a live keyNotFound("status") on a real re-auth 2026-07-28 and by the API reference: POST
+// returns session_id/accounts/aspsp/psu_type/access, GET adds status. The web spec types
+// both endpoints as one interface and reads .status off this one — TypeScript never
+// validated it, so it silently read undefined. Ask GET for the status.
 public struct CreateSessionResponse: Codable, Equatable, Sendable, EBSessionPayload {
     public let sessionId: String
-    public let status: String
     public let accounts: [SessionAccountRef]?
     public let accountsData: [SessionAccount]?
     public let access: SessionAccess?

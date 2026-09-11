@@ -18,6 +18,8 @@ final class EBSyncTests: XCTestCase {
         var balances: [String: BalancesResponse] = [:]
         var txPages: [String: [TransactionsResponse]] = [:]
         var sessionError: Error?
+        var txError: Error?
+        var lastTxQuery: EBTransactionQuery?
 
         init(session: SessionResponse) { self.session = session }
 
@@ -34,6 +36,8 @@ final class EBSyncTests: XCTestCase {
         func getAccountTransactions(
             _ accountUid: String, query: EBTransactionQuery
         ) async throws -> TransactionsResponse {
+            lastTxQuery = query
+            if let txError { throw txError }
             var pages = txPages[accountUid] ?? []
             guard !pages.isEmpty else { return decode(#"{"transactions": []}"#) }
             let page = pages.removeFirst()
@@ -189,6 +193,34 @@ final class EBSyncTests: XCTestCase {
         let second = try await Sync.sync(connection: conn, api: api, in: ctx)
         XCTAssertEqual(second.transactionsInserted, 0)
         XCTAssertEqual(try ctx.fetch(FetchDescriptor<Transaction>()).count, 2)
+    }
+
+    // A timed-out account must not advance the watermark, or its missed window is skipped
+    // for good once the failure outlasts the 7-day overlap.
+    func testTimedOutAccountHoldsWatermarkSoNextRunRefetches() async throws {
+        let ctx = try S.makeContext()
+        let conn = makeConnection(ctx)
+        _ = makeLinkedAccount(ctx, connection: conn)
+        conn.lastSyncAt = ISO8601DateFormatter().date(from: "2026-06-01T12:00:00Z")
+
+        let api = StubAPI(session: makeSession())
+        api.details[Self.uid] = details()
+        api.txError = URLError(.timedOut)
+
+        let now = ISO8601DateFormatter().date(from: "2026-06-20T12:00:00Z")!
+        let failed = try await Sync.sync(connection: conn, api: api, in: ctx, now: now)
+        XCTAssertEqual(failed.errors.count, 1)
+        XCTAssertEqual(conn.status, .error)
+        XCTAssertEqual(conn.lastSyncAt, ISO8601DateFormatter().date(from: "2026-06-01T12:00:00Z"))
+
+        api.txError = nil
+        api.txPages[Self.uid] = [txPage([("r1", "10.00", "CRDT")])]
+        let recovered = try await Sync.sync(connection: conn, api: api, in: ctx, now: now)
+        XCTAssertEqual(recovered.errors, [])
+        // Window still starts from the held watermark (2026-06-01 − 7d), not from `now`.
+        XCTAssertEqual(api.lastTxQuery?.dateFrom, "2026-05-25")
+        XCTAssertEqual(recovered.transactionsInserted, 1)
+        XCTAssertEqual(conn.lastSyncAt, now)
     }
 
     func testRevokedSessionMarksConnectionExpired() async throws {
