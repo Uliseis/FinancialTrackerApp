@@ -5,19 +5,20 @@ import CoreLogic
 
 struct AddInterestView: View {
     let account: Account
-    @State private var amount: Decimal = 0
+    @State private var amountText = ""
     @State private var date: Date = .now
     @State private var note: String = ""
     @State private var saveError: String?
     @Environment(\.modelContext) private var ctx
     @Environment(\.dismiss) private var dismiss
+    private var amount: Decimal? { CoreLogic.Transactions.parseAmount(amountText) }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
                     LabeledContent("Amount (\(account.currency))") {
-                        TextField("Amount", value: $amount, format: .number)
+                        TextField("Amount", text: $amountText)
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                     }
@@ -34,7 +35,7 @@ struct AddInterestView: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") { save() }.disabled(amount <= 0)
+                    Button("Add") { save() }.disabled((amount ?? 0) <= 0)
                 }
             }
             .saveErrorAlert($saveError)
@@ -42,6 +43,7 @@ struct AddInterestView: View {
     }
 
     private func save() {
+        guard let amount else { return }
         do {
             try CoreLogic.Accounts.addInterest(
                 account, amount: amount, at: date,

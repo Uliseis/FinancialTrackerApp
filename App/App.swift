@@ -121,6 +121,7 @@ struct OdysseyFinanceApp: App {
         QuickAddSignFix.runIfRequested(modelContainer)
         InvestmentBasisMigration.runIfRequested(modelContainer)
         PensionSplitBackfill.runIfRequested(modelContainer)
+        EBWatermarkRewind.runIfRequested(modelContainer)
         #endif
     }
 }
