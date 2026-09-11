@@ -157,6 +157,12 @@ struct TransactionsView: View {
                 }
             }
             .navigationDestination(for: CoreModel.Transaction.self) { TransactionDetailView(tx: $0) }
+            .task(id: PendingNavigation.shared.transactionId) {
+                guard let id = PendingNavigation.shared.transactionId,
+                      let tx = allTx.first(where: { $0.id == id }) else { return }
+                path = [tx]
+                PendingNavigation.shared.transactionId = nil
+            }
             .scrollEdgeEffectStyle(.soft, for: .all)
             .safeAreaInset(edge: .bottom) {
                 if !search.isEmpty && !rows.isEmpty {

@@ -4,6 +4,7 @@ struct RootTabView: View {
     @State private var selection: AppTab = .initial
 
     var body: some View {
+        let pending = PendingNavigation.shared.transactionId
         TabView(selection: $selection) {
             Tab("Dashboard", systemImage: "rectangle.3.group", value: .dashboard) {
                 DashboardView()
@@ -21,6 +22,7 @@ struct RootTabView: View {
                 SettingsView()
             }
         }
+        .onChange(of: pending) { _, id in if id != nil { selection = .transactions } }
     }
 }
 

@@ -27,7 +27,7 @@ extension CoreLogic {
 
         public static let matchWindow: TimeInterval = 3 * 86_400
         // Quick-add rows and screenshot-sourced rows are the only ones a statement can supersede.
-        static let matchablePrefixes = ["manual-tx:", "revolutshot:"]
+        static let matchablePrefixes = ["manual-tx:", "revolutshot:", Automations.recurringPrefix]
 
         @MainActor @discardableResult
         public static func importRevolutCSV(

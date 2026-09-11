@@ -31,6 +31,7 @@ struct SettingsView: View {
                     SettingsLinkRow(title: "Transfers", systemImage: "arrow.left.arrow.right", destination: .transfers)
                     SettingsLinkRow(title: "Matches", systemImage: "plusminus.circle", destination: .sharedExpenses)
                     SettingsLinkRow(title: "Budgets", systemImage: "chart.pie", destination: .budgets)
+                    SettingsLinkRow(title: "Automations", systemImage: "bolt.badge.clock", destination: .automations)
                 }
                 Section("Manage") {
                     SettingsLinkRow(title: "Categories", systemImage: "tag", destination: .categories)
@@ -58,6 +59,7 @@ struct SettingsView: View {
             .navigationDestination(for: SettingsDestination.self) { destination in
                 switch destination {
                 case .connections: ConnectionsListView()
+                case .automations: AutomationsView()
                 case .transfers: TransfersView()
                 case .sharedExpenses: SharedExpensesView()
                 case .budgets: BudgetsView()
@@ -128,7 +130,7 @@ struct SettingsView: View {
 }
 
 enum SettingsDestination: Hashable {
-    case connections, transfers, sharedExpenses, budgets, categories, rules, transferRoutes, spaces, groups, trading212
+    case connections, transfers, sharedExpenses, budgets, categories, rules, transferRoutes, spaces, groups, trading212, automations
 }
 
 // A Settings navigation row: teal icon chip + title, pushing a destination.

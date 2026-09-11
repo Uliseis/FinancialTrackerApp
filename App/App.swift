@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import LocalAuthentication
+import UserNotifications
 import CoreModel
 import CoreSync
 
@@ -64,6 +65,11 @@ struct OdysseyFinanceApp: App {
         if CloudKitGate.isAvailable {
             BackgroundSync.register(engine: engine)
         }
+        BackgroundSync.afterSync = { container in await AutomationRunner.run(container.mainContext) }
+        NotificationResponder.shared.container = container
+        NotificationResponder.shared.engine = engine
+        UNUserNotificationCenter.current().delegate = NotificationResponder.shared
+        AutomationNotifications.registerCategories()
     }
 
     var body: some Scene {
@@ -122,6 +128,7 @@ struct OdysseyFinanceApp: App {
         InvestmentBasisMigration.runIfRequested(modelContainer)
         PensionSplitBackfill.runIfRequested(modelContainer)
         EBWatermarkRewind.runIfRequested(modelContainer)
+        NettingImport.runIfRequested(modelContainer)
         #endif
     }
 }
