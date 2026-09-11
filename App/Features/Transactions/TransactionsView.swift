@@ -158,9 +158,12 @@ struct TransactionsView: View {
             }
             .navigationDestination(for: CoreModel.Transaction.self) { TransactionDetailView(tx: $0) }
             .task(id: PendingNavigation.shared.transactionId) {
-                guard let id = PendingNavigation.shared.transactionId,
-                      let tx = allTx.first(where: { $0.id == id }) else { return }
-                path = [tx]
+                guard let id = PendingNavigation.shared.transactionId else { return }
+                // Fetch directly: the @Query may not have delivered yet on first appearance.
+                if let tx = (try? ctx.fetch(FetchDescriptor<CoreModel.Transaction>(
+                    predicate: #Predicate { $0.id == id })))?.first {
+                    path = [tx]
+                }
                 PendingNavigation.shared.transactionId = nil
             }
             .scrollEdgeEffectStyle(.soft, for: .all)
