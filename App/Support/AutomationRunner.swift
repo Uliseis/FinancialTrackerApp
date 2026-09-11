@@ -84,22 +84,31 @@ final class NotificationResponder: NSObject, UNUserNotificationCenterDelegate {
     var container: ModelContainer?
     var engine: CloudKitSyncEngine?
 
+    // Completion-handler variants on purpose: the async ones resume on the cooperative pool
+    // and UIKit asserts (SIGABRT in _updateSnapshotAndStateRestoration) when the completion
+    // is called off the main thread. Crashed on the first real tap, 2026-09-11.
     func userNotificationCenter(
-        _ center: UNUserNotificationCenter, willPresent notification: UNNotification
-    ) async -> UNNotificationPresentationOptions {
-        [.banner, .list, .sound]
+        _ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .list, .sound])
     }
 
     func userNotificationCenter(
-        _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
-    ) async {
+        _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping @Sendable () -> Void
+    ) {
         let info = response.notification.request.content.userInfo
         let action = response.actionIdentifier
         let txId = (info["txId"] as? String).flatMap(UUID.init(uuidString:))
         let debitId = (info["debitTxId"] as? String).flatMap(UUID.init(uuidString:))
-        await Self.handle(action: action, txId: txId, debitId: debitId,
-                          externalId: info["externalId"] as? String, key: info["key"] as? String)
-        await Self.shared.engine?.sendPendingChanges()
+        let externalId = info["externalId"] as? String
+        let key = info["key"] as? String
+        Task { @MainActor in
+            Self.handle(action: action, txId: txId, debitId: debitId, externalId: externalId, key: key)
+            await Self.shared.engine?.sendPendingChanges()
+            completionHandler()
+        }
     }
 
     @MainActor
