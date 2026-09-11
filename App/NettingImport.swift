@@ -7,14 +7,16 @@ import CoreLogic
 // One-shot, gated on OFNET=1: applies user-approved nettings from Documents/net.json.
 //   {"matches":[{"label":"…","primary":"<tx uuid>","reimbursements":["<tx uuid>"]}],
 //    "creditMatches":[{"label":"…","credit":"<tx uuid>","expenses":["<tx uuid>"]}],
-//    "pairs":[["<tx uuid>","<tx uuid>"]]}
+//    "pairs":[["<tx uuid>","<tx uuid>"]],
+//    "categorize":[{"tx":"<tx uuid>","category":"Other Income"}]}
 // matches → shared-expense groups (an expense netted by the Bizums that repaid it);
 // pairs → manual transfer pairs (an own-money move the detector missed). Idempotent: a row
 // already in a group / pair makes CoreLogic throw, which is logged and skipped.
 enum NettingImport {
     struct Match: Decodable { let label: String; let primary: String; let reimbursements: [String] }
     struct CreditMatch: Decodable { let label: String; let credit: String; let expenses: [String] }
-    struct Payload: Decodable { let matches: [Match]?; let creditMatches: [CreditMatch]?; let pairs: [[String]]? }
+    struct Categorize: Decodable { let tx: String; let category: String }
+    struct Payload: Decodable { let matches: [Match]?; let creditMatches: [CreditMatch]?; let pairs: [[String]]?; let categorize: [Categorize]? }
 
     @MainActor
     static func runIfRequested(_ container: ModelContainer) {
@@ -52,6 +54,17 @@ enum NettingImport {
             do { _ = try CoreLogic.Transfers.pairManual(first, second, in: ctx); done += 1 }
             catch { print("[Netting] pair \(pair) failed: \(error)") }
         }
+        for c in payload.categorize ?? [] {
+            let name = c.category
+            guard let id = UUID(uuidString: c.tx), let tx = fetch(id, in: ctx),
+                  let category = try? ctx.fetch(FetchDescriptor<CoreModel.Category>(
+                    predicate: #Predicate { $0.name == name })).first else { print("[Netting] categorize \(c.tx) skipped"); continue }
+            tx.category = category
+            tx.categorySource = .manual
+            tx.updatedAt = .now
+            done += 1
+        }
+        try? ctx.save()
         print("[Netting] applied \(done)")
         try? FileManager.default.removeItem(at: url)
     }
