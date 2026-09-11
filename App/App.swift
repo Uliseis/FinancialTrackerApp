@@ -129,6 +129,7 @@ struct OdysseyFinanceApp: App {
         PensionSplitBackfill.runIfRequested(modelContainer)
         EBWatermarkRewind.runIfRequested(modelContainer)
         NettingImport.runIfRequested(modelContainer)
+        AutomationBootstrap.runIfRequested(modelContainer)
         #endif
     }
 }

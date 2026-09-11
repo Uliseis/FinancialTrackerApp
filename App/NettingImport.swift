@@ -6,13 +6,15 @@ import CoreLogic
 
 // One-shot, gated on OFNET=1: applies user-approved nettings from Documents/net.json.
 //   {"matches":[{"label":"…","primary":"<tx uuid>","reimbursements":["<tx uuid>"]}],
+//    "creditMatches":[{"label":"…","credit":"<tx uuid>","expenses":["<tx uuid>"]}],
 //    "pairs":[["<tx uuid>","<tx uuid>"]]}
 // matches → shared-expense groups (an expense netted by the Bizums that repaid it);
 // pairs → manual transfer pairs (an own-money move the detector missed). Idempotent: a row
 // already in a group / pair makes CoreLogic throw, which is logged and skipped.
 enum NettingImport {
     struct Match: Decodable { let label: String; let primary: String; let reimbursements: [String] }
-    struct Payload: Decodable { let matches: [Match]?; let pairs: [[String]]? }
+    struct CreditMatch: Decodable { let label: String; let credit: String; let expenses: [String] }
+    struct Payload: Decodable { let matches: [Match]?; let creditMatches: [CreditMatch]?; let pairs: [[String]]? }
 
     @MainActor
     static func runIfRequested(_ container: ModelContainer) {
@@ -34,6 +36,15 @@ enum NettingImport {
                     .init(label: m.label, primaryTxId: primary, reimbursementTxIds: reimbursements), in: ctx)
                 done += 1
             } catch { print("[Netting] match \(m.label) failed: \(error)") }
+        }
+        for m in payload.creditMatches ?? [] {
+            guard let credit = UUID(uuidString: m.credit) else { continue }
+            do {
+                _ = try CoreLogic.SharedExpenses.createGroupFromCredit(
+                    .init(label: m.label, creditTxId: credit,
+                          expenseTxIds: m.expenses.compactMap(UUID.init(uuidString:))), in: ctx)
+                done += 1
+            } catch { print("[Netting] credit match \(m.label) failed: \(error)") }
         }
         for pair in payload.pairs ?? [] {
             guard pair.count == 2, let a = UUID(uuidString: pair[0]), let b = UUID(uuidString: pair[1]),

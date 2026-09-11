@@ -29,6 +29,8 @@ final class RecurringTests: XCTestCase {
         charge("6", "Mimbre", day(2026, 7, 4)); charge("6", "Mimbre", day(2026, 7, 19)); charge("6", "Mimbre", day(2026, 8, 18))
         // Same merchant, different amounts: never groups.
         charge("12.99", "Supermercado", day(2026, 7, 8)); charge("46.37", "Supermercado", day(2026, 8, 4))
+        // Same amount once a month but on the 31st and then the 3rd: a bar, not a subscription.
+        charge("16", "Mimbre", day(2026, 7, 31)); charge("16", "Mimbre", day(2026, 8, 3))
         // Cancelled: last seen 3 months back.
         charge("9.99", "Netflix", day(2026, 5, 1)); charge("9.99", "Netflix", day(2026, 6, 1))
         // A top-up mirror is never a charge.
