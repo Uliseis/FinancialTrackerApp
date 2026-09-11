@@ -46,6 +46,7 @@ enum ForegroundBankSync {
         // Independent of Enable Banking: brokers and crypto have their own sources, and an
         // unconfigured bank connection shouldn't stop them refreshing.
         _ = await CoreLogic.InvestmentRefresh.run(in: ctx)
+        await AutomationRunner.run(ctx)
         // Rows inserted on the main context push via SaveObserver, but nudge the engine so
         // they leave the device on this run rather than the next save.
         await engine?.sendPendingChanges()

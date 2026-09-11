@@ -9,6 +9,10 @@ import CoreIntegrations
 public enum BackgroundSync {
     public static let taskIdentifier = "com.uliseis.odysseyfinance.refresh"
 
+    // App-level work that should follow a background bank sync (automations). CoreSync
+    // can't see the App target, so the App installs it at launch.
+    @MainActor public static var afterSync: (@MainActor (ModelContainer) async -> Void)?
+
     @MainActor
     public static func register(engine: CloudKitSyncEngine) {
         BGTaskScheduler.shared.register(
@@ -35,6 +39,7 @@ public enum BackgroundSync {
         let box = TaskBox(task: task)
         let work = Task { @MainActor in
             await syncEnableBanking(engine.modelContainer)
+            await afterSync?(engine.modelContainer)
             await engine.fetchOnLaunch()
             await engine.sendPendingChanges()
             schedule()

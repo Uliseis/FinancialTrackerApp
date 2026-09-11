@@ -44,7 +44,10 @@ extension CoreLogic {
 
             var items: [Item] = []
             for (key, occurrences) in groups {
-                let past = occurrences.filter { $0.month < refMonth }
+                // An auto-booked row proves nothing; only rows the bank/statement produced
+                // (or the user typed) count as evidence. Statement import rewrites a confirmed
+                // auto row's id, which is exactly when it starts counting.
+                let past = occurrences.filter { $0.month < refMonth && !$0.tx.externalId.hasPrefix(Automations.recurringPrefix) }
                 let months = Set(past.map(\.month))
                 guard months.count >= minMonths,
                       past.count == months.count,
