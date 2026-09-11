@@ -22,7 +22,10 @@ struct RootTabView: View {
                 SettingsView()
             }
         }
-        .onChange(of: pending) { _, id in if id != nil { selection = .transactions } }
+        // initial: true — after Face ID the tab view mounts with the id already set (a tap
+        // that launched the app, or one that arrived while locked), and a change-only
+        // observer would leave the user on the Dashboard.
+        .onChange(of: pending, initial: true) { _, id in if id != nil { selection = .transactions } }
     }
 }
 
