@@ -9,6 +9,7 @@ struct BalanceAnchorView: View {
     @State private var date: Date
     @State private var confirmingClear = false
     @State private var saveError: String?
+    @State private var shownNow: Decimal?
     @Environment(\.modelContext) private var ctx
     @Environment(\.dismiss) private var dismiss
 
@@ -31,7 +32,12 @@ struct BalanceAnchorView: View {
                     }
                     DatePicker("As of", selection: $date)
                 } footer: {
-                    Text("The balance will show as this amount plus transactions after this date. Older transactions stay but stop affecting the balance.")
+                    VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                        if let shownNow {
+                            Text("The app currently shows \(Money.format(shownNow, currency: account.currency)); the difference is \(Money.format(amount - shownNow, currency: account.currency)).")
+                        }
+                        Text("The balance will show as this amount plus transactions after this date. Older transactions stay but stop affecting the balance.")
+                    }
                 }
                 if hasAnchor {
                     Section {
@@ -57,6 +63,7 @@ struct BalanceAnchorView: View {
                 Text("The balance reverts to opening balance plus all transactions.")
             }
             .saveErrorAlert($saveError)
+            .task { shownNow = CoreLogic.Accounts.computeNativeBalances([account], in: ctx)[account.id] }
         }
     }
 
