@@ -100,8 +100,6 @@ extension CoreLogic {
             ctx.insert(run)
             try ctx.saveTouchingChanges()
 
-            var insertedIds: [UUID] = []
-
             do {
                 let session = try await api.getSession(sessionId)
                 guard session.status == "AUTHORIZED" else {
@@ -123,7 +121,6 @@ extension CoreLogic {
                         let inserted = try await syncAccount(
                             sessionAccount, connection: connection, api: api,
                             in: ctx, now: now, errors: &result.errors)
-                        insertedIds.append(contentsOf: inserted)
                         result.transactionsInserted += inserted.count
                     } catch {
                         let label = sessionAccount.uid
@@ -136,26 +133,32 @@ extension CoreLogic {
 
                 let fetchFailed = !result.errors.isEmpty
 
+                // Data-driven, not insertedIds-driven: a run suspended after saving rows but
+                // before post-processing would otherwise leave them unmirrored forever.
                 var post = PostProcess()
-                if !insertedIds.isEmpty {
-                    do {
-                        let fx = try FX.backfillTransactionEurAmounts(in: ctx, sinceDays: 90)
-                        post.fxBackfilled = fx.updated
-                        post.fxSkipped = fx.skipped
-                    } catch { result.errors.append("fx: \(describe(error))") }
-                    do {
+                do {
+                    let fx = try FX.backfillTransactionEurAmounts(in: ctx)
+                    post.fxBackfilled = fx.updated
+                    post.fxSkipped = fx.skipped
+                } catch { result.errors.append("fx: \(describe(error))") }
+                do {
+                    let cutoff = now.addingTimeInterval(-30 * 86_400)
+                    let uncategorized = try ctx.fetch(FetchDescriptor<Transaction>(
+                        predicate: #Predicate { $0.category == nil && $0.bookedAt >= cutoff }
+                    )).filter { $0.categorySource == .bank }.map(\.id)
+                    if !uncategorized.isEmpty {
                         post.categorized = try Categorize
-                            .applyRulesToTransactions(in: ctx, txIds: insertedIds).updated
-                    } catch { result.errors.append("categorize: \(describe(error))") }
-                    do {
-                        post.routedMirrors = try TransferRoutes
-                            .apply(in: ctx, txIds: insertedIds).mirroredCreated
-                    } catch { result.errors.append("routes: \(describe(error))") }
-                    do {
-                        post.transfersMatched = try Transfers
-                            .detect(in: ctx, sinceDays: 30).matched
-                    } catch { result.errors.append("transfers: \(describe(error))") }
-                }
+                            .applyRulesToTransactions(in: ctx, txIds: uncategorized).updated
+                    }
+                } catch { result.errors.append("categorize: \(describe(error))") }
+                do {
+                    post.routedMirrors = try TransferRoutes
+                        .apply(in: ctx, sinceDays: 30).mirroredCreated
+                } catch { result.errors.append("routes: \(describe(error))") }
+                do {
+                    post.transfersMatched = try Transfers
+                        .detect(in: ctx, sinceDays: 30).matched
+                } catch { result.errors.append("transfers: \(describe(error))") }
                 do {
                     _ = try Transfers.repairGroups(in: ctx)
                 } catch { result.errors.append("repair: \(describe(error))") }
@@ -323,7 +326,7 @@ extension CoreLogic {
             account.name = name
             if !currencyOverridden { account.currency = currency }
             account.iban = iban
-            account.balance = balance
+            if let balance { account.balance = balance }
             account.balanceUpdatedAt = now
             var merged = prevMeta.merging(discoveredMeta) { _, new in new }
             if fullSync { merged.removeValue(forKey: "fullSyncRequested") }
