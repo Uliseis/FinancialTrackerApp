@@ -48,7 +48,8 @@ struct DashboardModel {
     var budgets: [BudgetBar]
     var hasAccounts: Bool
 
-    var totalNetWorth: Decimal { cashTotal + investmentValue }
+    // Credit-group balances are negative (money owed), so they add straight in.
+    var totalNetWorth: Decimal { cashTotal + investmentValue + liabilities }
     var currentMonth: MonthBar? { cashFlow.last }
     var previousMonth: MonthBar? { cashFlow.count >= 2 ? cashFlow[cashFlow.count - 2] : nil }
 
