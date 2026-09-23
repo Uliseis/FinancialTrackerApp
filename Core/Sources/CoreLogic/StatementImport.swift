@@ -93,8 +93,11 @@ extension CoreLogic {
                 tx.updatedAt = now
                 summary.matchedManual += 1
             }
-            if let first = parsed.rows.map(\.startedAt).min(), let last = parsed.rows.map(\.startedAt).max() {
-                let span = first.addingTimeInterval(-86_400)...last
+            // Upper bound backs off by the match window: a charge Revolut still lists as
+            // PENDING at export time is skipped by the parser, so its quick-add is not a ghost yet.
+            if let first = parsed.rows.map(\.startedAt).min(), let last = parsed.rows.map(\.startedAt).max(),
+               first.addingTimeInterval(-86_400) <= last.addingTimeInterval(-matchWindow) {
+                let span = first.addingTimeInterval(-86_400)...last.addingTimeInterval(-matchWindow)
                 summary.unmatched = candidates.indices
                     .filter { !usedCandidates.contains($0) && span.contains(candidates[$0].bookedAt) }
                     .map { let tx = candidates[$0]
