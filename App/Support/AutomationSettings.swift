@@ -31,11 +31,11 @@ enum AutomationSettings {
     }
     static func declineRecurring(_ externalId: String) { declinedRecurring.insert(externalId) }
 
-    static var declinedSplits: Set<UUID> {
-        get { Set((defaults.stringArray(forKey: declinedSplitsKey) ?? []).compactMap(UUID.init(uuidString:))) }
-        set { defaults.set(newValue.map(\.uuidString).sorted(), forKey: declinedSplitsKey) }
+    static var declinedSplits: Set<String> {
+        get { Set(defaults.stringArray(forKey: declinedSplitsKey) ?? []) }
+        set { defaults.set(newValue.sorted(), forKey: declinedSplitsKey) }
     }
-    static func declineSplit(_ arrivalId: UUID) { declinedSplits.insert(arrivalId) }
+    static func declineSplit(_ arrivalExternalId: String) { declinedSplits.insert(arrivalExternalId) }
 
     // nil unless the toggle is on and the rule is complete.
     static var splitRule: CoreLogic.Automations.SplitRule? {

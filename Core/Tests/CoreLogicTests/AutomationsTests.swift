@@ -37,6 +37,7 @@ final class AutomationsTests: XCTestCase {
         let tx = try XCTUnwrap(ctx.fetch(FetchDescriptor<Transaction>()).first { $0.externalId == booked[0].externalId })
         XCTAssertEqual(tx.amount, Decimal(string: "-4.99"))
         XCTAssertEqual(tx.direction, .debit)
+        XCTAssertEqual(tx.bookedAt, utc.date(from: DateComponents(year: 2026, month: 9, day: 12)))
 
         // Idempotent.
         XCTAssertEqual(try A.bookDueRecurring(in: ctx, muted: [], declined: [], now: day(2026, 9, 16), calendar: utc).count, 0)
@@ -81,15 +82,55 @@ final class AutomationsTests: XCTestCase {
         let debit = try XCTUnwrap(ctx.fetch(FetchDescriptor<Transaction>()).first { $0.id == splits[0].debitTxId })
         XCTAssertEqual(debit.amount, -125)
         XCTAssertEqual(debit.bookedAt, arrival.bookedAt)
-        XCTAssertEqual(A.splitSource(of: debit), arrival.id)
+        XCTAssertEqual(try A.splitSource(of: debit, in: ctx), "mirror:abc")
         XCTAssertEqual(try ctx.fetch(FetchDescriptor<Transaction>()).filter { $0.account?.id == pension.id }.map(\.amount), [125])
 
         XCTAssertEqual(try A.bookSplits(rule: rule, in: ctx, declined: []).count, 0)
 
         let undone = try A.undoSplit(debitTxId: splits[0].debitTxId, in: ctx)
-        XCTAssertEqual(undone, arrival.id)
+        XCTAssertEqual(undone, "mirror:abc")
         XCTAssertEqual(try ctx.fetchCount(FetchDescriptor<Transaction>()), 2)
         XCTAssertEqual(try ctx.fetchCount(FetchDescriptor<TransferGroup>()), 0)
-        XCTAssertEqual(try A.bookSplits(rule: rule, in: ctx, declined: [arrival.id]).count, 0)
+        XCTAssertEqual(try A.bookSplits(rule: rule, in: ctx, declined: ["mirror:abc"]).count, 0)
+    }
+
+    // A 31st-of-the-month charge still books in February, on the last day.
+    func testRecurringDueDayClampsToShortMonth() throws {
+        let ctx = try S.makeContext()
+        let card = S.makeAccount(ctx, name: "Card")
+        for (y, m) in [(2025, 12), (2026, 1)] {
+            _ = S.makeTx(ctx, account: card, amount: -10, direction: .debit, bookedAt: day(y, m, 31), description: "Gym")
+        }
+        _ = S.makeTx(ctx, account: card, amount: -10, direction: .debit, bookedAt: day(2025, 11, 30), description: "Gym")
+        let booked = try A.bookDueRecurring(in: ctx, muted: [], declined: [], now: day(2026, 2, 28), calendar: utc)
+        XCTAssertEqual(booked.count, 1)
+        let tx = try XCTUnwrap(ctx.fetch(FetchDescriptor<Transaction>()).first { $0.externalId == booked[0].externalId })
+        XCTAssertEqual(tx.bookedAt, utc.date(from: DateComponents(year: 2026, month: 2, day: 28)))
+    }
+
+    // Route repairs recreate mirror legs with fresh UUIDs; the split must not repeat.
+    func testPensionSplitSurvivesArrivalMirrorRecreation() throws {
+        let ctx = try S.makeContext()
+        let space = S.makeSpace(ctx)
+        let funds = S.makeAccount(ctx, name: "Funds", space: space)
+        let pension = S.makeAccount(ctx, name: "Pension", space: space)
+        let arrival = S.makeTx(ctx, account: funds, amount: 1600, direction: .credit,
+                               bookedAt: day(2026, 8, 24), isTransfer: true, externalId: "mirror:abc")
+        let rule = A.SplitRule(sourceAccountId: funds.id, targetAccountId: pension.id,
+                               amountEur: 125, since: day(2026, 8, 1))
+        let splits = try A.bookSplits(rule: rule, in: ctx, declined: [])
+        let debit = try XCTUnwrap(ctx.fetch(FetchDescriptor<Transaction>()).first { $0.id == splits[0].debitTxId })
+
+        // Legacy marker (arrival UUID) still counts as handled.
+        let current = debit.rawJSON
+        debit.rawJSON = try JSONEncoder().encode([A.splitMarkerKey: arrival.id.uuidString])
+        XCTAssertEqual(try A.bookSplits(rule: rule, in: ctx, declined: []).count, 0)
+        debit.rawJSON = current
+
+        ctx.delete(arrival)
+        _ = S.makeTx(ctx, account: funds, amount: 1600, direction: .credit,
+                     bookedAt: day(2026, 8, 24), isTransfer: true, externalId: "mirror:abc")
+        try ctx.save()
+        XCTAssertEqual(try A.bookSplits(rule: rule, in: ctx, declined: []).count, 0)
     }
 }
