@@ -848,4 +848,26 @@ final class InvestmentsTests: XCTestCase {
         all = try ctx.fetch(FetchDescriptor<PortfolioValuation>())
         XCTAssertEqual(all.count, 2)
     }
+
+    // A failed live refresh leaves yesterday's reading; a deposit since must still count or
+    // it shows as a loss of exactly the deposit.
+    func testStaleLiveReadingStillAddsLaterDeposits() throws {
+        let ctx = try S.makeContext()
+        let acc = Account(externalId: "x", type: .broker, institution: "T", name: "T", currency: "EUR",
+                          costBasisOpeningEur: 2000, costBasisOpeningAt: day(2026, 1, 1),
+                          liveValueSource: "t212")
+        ctx.insert(acc)
+        let reading = makeValuation(ctx, account: acc, asOf: day(2026, 6, 1), marketValueEur: 2000)
+        let leg = I.ContributionLeg(accountId: acc.id, bookedAt: day(2026, 6, 1).addingTimeInterval(3600), netEur: 500)
+        let basis = I.basis(for: acc)
+
+        let stale = try XCTUnwrap(I.computeAccountMetrics(
+            bases: [basis], valuations: [reading], legs: [leg], now: day(2026, 6, 2))[acc.id])
+        XCTAssertEqual(stale.valueEur, 2500)
+        XCTAssertEqual(stale.pnlEur, 0)
+
+        let fresh = try XCTUnwrap(I.computeAccountMetrics(
+            bases: [basis], valuations: [reading], legs: [leg], now: day(2026, 6, 1).addingTimeInterval(7200))[acc.id])
+        XCTAssertEqual(fresh.valueEur, 2000)
+    }
 }
