@@ -33,7 +33,7 @@ extension CoreLogic {
         @MainActor @discardableResult
         public static func bookDueRecurring(
             in ctx: ModelContext, muted: Set<String>, declined: Set<String>,
-            now: Date = .now, calendar: Calendar = .current
+            pins: [Recurring.Pin] = [], now: Date = .now, calendar: Calendar = .current
         ) throws -> [BookedRecurring] {
             let accounts = try ctx.fetch(FetchDescriptor<Account>())
                 .filter { $0.connection == nil && !$0.archived }
@@ -45,7 +45,8 @@ extension CoreLogic {
                 let accountId = account.id
                 let txs = try ctx.fetch(FetchDescriptor<Transaction>(
                     predicate: #Predicate { $0.account?.id == accountId }))
-                let items = Recurring.detect(txs, month: now, calendar: calendar)
+                let items = Recurring.detect(
+                    txs, month: now, calendar: calendar, pins: pins.filter { $0.accountId == accountId })
                 for item in items where item.bookedAt == nil && !muted.contains(item.key) {
                     // Dated on the expected day so the statement import's ±3-day match finds it.
                     let day = min(item.expectedDay, daysInMonth)

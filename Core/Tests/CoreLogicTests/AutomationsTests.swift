@@ -49,6 +49,23 @@ final class AutomationsTests: XCTestCase {
         XCTAssertEqual(try A.bookDueRecurring(in: ctx, muted: [booked[0].key], declined: [], now: day(2026, 9, 20), calendar: utc).count, 0)
     }
 
+    func testPinnedRecurringBooksOnPinnedDayOnce() throws {
+        let ctx = try S.makeContext()
+        let card = S.makeAccount(ctx, name: "Card")
+        for (m, d) in [(7, 18), (8, 20), (9, 27)] {
+            _ = S.makeTx(ctx, account: card, amount: Decimal(string: "-9.99")!, direction: .debit, bookedAt: day(2026, m, d), description: "Amazon Prime")
+        }
+        let pins = [CoreLogic.Recurring.Pin(accountId: card.id, key: "amazon prime|-9.99", merchant: "Amazon Prime",
+                                            amount: Decimal(string: "-9.99")!, day: 27)]
+        XCTAssertEqual(try A.bookDueRecurring(in: ctx, muted: [], declined: [], pins: pins, now: day(2026, 10, 26), calendar: utc).count, 0)
+        let booked = try A.bookDueRecurring(in: ctx, muted: [], declined: [], pins: pins, now: day(2026, 10, 28), calendar: utc)
+        XCTAssertEqual(booked.count, 1)
+        let tx = try XCTUnwrap(ctx.fetch(FetchDescriptor<Transaction>()).first { $0.externalId == booked[0].externalId })
+        XCTAssertEqual(tx.bookedAt, utc.date(from: DateComponents(year: 2026, month: 10, day: 27)))
+        XCTAssertEqual(tx.amount, Decimal(string: "-9.99"))
+        XCTAssertEqual(try A.bookDueRecurring(in: ctx, muted: [], declined: [], pins: pins, now: day(2026, 10, 30), calendar: utc).count, 0)
+    }
+
     // An auto-booked row is not evidence that the subscription still exists; only a row the
     // statement import confirmed (id rewritten to revolutcsv) keeps the pattern alive.
     func testAutoBookedRowsDoNotSelfPerpetuate() throws {
