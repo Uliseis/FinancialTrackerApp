@@ -47,4 +47,31 @@ final class RecurringTests: XCTestCase {
         XCTAssertEqual(items[1].expectedDay, 17)
         XCTAssertEqual(items[1].bookedAt, day(2026, 9, 15))
     }
+
+    func testPinOverridesDayAndSurvivesSpreadGuard() throws {
+        let ctx = try S.makeContext()
+        let card = S.makeAccount(ctx, name: "Card")
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC")!
+        for (m, d) in [(6, 12), (7, 12), (8, 12)] {
+            _ = S.makeTx(ctx, account: card, amount: Decimal(string: "-4.99")!, direction: .debit, bookedAt: day(2026, m, d), description: "Google One")
+        }
+        for (m, d) in [(7, 18), (8, 20), (9, 27)] {
+            _ = S.makeTx(ctx, account: card, amount: Decimal(string: "-9.99")!, direction: .debit, bookedAt: day(2026, m, d), description: "Amazon Prime")
+        }
+        let all = try ctx.fetch(FetchDescriptor<Transaction>())
+        let october = day(2026, 10, 3)
+        XCTAssertEqual(CoreLogic.Recurring.detect(all, month: october, calendar: utc).map(\.merchant), ["Google One"])
+
+        let pins = [
+            CoreLogic.Recurring.Pin(accountId: card.id, key: "google one|-4.99", merchant: "Google One", amount: Decimal(string: "-4.99")!, day: 20),
+            CoreLogic.Recurring.Pin(accountId: card.id, key: "amazon prime|-9.99", merchant: "Amazon Prime", amount: Decimal(string: "-9.99")!, day: 27),
+        ]
+        let items = CoreLogic.Recurring.detect(all, month: october, calendar: utc, pins: pins)
+        XCTAssertEqual(items.map(\.merchant), ["Google One", "Amazon Prime"])
+        XCTAssertEqual(items.map(\.expectedDay), [20, 27])
+        XCTAssertEqual(items[0].seenMonths, 3)
+        XCTAssertEqual(items[1].amount, Decimal(string: "-9.99"))
+        XCTAssertNil(items[1].bookedAt)
+    }
 }

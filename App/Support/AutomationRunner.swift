@@ -15,7 +15,8 @@ enum AutomationRunner {
     static func run(_ ctx: ModelContext) async {
         if AutomationSettings.recurringEnabled {
             let booked = (try? CoreLogic.Automations.bookDueRecurring(
-                in: ctx, muted: AutomationSettings.muted, declined: AutomationSettings.declinedRecurring)) ?? []
+                in: ctx, muted: AutomationSettings.muted, declined: AutomationSettings.declinedRecurring,
+                pins: AutomationSettings.pins)) ?? []
             for b in booked { await AutomationNotifications.recurringBooked(b) }
         }
         if let rule = AutomationSettings.splitRule {

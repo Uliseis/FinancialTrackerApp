@@ -13,6 +13,7 @@ enum AutomationSettings {
     private static let mutedKey = "automation.recurring.muted"
     private static let declinedRecurringKey = "automation.recurring.declined"
     private static let declinedSplitsKey = "automation.pension.declinedArrivals"
+    private static let pinsKey = "automation.recurring.pins"
 
     private static var defaults: UserDefaults { .standard }
 
@@ -30,6 +31,18 @@ enum AutomationSettings {
         set { defaults.set(Array(newValue).sorted(), forKey: declinedRecurringKey) }
     }
     static func declineRecurring(_ externalId: String) { declinedRecurring.insert(externalId) }
+
+    static var pins: [CoreLogic.Recurring.Pin] {
+        get { defaults.data(forKey: pinsKey).flatMap { try? JSONDecoder().decode([CoreLogic.Recurring.Pin].self, from: $0) } ?? [] }
+        set { defaults.set(try? JSONEncoder().encode(newValue), forKey: pinsKey) }
+    }
+    static func pin(_ pin: CoreLogic.Recurring.Pin) {
+        unpin(accountId: pin.accountId, key: pin.key)
+        pins.append(pin)
+    }
+    static func unpin(accountId: UUID, key: String) {
+        pins.removeAll { $0.accountId == accountId && $0.key == key }
+    }
 
     static var declinedSplits: Set<String> {
         get { Set(defaults.stringArray(forKey: declinedSplitsKey) ?? []) }
