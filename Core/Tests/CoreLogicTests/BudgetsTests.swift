@@ -66,7 +66,7 @@ final class BudgetsTests: XCTestCase {
         t1.category = cat
         let t2 = S.makeTx(ctx, account: a, amount: -50, amountEur: -50, direction: .debit, bookedAt: noon(2026, 6, 20))
         t2.category = cat
-        // credit in category — ignored (not a debit)
+        // refund in category — offsets the spend
         let t3 = S.makeTx(ctx, account: a, amount: 30, amountEur: 30, direction: .credit, bookedAt: noon(2026, 6, 10))
         t3.category = cat
         // out of window
@@ -78,7 +78,7 @@ final class BudgetsTests: XCTestCase {
         t5.category = cat
 
         let p = try B.budgetProgress(budget, at: noon(2026, 6, 25), in: ctx)
-        XCTAssertEqual(p.spentEur, 150)
+        XCTAssertEqual(p.spentEur, 120)
         XCTAssertEqual(p.amountEur, 400)
         XCTAssertEqual(p.categoryId, cat.id)
         XCTAssertEqual(p.range.start, midnight(2026, 6, 1))
