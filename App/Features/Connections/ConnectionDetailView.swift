@@ -113,8 +113,10 @@ struct ConnectionDetailView: View {
             defer { syncing = false }
             do {
                 let signer = try EBKeychain().loadSigner()
-                let result = try await CoreLogic.EBSync.sync(
-                    connection: connection, api: EBClient(tokenProvider: signer), in: ctx)
+                let result = try await withBackgroundTask("EBSync") {
+                    try await CoreLogic.EBSync.sync(
+                        connection: connection, api: EBClient(tokenProvider: signer), in: ctx)
+                }
                 resultMessage = result.errors.isEmpty
                     ? "Synced. \(pluralized(result.transactionsInserted, "new transaction")) across \(pluralized(result.accountsTouched, "account"))."
                     : "Synced with issues: \(result.errors.joined(separator: "; "))"
