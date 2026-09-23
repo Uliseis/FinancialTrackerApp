@@ -316,12 +316,19 @@ struct RecordValuationView: View {
             if let market {
                 try CoreLogic.Investments.recordValuation(
                     account: account, marketValueEur: market, cashValueEur: cash,
-                    asOf: asOf, in: ctx)
+                    asOf: endOfDay(asOf), in: ctx)
             }
             dismiss()
         } catch {
             saveError = "The changes weren’t saved."
         }
+    }
+
+    // The picker is date-only; a valuation dated D must include every leg booked on D,
+    // whatever time of day it was entered.
+    private func endOfDay(_ date: Date) -> Date {
+        let cal = Calendar.current
+        return cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: date))!.addingTimeInterval(-1)
     }
 }
 
