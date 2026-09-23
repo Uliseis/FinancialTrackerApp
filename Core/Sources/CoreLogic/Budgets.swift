@@ -74,8 +74,9 @@ extension CoreLogic {
                         tx.bookedAt < end
                     }
                 ))
-                for tx in txs where tx.direction == .debit {
-                    spent += tx.amountEur ?? 0
+                let countsRefunds = budget.category?.kind != "income"
+                for tx in txs where tx.direction == .debit || countsRefunds {
+                    spent -= tx.amountEur ?? 0
                 }
             }
             return Progress(
@@ -84,7 +85,7 @@ extension CoreLogic {
                 amountEur: budget.amountEur,
                 period: budget.period,
                 range: range,
-                spentEur: abs(spent)
+                spentEur: max(spent, 0)
             )
         }
 

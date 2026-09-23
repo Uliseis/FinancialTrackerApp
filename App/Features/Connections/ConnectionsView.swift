@@ -102,8 +102,9 @@ struct ConnectionsListView: View {
             defer { syncingAll = false }
             do {
                 let signer = try EBKeychain().loadSigner()
-                let results = await CoreLogic.EBSync.syncAll(
-                    api: EBClient(tokenProvider: signer), in: ctx)
+                let results = await withBackgroundTask("EBSync") {
+                    await CoreLogic.EBSync.syncAll(api: EBClient(tokenProvider: signer), in: ctx)
+                }
                 let inserted = results.reduce(0) { $0 + $1.transactionsInserted }
                 let failed = results.filter { !$0.errors.isEmpty }.count
                 syncMessage = failed == 0

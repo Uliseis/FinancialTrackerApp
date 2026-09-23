@@ -41,6 +41,7 @@ final class StatementImportTests: XCTestCase {
         XCTAssertEqual(quick.externalId, "revolutcsv:v1:2026-08-03:-16.00:mimbre:0")
         XCTAssertEqual(quick.transactionDescription, "Bar El Mimbre")
         XCTAssertEqual(quick.valueAt, date("2026-08-05T09:19:26Z"))
+        XCTAssertEqual(quick.bookedAt, date("2026-08-03T22:16:00Z"))
 
         let all = try ctx.fetch(FetchDescriptor<Transaction>()).sorted { $0.bookedAt < $1.bookedAt }
         XCTAssertEqual(all.count, 3)
@@ -65,5 +66,27 @@ final class StatementImportTests: XCTestCase {
         XCTAssertThrowsError(try CoreLogic.StatementImport.importRevolutCSV(csv, into: bank, in: ctx)) {
             XCTAssertEqual($0 as? CoreLogic.StatementImport.ImportError, .notManualAccount)
         }
+    }
+
+    func testRecurringMatchesWiderAndUnclaimedQuickAddsSurface() throws {
+        let ctx = try S.makeContext()
+        let space = S.makeSpace(ctx)
+        let card = try CoreLogic.Accounts.createManual(
+            name: "Credit Card", institution: "Revolut", currency: "EUR", space: space, in: ctx)
+        // Booked on the expected day; the real charge landed 5 days later.
+        let auto = try CoreLogic.Transactions.createManual(
+            account: card, amount: Decimal(string: "4.99")!, bookedAt: date("2026-08-07T10:00:00Z"), in: ctx)
+        auto.externalId = CoreLogic.Automations.recurringPrefix + "2026-08:google-one"
+        let ghost = try CoreLogic.Transactions.createManual(
+            account: card, amount: 20, bookedAt: date("2026-08-05T10:00:00Z"), description: "Tipless", in: ctx)
+        _ = try CoreLogic.Transactions.createManual(
+            account: card, amount: 7, bookedAt: date("2026-08-20T10:00:00Z"), in: ctx)
+
+        let summary = try CoreLogic.StatementImport.importRevolutCSV(csv, into: card, in: ctx)
+
+        XCTAssertTrue(auto.externalId.hasPrefix("revolutcsv:v1:2026-08-12:-4.99"))
+        XCTAssertEqual(summary.unmatched.map(\.id), [ghost.id])
+        try CoreLogic.StatementImport.deleteUnmatched(ids: summary.unmatched.map(\.id), in: ctx)
+        XCTAssertEqual(try ctx.fetchCount(FetchDescriptor<Transaction>()), 4)
     }
 }

@@ -16,6 +16,7 @@ extension CoreLogic {
         public struct Parsed: Equatable, Sendable {
             public let rows: [Row]
             public let skippedTransfers: Int
+            public var skippedNotCompleted = 0
             public let errors: [String]
         }
 
@@ -39,17 +40,26 @@ extension CoreLogic {
             var dupCounts: [String: Int] = [:]
             var rows: [Row] = []
             var skipped = 0
+            var notCompleted = 0
             var errors: [String] = []
             for (i, record) in records.enumerated() {
                 if record.allSatisfy({ $0.trimmingCharacters(in: .whitespaces).isEmpty }) { continue }
                 let type = (field(record, "Type") ?? "").trimmingCharacters(in: .whitespaces).uppercased()
                 // Top-ups already exist as transfer mirror legs; re-adding them breaks the invariants.
-                if type == "TRANSFER" { skipped += 1; continue }
+                if type == "TRANSFER" || type == "TOPUP" { skipped += 1; continue }
+                // A REVERTED hold or DECLINED attempt never moved money.
+                if let state = field(record, "State"),
+                   state.trimmingCharacters(in: .whitespaces).uppercased() != "COMPLETED" {
+                    notCompleted += 1; continue
+                }
                 guard let started = parseMadrid(field(record, "Started Date")),
                       let amountText = normalizeAmount(field(record, "Amount")),
-                      let amount = Decimal(string: amountText) else {
+                      var amount = Decimal(string: amountText) else {
                     errors.append("row \(i + 1): missing date or amount")
                     continue
+                }
+                if let feeText = normalizeAmount(field(record, "Fee")), let fee = Decimal(string: feeText), fee >= 0 {
+                    amount -= fee
                 }
                 let completed = parseMadrid(field(record, "Completed Date")) ?? started
                 let rawDescription = field(record, "Description") ?? ""
@@ -66,7 +76,7 @@ extension CoreLogic {
                     amount: amount,
                     description: description.isEmpty ? nil : description))
             }
-            return Parsed(rows: rows, skippedTransfers: skipped, errors: errors)
+            return Parsed(rows: rows, skippedTransfers: skipped, skippedNotCompleted: notCompleted, errors: errors)
         }
 
         // lower → NFKD → [^a-z0-9]+ → "-" → trim → first 40. Combining marks are separators,

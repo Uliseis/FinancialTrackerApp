@@ -238,7 +238,8 @@ extension CoreLogic {
         public static func computeAccountMetrics(
             bases: [AccountBasis],
             valuations: [PortfolioValuation],
-            legs: [ContributionLeg]
+            legs: [ContributionLeg],
+            now: Date = .now
         ) -> [UUID: AccountMetrics] {
             var byAccount: [UUID: [PortfolioValuation]] = [:]
             for v in valuations {
@@ -299,11 +300,13 @@ extension CoreLogic {
                 }
 
                 // Strict >: the snapshot already reflects same-instant moves.
-                // A live-valued account is current by definition — adding legs would
-                // double-count money the feed already sees. Distributions are skipped: a
-                // property paying rent is not worth less afterwards.
+                // A live-valued account read today is current — adding legs would double-count
+                // money the feed already sees. If today's refresh failed the reading is stale
+                // and a deposit since would show as a loss, so it's treated like a manual one.
+                // Distributions are skipped: a property paying rent is not worth less afterwards.
                 var sinceValue: Decimal = 0
-                if !basis.isLiveValued {
+                let readToday = FX.startOfUTCDay(latest.asOf) == FX.startOfUTCDay(now)
+                if !(basis.isLiveValued && readToday) {
                     for leg in legs where leg.accountId == accId
                         && leg.bookedAt > latest.asOf && !leg.isPayout {
                         sinceValue += leg.netEur
@@ -397,7 +400,7 @@ extension CoreLogic {
                         } else { break }
                     }
                     var sinceValue: Decimal = 0
-                    if !basis.isLiveValued {
+                    if !(basis.isLiveValued && cal.startOfDay(for: anchorAt) == d) {
                         for leg in legs where leg.accountId == accId && !leg.isPayout
                             && leg.bookedAt > anchorAt && leg.bookedAt < endOfDay {
                             sinceValue += leg.netEur

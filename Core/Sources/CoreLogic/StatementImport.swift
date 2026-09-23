@@ -16,8 +16,19 @@ extension CoreLogic {
             public var skippedDuplicate = 0
             public var skippedTransfers = 0
             public var categorized = 0
+            public var skippedNotCompleted = 0
             public var errors: [String] = []
+            public var unmatched: [Unmatched] = []
             public init() {}
+        }
+
+        // A quick-add inside the statement's span that no statement row claimed: a pre-tip
+        // amount, a released hold, a mistaken tap. Left alone it drifts the balance forever.
+        public struct Unmatched: Equatable, Sendable {
+            public let id: UUID
+            public let bookedAt: Date
+            public let amount: Decimal
+            public let description: String?
         }
 
         public enum ImportError: Error, Equatable {
@@ -26,6 +37,8 @@ extension CoreLogic {
         }
 
         public static let matchWindow: TimeInterval = 3 * 86_400
+        // Auto-recurring rows are booked on the expected day; the real charge wanders ~5 days.
+        public static let recurringMatchWindow: TimeInterval = 7 * 86_400
         // Quick-add rows and screenshot-sourced rows are the only ones a statement can supersede.
         static let matchablePrefixes = ["manual-tx:", "revolutshot:", Automations.recurringPrefix]
 
@@ -38,8 +51,9 @@ extension CoreLogic {
             let parsed = try RevolutCSV.parse(text)
 
             var summary = Summary()
-            summary.parsed = parsed.rows.count + parsed.skippedTransfers
+            summary.parsed = parsed.rows.count + parsed.skippedTransfers + parsed.skippedNotCompleted
             summary.skippedTransfers = parsed.skippedTransfers
+            summary.skippedNotCompleted = parsed.skippedNotCompleted
             summary.errors = parsed.errors
 
             let accountId = account.id
@@ -60,7 +74,8 @@ extension CoreLogic {
             for (r, row) in fresh.enumerated() {
                 for (c, tx) in candidates.enumerated() where tx.amount == row.amount {
                     let distance = abs(tx.bookedAt.timeIntervalSince(row.startedAt))
-                    if distance <= matchWindow { pairs.append((distance, r, c)) }
+                    let window = tx.externalId.hasPrefix(Automations.recurringPrefix) ? recurringMatchWindow : matchWindow
+                    if distance <= window { pairs.append((distance, r, c)) }
                 }
             }
             pairs.sort { $0.distance < $1.distance }
@@ -72,9 +87,23 @@ extension CoreLogic {
                 let tx = candidates[pair.candidate]
                 let row = fresh[pair.row]
                 tx.externalId = row.externalId
+                // The statement date decides which side of the balance anchor the charge falls.
+                tx.bookedAt = row.startedAt
                 tx.valueAt = row.completedAt
                 tx.updatedAt = now
                 summary.matchedManual += 1
+            }
+            // Upper bound backs off by the match window: a charge Revolut still lists as
+            // PENDING at export time is skipped by the parser, so its quick-add is not a ghost yet.
+            if let first = parsed.rows.map(\.startedAt).min(), let last = parsed.rows.map(\.startedAt).max(),
+               first.addingTimeInterval(-86_400) <= last.addingTimeInterval(-matchWindow) {
+                let span = first.addingTimeInterval(-86_400)...last.addingTimeInterval(-matchWindow)
+                summary.unmatched = candidates.indices
+                    .filter { !usedCandidates.contains($0) && span.contains(candidates[$0].bookedAt) }
+                    .map { let tx = candidates[$0]
+                        return Unmatched(id: tx.id, bookedAt: tx.bookedAt, amount: tx.amount,
+                                         description: tx.transactionDescription) }
+                    .sorted { $0.bookedAt < $1.bookedAt }
             }
 
             let isEur = account.currency.uppercased() == "EUR"
@@ -102,6 +131,14 @@ extension CoreLogic {
                 summary.categorized = try Categorize.applyRulesToTransactions(in: ctx, txIds: insertedIds).updated
             }
             return summary
+        }
+
+        @MainActor
+        public static func deleteUnmatched(ids: [UUID], in ctx: ModelContext) throws {
+            let wanted = Set(ids)
+            for tx in try ctx.fetch(FetchDescriptor<Transaction>()) where wanted.contains(tx.id) {
+                try Transactions.delete(tx, in: ctx)
+            }
         }
     }
 }

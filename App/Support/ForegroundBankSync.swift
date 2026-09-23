@@ -40,6 +40,11 @@ enum ForegroundBankSync {
         guard UIApplication.shared.applicationState != .background else { return }
         guard isDue() else { return }
         lastRun = .now
+        await withBackgroundTask("ForegroundBankSync") { await run(ctx, engine: engine) }
+    }
+
+    @MainActor
+    private static func run(_ ctx: ModelContext, engine: CloudKitSyncEngine?) async {
         if let signer = try? EBKeychain().loadSigner() {
             _ = await CoreLogic.EBSync.syncAll(api: EBClient(tokenProvider: signer), in: ctx)
         }
@@ -51,4 +56,17 @@ enum ForegroundBankSync {
         // they leave the device on this run rather than the next save.
         await engine?.sendPendingChanges()
     }
+}
+
+// A foreground sync that the user backgrounds mid-run was suspended within seconds and left
+// its rows un-post-processed; the assertion buys ~30s to finish.
+@MainActor
+func withBackgroundTask<T>(_ name: String, _ body: () async throws -> T) async rethrows -> T {
+    nonisolated(unsafe) var id = UIBackgroundTaskIdentifier.invalid
+    id = UIApplication.shared.beginBackgroundTask(withName: name) {
+        UIApplication.shared.endBackgroundTask(id)
+        id = .invalid
+    }
+    defer { if id != .invalid { UIApplication.shared.endBackgroundTask(id) } }
+    return try await body()
 }

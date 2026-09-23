@@ -365,4 +365,29 @@ final class EBSyncTests: XCTestCase {
         XCTAssertEqual(results.count, 1)
         XCTAssertEqual(results[0].connectionId, active.id)
     }
+
+    // A prior run that was suspended after saving its rows never post-processed them; the
+    // next run must mirror them even though it inserts nothing itself.
+    func testPostProcessCatchesUpRowsFromSuspendedRun() async throws {
+        let ctx = try S.makeContext()
+        let conn = makeConnection(ctx)
+        let account = makeLinkedAccount(ctx, connection: conn)
+        let card = S.makeAccount(ctx, name: "Card")
+        try CoreLogic.TransferRoutes.createRoute(pattern: "CARD PAYOFF", target: card, in: ctx)
+        let orphan = S.makeTx(ctx, account: account, amount: -50, direction: .debit,
+                              bookedAt: .now.addingTimeInterval(-2 * 86_400),
+                              description: "CARD PAYOFF")
+        try ctx.save()
+
+        let api = StubAPI(session: makeSession())
+        api.details[Self.uid] = details()
+        let result = try await Sync.sync(connection: conn, api: api, in: ctx)
+
+        XCTAssertEqual(result.transactionsInserted, 0)
+        XCTAssertEqual(result.postProcess?.routedMirrors, 1)
+        XCTAssertTrue(orphan.isTransfer)
+        let orphanId = orphan.id
+        XCTAssertEqual(try ctx.fetchCount(FetchDescriptor<Transaction>(
+            predicate: #Predicate { $0.routedFromTx?.id == orphanId })), 1)
+    }
 }

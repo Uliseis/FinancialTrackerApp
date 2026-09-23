@@ -103,7 +103,16 @@ struct AccountDetailView: View {
         }
         .alert("Statement Imported", isPresented: Binding(
             get: { importSummary != nil }, set: { if !$0 { importSummary = nil } }),
-               presenting: importSummary) { _ in
+               presenting: importSummary) { summary in
+            if !summary.unmatched.isEmpty {
+                Button("Delete \(summary.unmatched.count) unmatched", role: .destructive) {
+                    do {
+                        try CoreLogic.StatementImport.deleteUnmatched(ids: summary.unmatched.map(\.id), in: ctx)
+                    } catch {
+                        saveError = "The unmatched charges weren’t deleted."
+                    }
+                }
+            }
             Button("OK") {}
         } message: { summary in
             Text(summaryText(summary))
@@ -170,7 +179,17 @@ struct AccountDetailView: View {
         ]
         if s.skippedDuplicate > 0 { lines.append("\(s.skippedDuplicate) already imported.") }
         if s.skippedTransfers > 0 { lines.append("\(s.skippedTransfers) top-ups skipped (they come in as transfers).") }
+        if s.skippedNotCompleted > 0 { lines.append("\(s.skippedNotCompleted) pending/reverted rows ignored.") }
         if !s.errors.isEmpty { lines.append("\(s.errors.count) rows couldn’t be read.") }
+        if !s.unmatched.isEmpty {
+            lines.append("\(s.unmatched.count) logged charges aren’t on the statement:")
+            for u in s.unmatched.prefix(8) {
+                let label = [u.bookedAt.formatted(date: .abbreviated, time: .omitted),
+                             Money.format(u.amount, currency: account.currency), u.description]
+                lines.append(label.compactMap { $0 }.joined(separator: " · "))
+            }
+            if s.unmatched.count > 8 { lines.append("…") }
+        }
         return lines.joined(separator: "\n")
     }
 
