@@ -61,8 +61,10 @@ extension CoreLogic {
                     case .debit:
                         directExpense[m, default: 0] += tx.amountEur ?? 0
                     case .credit:
-                        let isIncomeCat = tx.category == nil || tx.category?.kind == "income"
-                        if isIncomeCat && incomeAccountIds.contains(aid) {
+                        // A refund categorized as spending offsets that spending, it isn't income.
+                        if let kind = tx.category?.kind, kind != "income" {
+                            directExpense[m, default: 0] += tx.amountEur ?? 0
+                        } else if incomeAccountIds.contains(aid) {
                             income[m, default: 0] += tx.amountEur ?? 0
                         }
                     }
@@ -83,12 +85,12 @@ extension CoreLogic {
                 MonthlyFlow(
                     monthStart: m,
                     income: income[m] ?? 0,
-                    expense: abs(directExpense[m] ?? 0) + (groupNet[m] ?? 0)
+                    expense: max(-(directExpense[m] ?? 0) + (groupNet[m] ?? 0), 0)
                 )
             }
         }
 
-        // This month's debit spend per category, sorted by total descending.
+        // This month's debit spend per category, net of refunds, sorted by total descending.
         @MainActor
         public static func categoryBreakdown(
             accountIds: Set<UUID>,
@@ -104,9 +106,9 @@ extension CoreLogic {
             for tx in txs {
                 guard let aid = tx.account?.id, accountIds.contains(aid) else { continue }
                 if tx.isTransfer || tx.sharedExpenseGroup != nil { continue }
-                if tx.direction != .debit { continue }
+                if tx.direction != .debit && (tx.category == nil || tx.category?.kind == "income") { continue }
                 if tx.bookedAt < start || tx.bookedAt >= end { continue }
-                totals[tx.category?.id, default: 0] += abs(tx.amountEur ?? 0)
+                totals[tx.category?.id, default: 0] -= tx.amountEur ?? 0
             }
 
             let groups = try ctx.fetch(FetchDescriptor<SharedExpenseGroup>())
@@ -124,6 +126,7 @@ extension CoreLogic {
             }
 
             return totals
+                .filter { $0.value > 0 }
                 .map { CategorySpend(categoryId: $0.key, total: $0.value) }
                 .sorted { $0.total > $1.total }
         }

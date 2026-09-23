@@ -83,6 +83,21 @@ final class DashboardTests: XCTestCase {
         XCTAssertEqual(flow[0].income, 200) // null-category would also count; expense-kind excluded
     }
 
+    func testRefundOffsetsSpendingInCashFlowAndBreakdown() throws {
+        let ctx = try S.makeContext()
+        let a = S.makeAccount(ctx, name: "Checking")
+        let food = CoreModel.Category(name: "Restaurants", kind: "expense")
+        ctx.insert(food)
+        S.makeTx(ctx, account: a, amount: -50, amountEur: -50, direction: .debit, bookedAt: now2606).category = food
+        S.makeTx(ctx, account: a, amount: 10, amountEur: 10, direction: .credit, bookedAt: now2606).category = food
+        let flow = try D.monthlyCashFlow(
+            months: 1, accountIds: [a.id], incomeAccountIds: [a.id], now: now2606, in: ctx)
+        XCTAssertEqual(flow[0].expense, 40)
+        XCTAssertEqual(flow[0].income, 0)
+        XCTAssertEqual(try D.categoryBreakdown(accountIds: [a.id], now: now2606, in: ctx),
+                       [D.CategorySpend(categoryId: food.id, total: 40)])
+    }
+
     func testCashFlowSharedExpenseNetAddedToExpense() throws {
         let ctx = try S.makeContext()
         let a = S.makeAccount(ctx, name: "Checking")
