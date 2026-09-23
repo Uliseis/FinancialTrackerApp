@@ -20,6 +20,8 @@ struct AccountDetailView: View {
     @State private var importing = false
     @State private var importSummary: CoreLogic.StatementImport.Summary?
     @State private var saveError: String?
+    @State private var pins = AutomationSettings.pins
+    @State private var pinning: CoreLogic.Recurring.Item?
     private static let pageSize = 100
 
     private var accountIsLive: Bool { account.modelContext != nil && !account.isDeleted }
@@ -42,7 +44,13 @@ struct AccountDetailView: View {
     // Only manual accounts have charges nobody else records; a synced account's
     // subscriptions arrive from the bank.
     private var recurring: [CoreLogic.Recurring.Item] {
-        isManual ? CoreLogic.Recurring.detect(accountTx) : []
+        guard isManual else { return [] }
+        return CoreLogic.Recurring.detect(accountTx, pins: accountPins)
+    }
+
+    private var accountPins: [CoreLogic.Recurring.Pin] {
+        let id = account.id
+        return pins.filter { $0.accountId == id }
     }
 
     var body: some View {
@@ -97,6 +105,13 @@ struct AccountDetailView: View {
         .reloadOnModelChange { reloadBalance() }
         .sheet(item: $editing, content: AccountFormView.init)
         .sheet(item: $adding) { TransactionFormView(edit: $0) }
+        .sheet(item: $pinning) { item in
+            PinDaySheet(item: item) { day in
+                AutomationSettings.pin(.init(accountId: account.id, key: item.key, merchant: item.merchant,
+                                             amount: item.amount, day: day))
+                pins = AutomationSettings.pins
+            }
+        }
         .fileImporter(isPresented: $importing,
                       allowedContentTypes: [.commaSeparatedText, .plainText]) { result in
             importStatement(result)
@@ -133,7 +148,17 @@ struct AccountDetailView: View {
     private var recurringSection: some View {
         Section {
             ForEach(recurring) { item in
-                RecurringRow(item: item, currency: account.currency) { book(item) }
+                let pinned = accountPins.contains { $0.key == item.key }
+                RecurringRow(item: item, currency: account.currency, pinned: pinned) { book(item) }
+                    .contextMenu {
+                        Button("Pin to day…", systemImage: "pin") { pinning = item }
+                        if pinned {
+                            Button("Unpin", systemImage: "pin.slash") {
+                                AutomationSettings.unpin(accountId: account.id, key: item.key)
+                                pins = AutomationSettings.pins
+                            }
+                        }
+                    }
             }
         } header: {
             HStack {
@@ -202,6 +227,7 @@ struct AccountDetailView: View {
 private struct RecurringRow: View {
     let item: CoreLogic.Recurring.Item
     let currency: String
+    let pinned: Bool
     let onBook: () -> Void
 
     private var isOverdue: Bool {
@@ -212,6 +238,7 @@ private struct RecurringRow: View {
         if let booked = item.bookedAt {
             return "Booked \(booked.formatted(.dateTime.day().month()))"
         }
+        if pinned { return (isOverdue ? "Overdue · " : "") + "day \(item.expectedDay)" }
         return (isOverdue ? "Overdue · " : "") + "Expected around day \(item.expectedDay)"
     }
 
@@ -219,7 +246,7 @@ private struct RecurringRow: View {
         HStack(spacing: Theme.Space.s) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.merchant).lineLimit(1)
-                Text(status)
+                (pinned ? Text("\(Image(systemName: "pin.fill")) \(status)") : Text(status))
                     .font(.caption)
                     .foregroundStyle(isOverdue ? Color.orange : Color.secondary)
             }
@@ -232,6 +259,36 @@ private struct RecurringRow: View {
                     .controlSize(.small)
             }
         }
+    }
+}
+
+private struct PinDaySheet: View {
+    let item: CoreLogic.Recurring.Item
+    let onSave: (Int) -> Void
+    @State private var day: Int
+    @Environment(\.dismiss) private var dismiss
+
+    init(item: CoreLogic.Recurring.Item, onSave: @escaping (Int) -> Void) {
+        self.item = item
+        self.onSave = onSave
+        _day = State(initialValue: item.expectedDay)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Stepper("Day \(day)", value: $day, in: 1...31)
+            }
+            .navigationTitle(item.merchant)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { onSave(day); dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.height(200)])
     }
 }
 
