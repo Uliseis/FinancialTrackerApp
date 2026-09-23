@@ -31,20 +31,25 @@ enum CCStatementImport {
         let rules: [RuleSeed]?
         let transactions: [Row]
         let valuations: [ValuationSeed]?
+        // Deleted before inserts, so a row can be replaced under the same externalId. An
+        // auto-recurring id is also declined so the automation doesn't re-book it.
+        let deleteExternalIds: [String]?
 
         init(from decoder: Decoder) throws {
             if let bare = try? [Row](from: decoder) {
-                rules = nil; transactions = bare; valuations = nil; return
+                rules = nil; transactions = bare; valuations = nil; deleteExternalIds = nil; return
             }
             let c = try decoder.container(keyedBy: CodingKeys.self)
             rules = try c.decodeIfPresent([RuleSeed].self, forKey: .rules)
             transactions = try c.decodeIfPresent([Row].self, forKey: .transactions) ?? []
             valuations = try c.decodeIfPresent([ValuationSeed].self, forKey: .valuations)
+            deleteExternalIds = try c.decodeIfPresent([String].self, forKey: .deleteExternalIds)
         }
-        private enum CodingKeys: String, CodingKey { case rules, transactions, valuations }
+        private enum CodingKeys: String, CodingKey { case rules, transactions, valuations, deleteExternalIds }
     }
 
     struct Row: Decodable {
+        let accountId: String?
         let externalId: String
         let bookedAt: String
         let valueAt: String?
@@ -105,18 +110,33 @@ enum CCStatementImport {
             }
         }
 
+        var deleted = 0
+        for eid in payload?.deleteExternalIds ?? [] {
+            for tx in (try? ctx.fetch(FetchDescriptor<Transaction>(
+                predicate: #Predicate { $0.externalId == eid }))) ?? [] {
+                do { try CoreLogic.Transactions.delete(tx, in: ctx); deleted += 1 }
+                catch { print("[CCImport] delete refused \(eid): \(error)") }
+            }
+            if eid.hasPrefix(CoreLogic.Automations.recurringPrefix) { AutomationSettings.declineRecurring(eid) }
+        }
+
         var insertedIds: [UUID] = []
         var skipped = 0
         for r in payload?.transactions ?? [] {
             let eid = r.externalId
+            let targetId = r.accountId.flatMap(UUID.init(uuidString:)) ?? acctId
+            guard let target = targetId == acctId ? account : try? ctx.fetch(FetchDescriptor<Account>(
+                predicate: #Predicate { $0.id == targetId })).first else {
+                print("[CCImport] no account \(targetId) for \(eid)"); continue
+            }
             let exists = ((try? ctx.fetchCount(FetchDescriptor<Transaction>(
-                predicate: #Predicate { $0.account?.id == acctId && $0.externalId == eid }))) ?? 0) > 0
+                predicate: #Predicate { $0.account?.id == targetId && $0.externalId == eid }))) ?? 0) > 0
             if exists { skipped += 1; continue }
             guard let booked = iso.date(from: r.bookedAt), let amount = Decimal(string: r.amount) else {
                 print("[CCImport] bad row \(eid)"); continue
             }
             let tx = Transaction(
-                account: account,
+                account: target,
                 externalId: eid,
                 bookedAt: booked,
                 valueAt: r.valueAt.flatMap { iso.date(from: $0) },
@@ -152,7 +172,7 @@ enum CCStatementImport {
         let cats = (try? CoreLogic.Categorize.applyRulesToTransactions(
             in: ctx, txIds: uncategorized.map(\.id) + insertedIds))?.updated ?? 0
         try? ctx.save()
-        print("[CCImport] rules=\(seededRules) inserted=\(insertedIds.count) skipped=\(skipped) valuations=\(valuations) categorized=\(cats)")
+        print("[CCImport] rules=\(seededRules) deleted=\(deleted) inserted=\(insertedIds.count) skipped=\(skipped) valuations=\(valuations) categorized=\(cats)")
         if payload != nil { try? FileManager.default.removeItem(at: jsonURL) }
     }
 }
