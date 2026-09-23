@@ -104,8 +104,23 @@ extension CoreLogic.Accounts {
     ) throws -> CoreLogic.Transfers.RepairResult? {
         guard account.archived != archived else { return nil }
         account.archived = archived
+        // An approved/unarchived bank account would otherwise only get the incremental
+        // window's history; EBSync consumes the flag and does the full lookback.
+        if !archived, account.connection != nil {
+            var meta = account.metadataJSON
+                .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            meta["fullSyncRequested"] = true
+            meta.removeValue(forKey: "pendingApproval")
+            account.metadataJSON = try? JSONSerialization.data(withJSONObject: meta)
+        }
         // Archiving removes the account from transfer pairing — repair breaks its groups.
-        return try CoreLogic.Transfers.repairGroups(in: ctx, accountId: account.id)
+        let repair = try CoreLogic.Transfers.repairGroups(in: ctx, accountId: account.id)
+        // Unarchiving brings back the route mirrors that archiving deleted.
+        if !archived {
+            _ = try CoreLogic.TransferRoutes.apply(
+                in: ctx, sinceDays: CoreLogic.TransferRoutes.backfillLookbackDays)
+        }
+        return repair
     }
 
     @MainActor

@@ -202,4 +202,34 @@ final class AccountsMutationsTests: XCTestCase {
         XCTAssertNil(a.alias)
         XCTAssertEqual(a.displayName, "ULISES BERTOLO GARCIA")
     }
+
+    func testUnarchiveRestoresRouteMirrorsAndRequestsFullSync() throws {
+        let ctx = try S.makeContext()
+        let space = S.makeSpace(ctx)
+        let conn = Connection(connector: .enablebanking, status: .active)
+        ctx.insert(conn)
+        let bank = S.makeAccount(ctx, name: "Bank", space: space, connection: conn)
+        let card = S.makeAccount(ctx, name: "Card", space: space)
+        try CoreLogic.TransferRoutes.createRoute(pattern: "CARD PAYOFF", target: card, in: ctx)
+        let source = S.makeTx(ctx, account: bank, amount: -50, direction: .debit,
+                              bookedAt: .now.addingTimeInterval(-100 * 86_400), description: "CARD PAYOFF")
+        try ctx.save()
+        _ = try CoreLogic.TransferRoutes.apply(in: ctx)
+        let sourceId = source.id
+        let mirrors = FetchDescriptor<Transaction>(predicate: #Predicate { $0.routedFromTx?.id == sourceId })
+        XCTAssertEqual(try ctx.fetchCount(mirrors), 1)
+
+        try A.setArchived(card, true, in: ctx)
+        XCTAssertEqual(try ctx.fetchCount(mirrors), 0)
+        try A.setArchived(bank, true, in: ctx)
+        try A.setArchived(card, false, in: ctx)
+        try A.setArchived(bank, false, in: ctx)
+
+        XCTAssertEqual(try ctx.fetchCount(mirrors), 1)
+        XCTAssertTrue(source.isTransfer)
+        let meta = try XCTUnwrap(bank.metadataJSON.flatMap {
+            try JSONSerialization.jsonObject(with: $0) as? [String: Any] })
+        XCTAssertEqual(meta["fullSyncRequested"] as? Bool, true)
+        XCTAssertNil(card.metadataJSON)
+    }
 }
