@@ -269,28 +269,25 @@ private struct PortfolioChart: View {
     // Label real data points, never interpolated ones: with only a couple of valuations
     // an automatic axis puts four ticks inside a single day and repeats the same label.
     // Also drops picks that render the same label as the one before: at month resolution
-    // several deposit days collapse to "May 26" and the axis reads as a stutter.
+    // several deposit days collapse to one month and the axis reads as a stutter.
     private var axisDates: [Date] {
-        let dates = series.map(\.date)
-        let picked: [Date]
-        if dates.count > 4 {
-            let step = (dates.count - 1) / 3
-            picked = stride(from: 0, to: dates.count, by: max(step, 1)).map { dates[$0] }
-        } else {
-            picked = dates
-        }
         var seen = Set<String>()
-        return picked.filter { seen.insert($0.formatted(axisFormat)).inserted }
+        return CoreLogic.ChartAxis.ticks(series.map(\.date), count: 4)
+            .filter { seen.insert($0.formatted(axisFormat)).inserted }
     }
 
-    // Days for a short window, months within a year, years beyond it.
+    // Days for a short window, months within a year, years beyond it. Within a single year
+    // the month stands alone: "Jul 26" read as the 26th of July, not July 2026.
     private var axisFormat: Date.FormatStyle {
         guard let first = series.first?.date, let last = series.last?.date else {
             return .dateTime.month(.abbreviated)
         }
         let days = last.timeIntervalSince(first) / 86_400
         if days > 720 { return .dateTime.year() }
-        if days > 60 { return .dateTime.month(.abbreviated).year(.twoDigits) }
+        if days > 60 {
+            let sameYear = Calendar.current.isDate(first, equalTo: last, toGranularity: .year)
+            return sameYear ? .dateTime.month(.abbreviated) : .dateTime.month(.abbreviated).year()
+        }
         return .dateTime.day().month(.abbreviated)
     }
 
