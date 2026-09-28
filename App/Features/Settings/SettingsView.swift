@@ -2,12 +2,15 @@ import SwiftUI
 import SwiftData
 import LocalAuthentication
 import CoreModel
+import CoreLogic
 
 // The Settings tab — single home for every secondary surface (was two toolbar "More"
 // menus). All navigationDestinations are registered here so DEBUG hooks can deep-push.
 struct SettingsView: View {
     @State private var path = NavigationPath()
     @AppStorage(SecuritySettings.requireUnlockKey) private var requireUnlock = true
+    @AppStorage(CycleSettings.startDayKey) private var cycleStartDay = 1
+    @AppStorage(CycleSettings.startsEarlyOnWeekendsKey) private var startsEarlyOnWeekends = true
     #if DEBUG
     @Query(sort: [SortDescriptor(\SharedExpenseGroup.createdAt, order: .reverse)])
     private var debugGroups: [SharedExpenseGroup]
@@ -32,6 +35,24 @@ struct SettingsView: View {
                     SettingsLinkRow(title: "Matches", systemImage: "plusminus.circle", destination: .sharedExpenses)
                     SettingsLinkRow(title: "Budgets", systemImage: "chart.pie", destination: .budgets)
                     SettingsLinkRow(title: "Automations", systemImage: "bolt.badge.clock", destination: .automations)
+                }
+                Section {
+                    Picker(selection: $cycleStartDay) {
+                        ForEach(1...CoreLogic.Dashboard.maxCycleStartDay, id: \.self) { day in
+                            Text(day == 1 ? "1st (calendar month)" : Self.ordinal(day)).tag(day)
+                        }
+                    } label: {
+                        HStack(spacing: Theme.Space.m) {
+                            IconBadge(systemName: "calendar")
+                            Text("Month Starts On")
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    if cycleStartDay != 1 {
+                        Toggle("Start Friday Before a Weekend", isOn: $startsEarlyOnWeekends)
+                    }
+                } footer: {
+                    Text(cycleFooter)
                 }
                 Section("Manage") {
                     SettingsLinkRow(title: "Categories", systemImage: "tag", destination: .categories)
@@ -96,6 +117,22 @@ struct SettingsView: View {
             )) ?? false
             if !success { requireUnlock = true }
         }
+    }
+
+    private var cycleFooter: String {
+        guard cycleStartDay != 1 else { return "Income and expenses are grouped by calendar month." }
+        var text = "Income and expenses are grouped from the \(Self.ordinal(cycleStartDay)) to the day before the \(Self.ordinal(cycleStartDay)) of the next month."
+        if startsEarlyOnWeekends {
+            text += " When the \(Self.ordinal(cycleStartDay)) is a Saturday or Sunday, the month starts on the Friday before, like a salary paid early."
+        }
+        return text + " Every past month is recalculated."
+    }
+
+    private static func ordinal(_ day: Int) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .ordinal
+        f.locale = Locale(identifier: "en_GB")
+        return f.string(from: day as NSNumber) ?? "\(day)"
     }
 
     private static var versionString: String {
