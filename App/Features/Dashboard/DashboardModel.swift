@@ -16,6 +16,7 @@ struct DashboardModel {
 
     struct MonthBar: Identifiable {
         let id: Date
+        let end: Date
         let label: String
         let income: Decimal
         let expense: Decimal
@@ -59,7 +60,9 @@ struct DashboardModel {
     )
 
     @MainActor
-    static func load(scope: SpaceScope, in ctx: ModelContext, now: Date = .now) -> DashboardModel {
+    static func load(
+        scope: SpaceScope, cycle: CoreLogic.Dashboard.Cycle = CycleSettings.current, in ctx: ModelContext, now: Date = .now
+    ) -> DashboardModel {
         guard let currentId = scope.currentId, let defaultId = scope.defaultId else { return empty }
         let allAccounts = (try? ctx.fetch(FetchDescriptor<Account>())) ?? []
         let inScope = allAccounts.filter {
@@ -112,9 +115,13 @@ struct DashboardModel {
         let accountIds = Set(inScope.map { $0.id })
         let incomeIds = CoreLogic.Dashboard.incomeAccountIds(from: inScope)
         let flow = (try? CoreLogic.Dashboard.monthlyCashFlow(
-            months: 6, accountIds: accountIds, incomeAccountIds: incomeIds, now: now, in: ctx)) ?? []
+            months: 6, accountIds: accountIds, incomeAccountIds: incomeIds, now: now,
+            cycle: cycle, in: ctx)) ?? []
+        let formatter = cycle.startDay == 1 ? monthFormatter : cycleFormatter
         let cashFlow = flow.map {
-            MonthBar(id: $0.monthStart, label: monthFormatter.string(from: $0.monthStart),
+            MonthBar(id: $0.monthStart,
+                     end: CoreLogic.Dashboard.cycleStart($0.monthStart, cycle: cycle, offset: 1),
+                     label: formatter.string(from: $0.monthStart),
                      income: $0.income, expense: $0.expense)
         }
 
@@ -122,7 +129,7 @@ struct DashboardModel {
         let catById = Dictionary(uniqueKeysWithValues: cats.map { ($0.id, $0) })
 
         let breakdown = (try? CoreLogic.Dashboard.categoryBreakdown(
-            accountIds: accountIds, now: now, in: ctx)) ?? []
+            accountIds: accountIds, now: now, cycle: cycle, in: ctx)) ?? []
         let topCategories = breakdown.prefix(5).map { slice -> CategorySlice in
             let cat = slice.categoryId.flatMap { catById[$0] }
             return CategorySlice(
@@ -154,6 +161,14 @@ struct DashboardModel {
             budgets: budgets, hasAccounts: true
         )
     }
+
+    private static let cycleFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.locale = Locale(identifier: "en_GB")
+        f.dateFormat = "d MMM"
+        return f
+    }()
 
     private static let monthFormatter: DateFormatter = {
         let f = DateFormatter()

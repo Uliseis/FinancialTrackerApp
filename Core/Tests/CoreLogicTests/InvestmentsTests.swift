@@ -870,4 +870,75 @@ final class InvestmentsTests: XCTestCase {
             bases: [basis], valuations: [reading], legs: [leg], now: day(2026, 6, 1).addingTimeInterval(7200))[acc.id])
         XCTAssertEqual(fresh.valueEur, 2000)
     }
+
+    // MARK: - Period returns
+
+    private func periodFixture(_ ctx: ModelContext) throws -> (Account, [I.ContributionLeg], [PortfolioValuation]) {
+        let space = S.makeSpace(ctx)
+        let invGroup = makeGroup(ctx, name: "Invest", kind: .investment)
+        let acc = Account(
+            group: invGroup, space: space, externalId: "p",
+            type: .broker, institution: "T", name: "T", currency: "EUR")
+        ctx.insert(acc)
+        let vals = [
+            makeValuation(ctx, account: acc, asOf: day(2025, 1, 10), marketValueEur: 900),
+            makeValuation(ctx, account: acc, asOf: day(2025, 12, 15), marketValueEur: 1000),
+            makeValuation(ctx, account: acc, asOf: day(2026, 6, 1), marketValueEur: 1700),
+        ]
+        try ctx.save()
+        let legs = [I.ContributionLeg(accountId: acc.id, bookedAt: day(2026, 4, 1), netEur: 500)]
+        return (acc, legs, vals)
+    }
+
+    private func periodReturn(
+        _ acc: Account, _ legs: [I.ContributionLeg], _ vals: [PortfolioValuation], _ period: I.Period
+    ) throws -> I.PeriodReturn {
+        let now = day(2026, 6, 10)
+        let basis = I.AccountBasis(accountId: acc.id)
+        let metrics = I.computeAccountMetrics(bases: [basis], valuations: vals, legs: legs, now: now)
+        let start = try XCTUnwrap(I.periodStartDate(period, now: now))
+        return try XCTUnwrap(I.computePeriodReturns(
+            bases: [basis], valuations: vals, legs: legs, metrics: metrics, periodStart: start)[acc.id])
+    }
+
+    func testYearToDateMeasuresFromTheLastReadingBeforeJanuary() throws {
+        let ctx = try S.makeContext()
+        let (acc, legs, vals) = try periodFixture(ctx)
+        let r = try periodReturn(acc, legs, vals, .ytd)
+        XCTAssertEqual(r.startValueEur, 1000)
+        XCTAssertEqual(r.netContributionsEur, 500)
+        XCTAssertEqual(r.gainEur, 200, "1700 now − 1000 at the start − 500 paid in")
+        XCTAssertEqual(r.gainPct, Decimal(200) / Decimal(1250))
+        XCTAssertEqual(r.from, I.periodStartDate(.ytd, now: day(2026, 6, 10)))
+    }
+
+    func testPeriodsDifferWhenHistoryReachesBackFarEnough() throws {
+        let ctx = try S.makeContext()
+        let (acc, legs, vals) = try periodFixture(ctx)
+        let ytd = try periodReturn(acc, legs, vals, .ytd)
+        let year = try periodReturn(acc, legs, vals, .oneYear)
+        XCTAssertEqual(year.startValueEur, 900)
+        XCTAssertEqual(year.gainEur, 300)
+        XCTAssertNotEqual(ytd.gainEur, year.gainEur)
+    }
+
+    func testPeriodBeforeHistoryIsClampedToTheFirstReading() throws {
+        let ctx = try S.makeContext()
+        let (acc, legs, vals) = try periodFixture(ctx)
+        let r = try periodReturn(acc, legs, vals, .threeYears)
+        var cal = Calendar(identifier: .iso8601)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        XCTAssertEqual(r.from, cal.startOfDay(for: day(2025, 1, 10)))
+        XCTAssertEqual(r.gainEur, 300)
+    }
+
+    func testPayoutInThePeriodCountsAsGain() throws {
+        let ctx = try S.makeContext()
+        let (acc, legs, vals) = try periodFixture(ctx)
+        let payout = I.ContributionLeg(
+            accountId: acc.id, bookedAt: day(2026, 5, 1), netEur: -50, isDistribution: true)
+        let r = try periodReturn(acc, legs + [payout], vals, .ytd)
+        XCTAssertEqual(r.gainEur, 250)
+    }
 }
+

@@ -213,4 +213,82 @@ final class DashboardTests: XCTestCase {
         let rows = try D.categoryBreakdown(accountIds: [a.id], now: now2606, in: ctx)
         XCTAssertTrue(rows.isEmpty)
     }
+
+    // MARK: - Pay cycle
+
+    private let strict20 = CoreLogic.Dashboard.Cycle(startDay: 20, startsEarlyOnWeekends: false)
+
+    private func midnight(_ y: Int, _ m: Int, _ d: Int) -> Date {
+        day(y, m, d).addingTimeInterval(-12 * 3600)
+    }
+
+    func testCycleStartOnDayOneIsTheCalendarMonth() {
+        XCTAssertEqual(D.cycleStart(day(2026, 6, 15), cycle: .calendarMonth), D.monthStart(day(2026, 6, 15)))
+    }
+
+    func testCycleStartRunsFromTheTwentiethToTheNineteenth() {
+        XCTAssertEqual(D.cycleStart(day(2026, 9, 20), cycle: strict20), midnight(2026, 9, 20))
+        XCTAssertEqual(D.cycleStart(day(2026, 10, 19), cycle: strict20), midnight(2026, 9, 20))
+        XCTAssertEqual(D.cycleStart(day(2026, 1, 5), cycle: strict20), midnight(2025, 12, 20))
+        XCTAssertEqual(D.cycleStart(day(2026, 9, 25), cycle: strict20, offset: -1), midnight(2026, 8, 20))
+    }
+
+    func testCashFlowBucketsByPayCycle() throws {
+        let ctx = try S.makeContext()
+        let a = S.makeAccount(ctx, name: "Checking")
+        _ = S.makeTx(ctx, account: a, amount: 2000, amountEur: 2000, direction: .credit, bookedAt: day(2026, 6, 20))
+        _ = S.makeTx(ctx, account: a, amount: -300, amountEur: -300, direction: .debit, bookedAt: day(2026, 7, 5))
+        _ = S.makeTx(ctx, account: a, amount: -100, amountEur: -100, direction: .debit, bookedAt: day(2026, 6, 19))
+        let flow = try D.monthlyCashFlow(
+            months: 2, accountIds: [a.id], incomeAccountIds: [a.id], now: day(2026, 7, 10),
+            cycle: strict20, in: ctx)
+        XCTAssertEqual(flow.map(\.monthStart), [midnight(2026, 5, 20), midnight(2026, 6, 20)])
+        XCTAssertEqual(flow[1].income, 2000)
+        XCTAssertEqual(flow[1].expense, 300, "5 Jul belongs to the cycle that started 20 Jun")
+        XCTAssertEqual(flow[0].expense, 100, "19 Jun closes the previous cycle")
+    }
+
+    func testCategoryBreakdownFollowsThePayCycle() throws {
+        let ctx = try S.makeContext()
+        let a = S.makeAccount(ctx, name: "Checking")
+        _ = S.makeTx(ctx, account: a, amount: -40, amountEur: -40, direction: .debit, bookedAt: day(2026, 7, 2))
+        _ = S.makeTx(ctx, account: a, amount: -60, amountEur: -60, direction: .debit, bookedAt: day(2026, 6, 10))
+        let rows = try D.categoryBreakdown(
+            accountIds: [a.id], now: day(2026, 7, 10), cycle: strict20, in: ctx)
+        XCTAssertEqual(rows.map(\.total), [40])
+    }
+
+    // 20 Sep 2026 is a Sunday and 20 Jun a Saturday: the salary lands on the Friday before.
+    func testWeekendStartMovesToTheFridayBefore() {
+        let cycle = D.Cycle(startDay: 20)
+        XCTAssertEqual(D.cycleStart(day(2026, 9, 18), cycle: cycle), midnight(2026, 9, 18))
+        XCTAssertEqual(D.cycleStart(day(2026, 9, 17), cycle: cycle), midnight(2026, 8, 20))
+        XCTAssertEqual(D.cycleStart(day(2026, 9, 18), cycle: cycle, offset: -3), midnight(2026, 6, 19))
+        XCTAssertEqual(D.cycleStart(day(2026, 10, 19), cycle: cycle), midnight(2026, 9, 18))
+        XCTAssertEqual(D.cycleStart(day(2026, 10, 20), cycle: cycle), midnight(2026, 10, 20))
+    }
+
+    // Day 2 on a Sunday reaches back into the previous calendar month.
+    func testWeekendStartCanCrossIntoThePreviousMonth() {
+        let cycle = D.Cycle(startDay: 2)
+        // 2 Aug 2026 is a Sunday ⇒ the August cycle starts Friday 31 Jul.
+        XCTAssertEqual(D.cycleStart(day(2026, 7, 31), cycle: cycle), midnight(2026, 7, 31))
+        XCTAssertEqual(D.cycleStart(day(2026, 7, 30), cycle: cycle), midnight(2026, 7, 2))
+    }
+
+    func testManuallyAttributedGroupLandsInTheNamedCycle() throws {
+        let ctx = try S.makeContext()
+        let a = S.makeAccount(ctx, name: "Checking")
+        let primary = S.makeTx(ctx, account: a, amount: -100, amountEur: -100, direction: .debit,
+                               bookedAt: day(2026, 6, 5))
+        let g = SharedExpenseGroup(label: "Trip", primaryTx: primary, attributionMonth: midnight(2026, 7, 1))
+        ctx.insert(g)
+        primary.sharedExpenseGroup = g
+        try ctx.save()
+        let flow = try D.monthlyCashFlow(
+            months: 3, accountIds: [a.id], incomeAccountIds: [a.id], now: day(2026, 7, 25),
+            cycle: strict20, in: ctx)
+        XCTAssertEqual(flow.map(\.expense), [0, 0, 100], "July attribution ⇒ the cycle from 20 Jul")
+    }
 }
+

@@ -20,7 +20,7 @@ struct InvestmentsView: View {
         guard let current = scope.currentId, let def = scope.defaultId else {
             vm = .empty; return
         }
-        vm = InvestmentsModel.load(spaceId: current, defaultId: def, in: ctx)
+        vm = InvestmentsModel.load(spaceId: current, defaultId: def, period: period, in: ctx)
     }
 
     var body: some View {
@@ -29,21 +29,23 @@ struct InvestmentsView: View {
                 if let vm, !vm.rows.isEmpty {
                     List {
                         Section {
-                            SummaryCard(vm: vm)
+                            SummaryCard(vm: vm, period: period)
                                 .listRowInsets(EdgeInsets(top: Theme.Space.s, leading: Theme.Space.m,
                                                           bottom: Theme.Space.s, trailing: Theme.Space.m))
                                 .listRowBackground(Color.clear)
                                 .listRowSeparator(.hidden)
+                            Picker("Period", selection: $period) {
+                                ForEach(CoreLogic.Investments.Period.allCases, id: \.self) {
+                                    Text($0.label).tag($0)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
                         }
                         if vm.series.count > 1 {
                             Section("Value over time") {
                                 PortfolioChart(series: filteredSeries(vm))
-                                Picker("Period", selection: $period) {
-                                    ForEach(CoreLogic.Investments.Period.allCases, id: \.self) {
-                                        Text($0.label).tag($0)
-                                    }
-                                }
-                                .pickerStyle(.segmented)
                             }
                         }
                         Section {
@@ -51,7 +53,7 @@ struct InvestmentsView: View {
                                 Button {
                                     valuing = account(for: row.id)
                                 } label: {
-                                    AccountMetricRow(row: row)
+                                    AccountMetricRow(row: row, period: period)
                                 }
                                 .tint(.primary)
                             }
@@ -88,8 +90,15 @@ struct InvestmentsView: View {
             }
         }
         .sheet(item: $valuing) { RecordValuationView(account: $0) }
-        .task { reload() }
+        .task {
+            #if DEBUG
+            if let raw = ProcessInfo.processInfo.environment["UITEST_INV_PERIOD"],
+               let p = CoreLogic.Investments.Period(rawValue: raw) { period = p }
+            #endif
+            reload()
+        }
         .onChange(of: currentSpaceId) { reload() }
+        .onChange(of: period) { reload() }
         .reloadOnModelChange { reload() }
     }
 
@@ -105,6 +114,23 @@ struct InvestmentsView: View {
 
 private struct SummaryCard: View {
     let vm: InvestmentsModel
+    let period: CoreLogic.Investments.Period
+
+    private var gain: Decimal? { period == .all ? vm.totalPnl : vm.periodGain?.gainEur }
+    private var gainPct: Decimal? { period == .all ? vm.totalPnlPct : vm.periodGain?.gainPct }
+
+    // History only reaches back to the first valuation, so a window that starts earlier is
+    // measured from that reading and says so rather than pretending to cover the full span.
+    private var gainCaption: String {
+        guard period != .all, let pg = vm.periodGain else { return "All-time, against what you paid in" }
+        let clamped = CoreLogic.Investments.periodStartDate(period).map { pg.from > $0 } ?? false
+        let since = pg.from.formatted(.dateTime.day().month(.abbreviated).year())
+        var text = clamped ? "Since \(since), first reading" : "\(period.longLabel), market change"
+        if pg.netContributionsEur != 0 {
+            text += " · excl. \(Money.format(pg.netContributionsEur, currency: "EUR")) paid in"
+        }
+        return text
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
@@ -118,7 +144,7 @@ private struct SummaryCard: View {
                     .contentTransition(.numericText())
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
-                if let pnl = vm.totalPnl {
+                if let pnl = gain {
                     Label {
                         Text(pnlText)
                     } icon: {
@@ -127,6 +153,10 @@ private struct SummaryCard: View {
                     .font(.subheadline.weight(.semibold))
                     .fontDesign(.rounded)
                     .foregroundStyle(Theme.amountColor(pnl))
+                    .contentTransition(.numericText())
+                    Text(gainCaption)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             HStack(alignment: .top, spacing: Theme.Space.m) {
@@ -145,16 +175,20 @@ private struct SummaryCard: View {
     }
 
     private var pnlText: String {
-        guard let pnl = vm.totalPnl else { return "—" }
+        guard let pnl = gain else { return "—" }
         let amount = Money.format(pnl, currency: "EUR")
         let signed = pnl > 0 ? "+\(amount)" : amount
-        guard let pct = vm.totalPnlPct else { return signed }
+        guard let pct = gainPct else { return signed }
         return "\(signed)  (\(pct.formatted(.percent.precision(.fractionLength(1)))))"
     }
 }
 
 private struct AccountMetricRow: View {
     let row: InvestmentsModel.Row
+    let period: CoreLogic.Investments.Period
+
+    private var gain: Decimal? { period == .all ? row.pnlEur : row.periodGainEur }
+    private var gainPct: Decimal? { period == .all ? row.pnlPct : row.periodGainPct }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
@@ -175,8 +209,8 @@ private struct AccountMetricRow: View {
                 } else {
                     Text("—").font(.body.monospacedDigit()).foregroundStyle(.secondary)
                 }
-                if let pnl = row.pnlEur {
-                    Text(pnlLabel(pnl, row.pnlPct))
+                if let pnl = gain {
+                    Text(pnlLabel(pnl, gainPct))
                         .font(.caption.monospacedDigit())
                         .fontDesign(.rounded)
                         .foregroundStyle(Theme.amountColor(pnl))

@@ -18,6 +18,8 @@ enum CCStatementImport {
         let pattern: String
         let category: String
         let priority: Int?
+        // Set on an existing pattern to move that rule to another field.
+        let field: String?
     }
 
     struct ValuationSeed: Decodable {
@@ -83,18 +85,28 @@ enum CCStatementImport {
         iso.formatOptions = [.withInternetDateTime]
 
         var seededRules = 0
+        var updatedRules = 0
         for seed in payload?.rules ?? [] {
             let pattern = seed.pattern
-            let already = ((try? ctx.fetchCount(FetchDescriptor<CategoryRule>(
-                predicate: #Predicate { $0.pattern == pattern }))) ?? 0) > 0
-            if already { continue }
+            let field = seed.field.flatMap(RuleField.init(rawValue:))
+            let existing = (try? ctx.fetch(FetchDescriptor<CategoryRule>(
+                predicate: #Predicate { $0.pattern == pattern }))) ?? []
+            if let rule = existing.first {
+                if let field, rule.field != field, let category = rule.category {
+                    try? CoreLogic.CategoryRules.update(
+                        rule, pattern: rule.pattern, category: category,
+                        field: field, matchType: rule.matchType, in: ctx)
+                    updatedRules += 1
+                }
+                continue
+            }
             let name = seed.category
             guard let category = try? ctx.fetch(FetchDescriptor<CoreModel.Category>(
                 predicate: #Predicate { $0.name == name })).first else {
                 print("[CCImport] no category named \(name) for rule \(pattern)"); continue
             }
             _ = try? CoreLogic.CategoryRules.create(
-                pattern: pattern, category: category,
+                pattern: pattern, category: category, field: field ?? .description,
                 priority: seed.priority ?? -1000, in: ctx)
             seededRules += 1
         }
@@ -169,10 +181,11 @@ enum CCStatementImport {
 
         let uncategorized = (try? ctx.fetch(FetchDescriptor<Transaction>(
             predicate: #Predicate { $0.account?.id == acctId && $0.category == nil }))) ?? []
+        // A changed rule can reach rows on any account, so it re-runs everything.
         let cats = (try? CoreLogic.Categorize.applyRulesToTransactions(
-            in: ctx, txIds: uncategorized.map(\.id) + insertedIds))?.updated ?? 0
+            in: ctx, txIds: updatedRules > 0 ? nil : uncategorized.map(\.id) + insertedIds))?.updated ?? 0
         try? ctx.save()
-        print("[CCImport] rules=\(seededRules) deleted=\(deleted) inserted=\(insertedIds.count) skipped=\(skipped) valuations=\(valuations) categorized=\(cats)")
+        print("[CCImport] rules=\(seededRules) updatedRules=\(updatedRules) deleted=\(deleted) inserted=\(insertedIds.count) skipped=\(skipped) valuations=\(valuations) categorized=\(cats)")
         if payload != nil { try? FileManager.default.removeItem(at: jsonURL) }
     }
 }

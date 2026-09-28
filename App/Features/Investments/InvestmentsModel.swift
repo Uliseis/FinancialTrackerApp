@@ -13,6 +13,14 @@ struct InvestmentsModel {
     var lastUpdated: Date?
     var rows: [Row]
     var series: [CoreLogic.Investments.PortfolioSeriesPoint]
+    var periodGain: PeriodGain?
+
+    struct PeriodGain {
+        let from: Date
+        let gainEur: Decimal
+        let gainPct: Decimal?
+        let netContributionsEur: Decimal
+    }
 
     struct Row: Identifiable {
         let id: UUID
@@ -25,15 +33,19 @@ struct InvestmentsModel {
         let isLive: Bool
         let isStale: Bool
         let hasCostBasis: Bool
+        let periodGainEur: Decimal?
+        let periodGainPct: Decimal?
     }
 
     static let empty = InvestmentsModel(
         totalValue: 0, totalCost: nil, totalPnl: nil, totalPnlPct: nil,
-        totalCash: 0, totalPositions: 0, lastUpdated: nil, rows: [], series: []
+        totalCash: 0, totalPositions: 0, lastUpdated: nil, rows: [], series: [], periodGain: nil
     )
 
     @MainActor
-    static func load(spaceId: UUID, defaultId: UUID, in ctx: ModelContext) -> InvestmentsModel {
+    static func load(
+        spaceId: UUID, defaultId: UUID, period: CoreLogic.Investments.Period, in ctx: ModelContext
+    ) -> InvestmentsModel {
         guard let invRows = try? CoreLogic.Investments.listAccountsInSpace(
             spaceId: spaceId, defaultSpaceId: defaultId, in: ctx
         ), !invRows.isEmpty else { return empty }
@@ -49,6 +61,12 @@ struct InvestmentsModel {
         let series = CoreLogic.Investments.computePortfolioSeries(
             bases: bases, valuations: valuations, legs: legs
         )
+        // "All" stays lifetime profit against cost basis; the other periods are the market
+        // change inside the window, which is what makes them differ from each other.
+        let returns = CoreLogic.Investments.periodStartDate(period).map {
+            CoreLogic.Investments.computePeriodReturns(
+                bases: bases, valuations: valuations, legs: legs, metrics: metrics, periodStart: $0)
+        }
 
         var totalValue: Decimal = 0
         var totalCost: Decimal = 0
@@ -79,7 +97,9 @@ struct InvestmentsModel {
                 valueEur: m?.valueEur, pnlEur: m?.pnlEur, pnlPct: m?.pnlPct,
                 contributionsSinceValueEur: m?.contributionsSinceValueEur ?? 0,
                 isLive: m?.isLive ?? false, isStale: m?.isStale ?? false,
-                hasCostBasis: m?.costBasisEur != nil
+                hasCostBasis: m?.costBasisEur != nil,
+                periodGainEur: returns?[r.account.id]?.gainEur,
+                periodGainPct: returns?[r.account.id]?.gainPct
             ))
         }
         rows.sort { $0.name < $1.name }
@@ -88,6 +108,18 @@ struct InvestmentsModel {
         let epsilon = Decimal(string: "0.000001")!
         let totalPnlPct: Decimal? =
             (totalPnl != nil && abs(totalCost) > epsilon) ? totalPnl! / totalCost : nil
+
+        let periodGain: PeriodGain? = returns.flatMap { byId in
+            let all = Array(byId.values)
+            guard let from = all.map(\.from).min() else { return nil }
+            let gain = all.reduce(Decimal(0)) { $0 + $1.gainEur }
+            let start = all.reduce(Decimal(0)) { $0 + $1.startValueEur }
+            let contributions = all.reduce(Decimal(0)) { $0 + $1.netContributionsEur }
+            return PeriodGain(
+                from: from, gainEur: gain,
+                gainPct: CoreLogic.Investments.dietz(gain: gain, start: start, contributions: contributions),
+                netContributionsEur: contributions)
+        }
 
         return InvestmentsModel(
             totalValue: totalValue,
@@ -98,7 +130,8 @@ struct InvestmentsModel {
             totalPositions: totalPositions,
             lastUpdated: lastUpdated,
             rows: rows,
-            series: series
+            series: series,
+            periodGain: periodGain
         )
     }
 }
@@ -110,6 +143,15 @@ extension CoreLogic.Investments.Period {
         case .oneYear: "1Y"
         case .threeYears: "3Y"
         case .all: "All"
+        }
+    }
+
+    var longLabel: String {
+        switch self {
+        case .ytd: "Year to date"
+        case .oneYear: "Past year"
+        case .threeYears: "Past 3 years"
+        case .all: "All-time"
         }
     }
 }

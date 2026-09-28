@@ -10,11 +10,16 @@ struct DashboardView: View {
                   SortDescriptor(\AccountSpace.createdAt)])
     private var spaces: [AccountSpace]
     @AppStorage(SpaceSelection.key) private var currentSpaceId = ""
+    @AppStorage(CycleSettings.startDayKey) private var cycleStartDay = 1
+    @AppStorage(CycleSettings.startsEarlyOnWeekendsKey) private var startsEarlyOnWeekends = true
     @State private var model: DashboardModel = .empty
 
     private func reload() {
         let scope = SpaceScope.resolve(rawCurrentId: currentSpaceId, spaces: spaces)
-        model = DashboardModel.load(scope: scope, in: ctx)
+        model = DashboardModel.load(
+            scope: scope,
+            cycle: .init(startDay: cycleStartDay, startsEarlyOnWeekends: startsEarlyOnWeekends),
+            in: ctx)
     }
 
     var body: some View {
@@ -62,6 +67,8 @@ struct DashboardView: View {
         }
         .task { reload() }
         .onChange(of: currentSpaceId) { reload() }
+        .onChange(of: cycleStartDay) { reload() }
+        .onChange(of: startsEarlyOnWeekends) { reload() }
         .reloadOnModelChange { reload() }
     }
 }
@@ -195,15 +202,32 @@ private struct ThisMonthCard: View {
             : (current.expense > 0 ? 1 : 0)
     }
 
-    // Day-of-month pacing, in the user's calendar (display only).
+    // Pacing through the budgeting month, which may not be the calendar month.
     private var pacing: (day: Int, total: Int)? {
-        let cal = Calendar.current
-        let now = Date()
-        guard let range = cal.range(of: .day, in: .month, for: now) else { return nil }
-        return (cal.component(.day, from: now), range.count)
+        let total = Int((current.end.timeIntervalSince(current.id) / 86_400).rounded())
+        let day = Int(Date().timeIntervalSince(current.id) / 86_400) + 1
+        guard total > 0 else { return nil }
+        return (min(max(day, 1), total), total)
     }
 
-    private var monthName: String { Self.monthName.string(from: current.id) }
+    private var isCalendarMonth: Bool {
+        var cal = Calendar(identifier: .iso8601)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        return cal.component(.day, from: current.id) == 1
+    }
+
+    private var monthName: String {
+        guard !isCalendarMonth else { return Self.monthName.string(from: current.id) }
+        let last = current.end.addingTimeInterval(-1)
+        return "\(Self.shortDay.string(from: current.id)) – \(Self.shortDay.string(from: last))"
+    }
+    private static let shortDay: DateFormatter = {
+        let f = DateFormatter()
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.locale = Locale(identifier: "en_GB")
+        f.dateFormat = "d MMM"
+        return f
+    }()
     private static let monthName: DateFormatter = {
         let f = DateFormatter()
         f.timeZone = TimeZone(identifier: "UTC")
