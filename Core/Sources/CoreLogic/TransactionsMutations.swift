@@ -142,6 +142,8 @@ extension CoreLogic {
             case (nil, let d?): decimalSep = s[d...].count <= 3 ? "." : nil
             case (nil, nil): decimalSep = nil
             }
+            // The decimal separator appears once. "12,512,5" is a typo, not 12512.5.
+            if let decimalSep, s.filter({ $0 == decimalSep }).count > 1 { return nil }
 
             var normalized = ""
             var seenDecimal = false
