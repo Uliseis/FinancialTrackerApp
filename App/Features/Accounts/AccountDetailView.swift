@@ -314,7 +314,7 @@ private struct AccountDetailHeader: View {
                 PanelLabel(text: account.institution)
                 Text(balance.map { Money.format($0, currency: account.currency) } ?? "—")
                     .font(.readout(.largeTitle, weight: .bold))
-                    .foregroundStyle((balance ?? 0) < 0 ? Theme.heroAccent : .white)
+                    .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
                 Text(meta)

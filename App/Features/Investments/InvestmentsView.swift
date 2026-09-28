@@ -197,8 +197,10 @@ private struct AccountMetricRow: View {
                 Text(row.name).axLineLimit(1)
                 HStack(spacing: 4) {
                     if row.isLive {
+                        // heroAccent is tuned for the dark panel; on a light row it washes out.
                         Image(systemName: "bolt.fill").font(.caption2)
-                            .foregroundStyle(Theme.heroAccent)
+                            .foregroundStyle(Color.brand)
+                            .accessibilityLabel("Live price")
                     }
                     Text(subtitle).font(.caption).foregroundStyle(.secondary)
                 }
