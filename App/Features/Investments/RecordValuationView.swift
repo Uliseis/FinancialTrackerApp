@@ -273,9 +273,8 @@ struct RecordValuationView: View {
         if let qty = account.assetQuantity { quantityText = decimalField(qty) }
     }
 
-    // Plain "1234.56" for a text field: the display formatter's grouping separators would
-    // have to be parsed back out again.
-    // Locale separator like every other field ("0,06033031" in es-ES, not "0.06033031").
+    // No grouping, so nothing has to be parsed back out; locale separator like every other
+    // field ("0,06033031" in es-ES, not "0.06033031").
     private func decimalField(_ value: Decimal) -> String {
         value.formatted(.number.grouping(.never).precision(.fractionLength(0...12)))
     }

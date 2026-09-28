@@ -14,7 +14,7 @@ struct TransferPartnerPickerView: View {
     private var allTx: [CoreModel.Transaction]
     @Environment(\.dismiss) private var dismiss
     @State private var search = ""
-    // Cached: the filter+sort walks every transaction, so run it per input change
+    // Cached: the filter walks every transaction, so run it per input change
     // (task below), never per body render.
     @State private var candidates: [CoreModel.Transaction] = []
 
