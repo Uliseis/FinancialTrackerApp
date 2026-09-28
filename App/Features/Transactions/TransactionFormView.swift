@@ -26,11 +26,12 @@ struct TransactionFormView: View {
     }
 
     private var currency: String {
-        selectableAccounts.first { $0.id == edit.accountId }?.currency ?? "EUR"
+        edit.existing?.currency
+            ?? selectableAccounts.first { $0.id == edit.accountId }?.currency ?? "EUR"
     }
 
     private var amount: Decimal? { CoreLogic.Transactions.parseAmount(edit.amountText) }
-    private var isValid: Bool { edit.accountId != nil && amount != nil }
+    private var isValid: Bool { (edit.existing != nil || edit.accountId != nil) && amount != nil }
 
     var body: some View {
         NavigationStack {
@@ -69,10 +70,16 @@ struct TransactionFormView: View {
                 }
 
                 Section {
-                    Picker("Account", selection: $edit.accountId) {
-                        Text("Choose…").tag(UUID?.none)
-                        ForEach(selectableAccounts) {
-                            Text($0.displayName).tag(UUID?.some($0.id))
+                    // An edit can't move a row: a synced one would be re-imported into its
+                    // old account on the next sync (dedupe is per account + externalId).
+                    if let existing = edit.existing {
+                        LabeledContent("Account", value: existing.account?.displayName ?? "—")
+                    } else {
+                        Picker("Account", selection: $edit.accountId) {
+                            Text("Choose…").tag(UUID?.none)
+                            ForEach(selectableAccounts) {
+                                Text($0.displayName).tag(UUID?.some($0.id))
+                            }
                         }
                     }
                     Picker("Category", selection: $edit.categoryId) {
@@ -117,8 +124,7 @@ struct TransactionFormView: View {
     }
 
     private func save() {
-        guard let account = selectableAccounts.first(where: { $0.id == edit.accountId }),
-              let amount else { return }
+        guard let amount else { return }
         let category = categories.first { $0.id == edit.categoryId }
         do {
             if let existing = edit.existing {
@@ -127,6 +133,8 @@ struct TransactionFormView: View {
                     bookedAt: edit.bookedAt, description: edit.description,
                     counterparty: edit.counterparty, category: category, in: ctx)
             } else {
+                guard let account = selectableAccounts.first(where: { $0.id == edit.accountId })
+                else { return }
                 try CoreLogic.Transactions.createManual(
                     account: account, amount: amount, direction: edit.direction,
                     bookedAt: edit.bookedAt, description: edit.description,
