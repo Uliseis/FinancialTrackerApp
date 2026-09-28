@@ -34,6 +34,7 @@ struct TransactionsView: View {
     #if DEBUG
     @State private var debugPartnerTx: CoreModel.Transaction?
     @State private var debugSharedTx: CoreModel.Transaction?
+    @State private var debugIncomeTx: CoreModel.Transaction?
     #endif
 
     // Web parity: current space only, hide mirror legs (routedFromTx != nil) and
@@ -212,6 +213,9 @@ struct TransactionsView: View {
             .sheet(item: $debugSharedTx) { tx in
                 SharedExpenseCreateView(primaryTx: tx)
             }
+            .sheet(item: $debugIncomeTx) { tx in
+                MatchIncomeView(incomeTx: tx)
+            }
             #endif
             .overlay {
                 if rows.isEmpty {
@@ -244,6 +248,14 @@ struct TransactionsView: View {
                     $0.direction == .debit && !$0.isTransfer && $0.routedFromTx == nil
                         && $0.sharedExpenseGroup == nil && $0.amountEur != nil
                 })
+            case "match-income":
+                debugIncomeTx = allTx.first(where: {
+                    $0.direction == .credit && !$0.isTransfer && $0.routedFromTx == nil
+                        && $0.sharedExpenseGroup == nil && $0.amountEur != nil
+                })
+            case "tx-new": adding = TransactionEdit()
+            case "tx-edit":
+                if let t = rows.first(where: { !$0.isTransfer }) { adding = TransactionEdit(t) }
             default: break
             }
             #endif

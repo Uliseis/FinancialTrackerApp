@@ -81,6 +81,10 @@ struct AccountsView: View {
                let first = accounts.first(where: { !$0.archived }) {
                 editingAccount = AccountEdit(first)
             }
+            if UITestHooks.presentSheet == "interest",
+               let first = accounts.first(where: { !$0.archived }) {
+                interestAccount = first
+            }
             if UITestHooks.presentSheet == "anchor",
                let first = accounts.first(where: { !$0.archived }) {
                 anchoringAccount = first

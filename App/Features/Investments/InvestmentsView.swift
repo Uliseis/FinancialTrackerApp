@@ -96,6 +96,11 @@ struct InvestmentsView: View {
                let p = CoreLogic.Investments.Period(rawValue: raw) { period = p }
             #endif
             reload()
+            #if DEBUG
+            if UITestHooks.presentSheet == "valuation", let id = vm?.rows.first?.id {
+                valuing = account(for: id)
+            }
+            #endif
         }
         .onChange(of: currentSpaceId) { reload() }
         .onChange(of: period) { reload() }
