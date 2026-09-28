@@ -111,6 +111,24 @@ extension CoreLogic {
         // this wrong in both directions — in es-ES "42.50" parses as forty-two thousand five
         // hundred — and it's a money path, so we don't leave it to the formatter.
         public static func parseAmount(_ raw: String) -> Decimal? {
+            guard let d = parseMagnitude(raw), d > 0 else { return nil }
+            return d
+        }
+
+        // A balance, not a charge: may be negative (a card) or zero. Same separator rules as
+        // parseAmount, with one optional leading sign.
+        public static func parseSignedAmount(_ raw: String) -> Decimal? {
+            var s = raw.trimmingCharacters(in: .whitespaces)
+            var negative = false
+            if let first = s.first, "-−+".contains(first) {
+                negative = first != "+"
+                s.removeFirst()
+            }
+            guard let d = parseMagnitude(s) else { return nil }
+            return negative ? -d : d
+        }
+
+        private static func parseMagnitude(_ raw: String) -> Decimal? {
             var s = raw.trimmingCharacters(in: .whitespaces)
             s.removeAll { $0 == " " || $0 == "€" || $0 == "$" || $0 == "\u{00A0}" }
             guard !s.isEmpty else { return nil }
@@ -124,6 +142,8 @@ extension CoreLogic {
             case (nil, let d?): decimalSep = s[d...].count <= 3 ? "." : nil
             case (nil, nil): decimalSep = nil
             }
+            // The decimal separator appears once. "12,512,5" is a typo, not 12512.5.
+            if let decimalSep, s.filter({ $0 == decimalSep }).count > 1 { return nil }
 
             var normalized = ""
             var seenDecimal = false
@@ -138,7 +158,7 @@ extension CoreLogic {
                 }
                 normalized.append(ch)
             }
-            guard let d = Decimal(string: normalized), d > 0 else { return nil }
+            guard let d = Decimal(string: normalized), d >= 0 else { return nil }
             return d
         }
 

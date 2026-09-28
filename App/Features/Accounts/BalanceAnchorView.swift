@@ -5,7 +5,7 @@ import CoreLogic
 
 struct BalanceAnchorView: View {
     let account: Account
-    // Text + parseAmount: a locale-bound numeric field reads "196.03" as 19603 under es-ES.
+    // Text + a lenient parse: a locale-bound numeric field reads "196.03" as 19603 under es-ES.
     @State private var amountText: String
     @State private var date: Date
     @State private var confirmingClear = false
@@ -21,7 +21,8 @@ struct BalanceAnchorView: View {
     }
 
     private var hasAnchor: Bool { CoreLogic.Accounts.hasAnchor(account) }
-    private var amount: Decimal? { CoreLogic.Transactions.parseAmount(amountText) }
+    // Signed: a card balance is negative, and parseAmount rejects anything ≤ 0.
+    private var amount: Decimal? { CoreLogic.Transactions.parseSignedAmount(amountText) }
 
     var body: some View {
         NavigationStack {
@@ -45,6 +46,12 @@ struct BalanceAnchorView: View {
                     Section {
                         Button("Clear Anchor", role: .destructive) { confirmingClear = true }
                             .frame(maxWidth: .infinity, alignment: .center)
+                            .confirmationDialog("Clear the balance anchor?", isPresented: $confirmingClear,
+                                                titleVisibility: .visible) {
+                                Button("Clear Anchor", role: .destructive) { clear() }
+                            } message: {
+                                Text("The balance reverts to opening balance plus all transactions.")
+                            }
                     }
                 }
             }
@@ -57,12 +64,6 @@ struct BalanceAnchorView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }.disabled(amount == nil)
                 }
-            }
-            .confirmationDialog("Clear the balance anchor?", isPresented: $confirmingClear,
-                                titleVisibility: .visible) {
-                Button("Clear Anchor", role: .destructive) { clear() }
-            } message: {
-                Text("The balance reverts to opening balance plus all transactions.")
             }
             .saveErrorAlert($saveError)
             .task { shownNow = CoreLogic.Accounts.computeNativeBalances([account], in: ctx)[account.id] }

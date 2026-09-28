@@ -150,6 +150,8 @@ struct SettingsView: View {
             path.append(SettingsDestination.connections)
             if let first = debugConnections.first { path.append(first) }
         case "transfers": path.append(SettingsDestination.transfers)
+        case "trading212": path.append(SettingsDestination.trading212)
+        case "automations": path.append(SettingsDestination.automations)
         case "spaces", "space-edit": path.append(SettingsDestination.spaces)
         case "groups", "group-edit": path.append(SettingsDestination.groups)
         case "categories", "category-edit": path.append(SettingsDestination.categories)

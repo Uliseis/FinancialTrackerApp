@@ -259,7 +259,7 @@ struct RecordValuationView: View {
         guard !loaded else { return }
         loaded = true
         if let opening = account.costBasisOpeningEur {
-            basisText = decimalField(opening)
+            basisText = Money.plainAmountText(opening)
             basisAt = account.costBasisOpeningAt ?? .now
         }
         if let live = account.liveValueSource {
@@ -273,10 +273,10 @@ struct RecordValuationView: View {
         if let qty = account.assetQuantity { quantityText = decimalField(qty) }
     }
 
-    // Plain "1234.56" for a text field: the display formatter's grouping separators would
-    // have to be parsed back out again.
+    // No grouping, so nothing has to be parsed back out; locale separator like every other
+    // field ("0,06033031" in es-ES, not "0.06033031").
     private func decimalField(_ value: Decimal) -> String {
-        "\(value)"
+        value.formatted(.number.grouping(.never).precision(.fractionLength(0...12)))
     }
 
     private func repeat_(_ suggestion: CoreLogic.Transfers.RepeatSuggestion) {

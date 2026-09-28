@@ -34,6 +34,7 @@ struct TransactionsView: View {
     #if DEBUG
     @State private var debugPartnerTx: CoreModel.Transaction?
     @State private var debugSharedTx: CoreModel.Transaction?
+    @State private var debugIncomeTx: CoreModel.Transaction?
     #endif
 
     // Web parity: current space only, hide mirror legs (routedFromTx != nil) and
@@ -212,6 +213,9 @@ struct TransactionsView: View {
             .sheet(item: $debugSharedTx) { tx in
                 SharedExpenseCreateView(primaryTx: tx)
             }
+            .sheet(item: $debugIncomeTx) { tx in
+                MatchIncomeView(incomeTx: tx)
+            }
             #endif
             .overlay {
                 if rows.isEmpty {
@@ -244,6 +248,14 @@ struct TransactionsView: View {
                     $0.direction == .debit && !$0.isTransfer && $0.routedFromTx == nil
                         && $0.sharedExpenseGroup == nil && $0.amountEur != nil
                 })
+            case "match-income":
+                debugIncomeTx = allTx.first(where: {
+                    $0.direction == .credit && !$0.isTransfer && $0.routedFromTx == nil
+                        && $0.sharedExpenseGroup == nil && $0.amountEur != nil
+                })
+            case "tx-new": adding = TransactionEdit()
+            case "tx-edit":
+                if let t = rows.first(where: { !$0.isTransfer }) { adding = TransactionEdit(t) }
             default: break
             }
             #endif
@@ -263,7 +275,7 @@ private struct MonthHeader: View {
     let net: Decimal
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
+        AdaptiveStack(alignment: .firstTextBaseline) {
             Text(title)
                 .font(.display(.title3, weight: .semibold))
                 .foregroundStyle(.primary)
@@ -300,33 +312,41 @@ struct TransactionRow: View {
     var body: some View {
         HStack(spacing: Theme.Space.m) {
             CategoryBadge(category: tx.category)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.subheadline.weight(.medium))
+            AdaptiveStack(spacing: Theme.Space.xs) {
+                rowText
+                Spacer(minLength: Theme.Space.s)
+                Text(amount)
+                    .font(.readout(.body))
+                    .foregroundStyle(color)
                     .lineLimit(1)
-                HStack(spacing: 6) {
-                    Text(tx.bookedAt, format: .dateTime.day().month(.abbreviated))
-                    if !subtitle.isEmpty {
-                        Text("· \(subtitle)").lineLimit(1)
-                    }
-                    if tx.isTransfer {
-                        Image(systemName: "arrow.left.arrow.right")
-                    }
-                    if tx.sharedExpenseGroup != nil {
-                        Image(systemName: "link")
-                    }
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                    .minimumScaleFactor(0.6)
             }
-            Spacer(minLength: Theme.Space.s)
-            Text(amount)
-                .font(.readout(.body))
-                .foregroundStyle(color)
-                .lineLimit(1)
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
+    }
+
+    private var rowText: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.subheadline.weight(.medium))
+                .axLineLimit(1)
+            HStack(spacing: 6) {
+                Text(tx.bookedAt, format: .dateTime.day().month(.abbreviated))
+                    .fixedSize()
+                if !subtitle.isEmpty {
+                    Text("· \(subtitle)").axLineLimit(1)
+                }
+                if tx.isTransfer {
+                    Image(systemName: "arrow.left.arrow.right")
+                }
+                if tx.sharedExpenseGroup != nil {
+                    Image(systemName: "link")
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
     }
 
     // Income carries an explicit "+" so the credit/debit distinction survives

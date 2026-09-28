@@ -41,6 +41,10 @@ enum Theme {
     // mode-aware accent would be too dim there). Matches the icon's gem.
     static let heroAccent = Color(.sRGB, red: 0.271, green: 0.839, blue: 0.776)
 
+    // Fill for prominent buttons in both appearances. The dark-mode accent is a light mint
+    // (right for text on black) and white labels on it measure under 2:1.
+    static let prominentFill = Color(.sRGB, red: 0.043, green: 0.522, blue: 0.475)
+
     // Sign-based money color. Income/gains positive, spending/losses negative,
     // zero neutral. Single source so every amount in the app reads the same way.
     static func amountColor(_ value: Decimal) -> Color {

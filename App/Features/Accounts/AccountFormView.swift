@@ -87,6 +87,12 @@ struct AccountFormView: View {
                     Section {
                         Button("Delete Account", role: .destructive) { confirmingDelete = true }
                             .frame(maxWidth: .infinity, alignment: .center)
+                            .confirmationDialog("Delete this account?", isPresented: $confirmingDelete,
+                                                titleVisibility: .visible) {
+                                Button("Delete", role: .destructive) { deleteAccount() }
+                            } message: {
+                                Text("This permanently deletes the account and its transactions.")
+                            }
                     }
                 }
             }
@@ -100,16 +106,10 @@ struct AccountFormView: View {
                     Button("Save") { save() }.disabled(!isValid)
                 }
             }
-            .confirmationDialog("Delete this account?", isPresented: $confirmingDelete,
-                                titleVisibility: .visible) {
-                Button("Delete", role: .destructive) { deleteAccount() }
-            } message: {
-                Text("This permanently deletes the account and its transactions.")
-            }
             .task { if edit.spaceId == nil { edit.spaceId = defaultSpaceId } }
             .saveErrorAlert($saveError)
             .onAppear { openingText = Money.plainAmountText(edit.openingBalance) }
-            .onChange(of: openingText) { edit.openingBalance = CoreLogic.Transactions.parseAmount(openingText) ?? 0 }
+            .onChange(of: openingText) { edit.openingBalance = CoreLogic.Transactions.parseSignedAmount(openingText) ?? 0 }
         }
     }
 

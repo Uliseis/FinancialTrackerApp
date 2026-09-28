@@ -45,6 +45,23 @@ extension CoreLogic {
             return out
         }
 
+        // What an account is worth on screen. An investment account is valued, not ledgered:
+        // its transactions are money moved in and out, so their sum is not what it holds. Uses
+        // the Investments tab's figure so the two tabs can't disagree; the ledger stands in
+        // until there's a reading.
+        @MainActor
+        public static func displayBalancesEur(
+            _ rows: [Account], in ctx: ModelContext
+        ) throws -> [UUID: Decimal] {
+            var out = try computeEurBalances(rows, in: ctx)
+            let invested = rows.filter { $0.group?.kind == .investment }
+            guard !invested.isEmpty else { return out }
+            for (id, metrics) in try Investments.loadMetrics(for: invested, in: ctx) {
+                if let value = metrics.valueEur { out[id] = value }
+            }
+            return out
+        }
+
         // Native-currency balances. Connected-no-anchor accounts with a nil bank balance
         // are omitted (parity with the TS `else if a.balance != null`).
         @MainActor

@@ -105,7 +105,7 @@ private struct NetWorthHeroCard: View {
                 CompassMark()
             }
 
-            HStack(alignment: .top, spacing: Theme.Space.m) {
+            AdaptiveStack(alignment: .top, spacing: Theme.Space.m) {
                 HeroStat(label: "Cash", value: model.cashTotal)
                 if model.investmentValue > 0 { HeroStat(label: "Invest", value: model.investmentValue) }
                 if model.liabilities != 0 { HeroStat(label: "Liabilities", value: model.liabilities) }
@@ -238,13 +238,14 @@ private struct ThisMonthCard: View {
 
     private var spendLabel: String {
         guard current.income > 0 else { return "no income logged yet" }
-        let pct = Int((spendFraction * 100).rounded())
-        return overspent ? "\(pct)% — over income" : "\(pct)% of income spent"
+        // The bar is clamped at full; the label isn't, or 150× income reads as "100%".
+        let pct = Int(((current.expense / current.income).doubleValue * 100).rounded())
+        return overspent ? "\(pct.formatted())% — over income" : "\(pct)% of income spent"
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
-            HStack {
+            AdaptiveStack(spacing: Theme.Space.s) {
                 Text("THIS MONTH · \(monthName.uppercased())")
                     .font(.caption2.weight(.semibold))
                     .tracking(1.2)
@@ -272,7 +273,7 @@ private struct ThisMonthCard: View {
                     .foregroundStyle(.secondary)
             }
 
-            HStack(alignment: .top, spacing: Theme.Space.l) {
+            AdaptiveStack(alignment: .top, spacing: Theme.Space.l) {
                 FlowStat(icon: "arrow.down.left.circle.fill", label: "Income",
                          value: current.income, tint: .positiveAmount)
                 FlowStat(icon: "arrow.up.right.circle.fill", label: "Expenses",
@@ -282,7 +283,7 @@ private struct ThisMonthCard: View {
             VStack(alignment: .leading, spacing: Theme.Space.xs) {
                 ProgressView(value: spendFraction)
                     .tint(overspent ? .negativeAmount : .brand)
-                HStack {
+                AdaptiveStack(spacing: Theme.Space.xs) {
                     Text(spendLabel)
                         .font(.caption)
                         .foregroundStyle(overspent ? Color.negativeAmount : .secondary)
@@ -381,6 +382,7 @@ private struct GroupBreakdownSection: View {
 
 private struct CashFlowSection: View {
     let months: [DashboardModel.MonthBar]
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     private struct FlowPoint: Identifiable {
         let id = UUID()
@@ -417,6 +419,8 @@ private struct CashFlowSection: View {
                 }
             }
             .chartLegend(.visible)
+            // Axis labels past xxxLarge overrun each other; the table below carries the figures.
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
             .frame(height: 200)
             .padding(.vertical, 4)
         } header: {
@@ -424,16 +428,19 @@ private struct CashFlowSection: View {
         }
 
         Section {
-            HStack {
-                Text("MONTH").frame(maxWidth: .infinity, alignment: .leading)
-                Text("INCOME").frame(maxWidth: .infinity, alignment: .trailing)
-                Text("EXPENSE").frame(maxWidth: .infinity, alignment: .trailing)
-                Text("NET").frame(maxWidth: .infinity, alignment: .trailing)
+            // Rows label their own figures at accessibility sizes, where four columns don't fit.
+            if !typeSize.isAccessibilitySize {
+                HStack {
+                    Text("MONTH").frame(maxWidth: .infinity, alignment: .leading)
+                    Text("INCOME").frame(maxWidth: .infinity, alignment: .trailing)
+                    Text("EXPENSE").frame(maxWidth: .infinity, alignment: .trailing)
+                    Text("NET").frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                .font(.caption2.weight(.semibold))
+                .tracking(0.5)
+                .foregroundStyle(.secondary)
+                .listRowSeparator(.hidden)
             }
-            .font(.caption2.weight(.semibold))
-            .tracking(0.5)
-            .foregroundStyle(.secondary)
-            .listRowSeparator(.hidden)
 
             ForEach(months.reversed()) { m in
                 MonthFlowRow(month: m, isCurrent: m.id == months.last?.id)
@@ -447,34 +454,56 @@ private struct CashFlowSection: View {
 private struct MonthFlowRow: View {
     let month: DashboardModel.MonthBar
     let isCurrent: Bool
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    private var income: String { Money.format(month.income, currency: "EUR") }
+    private var expense: String { Money.format(month.expense, currency: "EUR") }
+    private var net: String { (month.net > 0 ? "+" : "") + Money.format(month.net, currency: "EUR") }
+    private var incomeColor: Color { month.income > 0 ? .positiveAmount : .secondary }
+
+    private var monthLabel: some View {
+        HStack(spacing: Theme.Space.xs) {
+            Text(month.label)
+            if isCurrent {
+                Text("now")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Color.brand)
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(Capsule().fill(Color.brand.opacity(0.14)))
+            }
+        }
+    }
 
     var body: some View {
-        HStack {
-            HStack(spacing: Theme.Space.xs) {
-                Text(month.label)
-                if isCurrent {
-                    Text("now")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(Color.brand)
-                        .padding(.horizontal, 5).padding(.vertical, 1)
-                        .background(Capsule().fill(Color.brand.opacity(0.14)))
+        Group {
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                    monthLabel
+                    Text("Income ").foregroundStyle(.secondary) + Text(income).foregroundStyle(incomeColor)
+                    Text("Expense ").foregroundStyle(.secondary) + Text(expense)
+                    Text("Net ").foregroundStyle(.secondary) + Text(net).foregroundStyle(Theme.amountColor(month.net))
                 }
+                .font(.footnote.monospacedDigit())
+                .fontDesign(.rounded)
+            } else {
+                HStack {
+                    monthLabel.frame(maxWidth: .infinity, alignment: .leading)
+                    Text(income)
+                        .foregroundStyle(incomeColor)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    Text(expense)
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    Text(net)
+                        .foregroundStyle(Theme.amountColor(month.net))
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                .font(.footnote.monospacedDigit())
+                .fontDesign(.rounded)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Text(Money.format(month.income, currency: "EUR"))
-                .foregroundStyle(month.income > 0 ? Color.positiveAmount : .secondary)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-            Text(Money.format(month.expense, currency: "EUR"))
-                .foregroundStyle(.primary)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-            Text((month.net > 0 ? "+" : "") + Money.format(month.net, currency: "EUR"))
-                .foregroundStyle(Theme.amountColor(month.net))
-                .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .font(.footnote.monospacedDigit())
-        .fontDesign(.rounded)
-        .lineLimit(1)
-        .minimumScaleFactor(0.7)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(month.label): income \(Money.format(month.income, currency: "EUR")), expense \(Money.format(month.expense, currency: "EUR")), net \(Money.format(month.net, currency: "EUR"))")
     }

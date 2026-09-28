@@ -96,6 +96,11 @@ struct InvestmentsView: View {
                let p = CoreLogic.Investments.Period(rawValue: raw) { period = p }
             #endif
             reload()
+            #if DEBUG
+            if UITestHooks.presentSheet == "valuation", let id = vm?.rows.first?.id {
+                valuing = account(for: id)
+            }
+            #endif
         }
         .onChange(of: currentSpaceId) { reload() }
         .onChange(of: period) { reload() }
@@ -159,7 +164,7 @@ private struct SummaryCard: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            HStack(alignment: .top, spacing: Theme.Space.m) {
+            AdaptiveStack(alignment: .top, spacing: Theme.Space.m) {
                 MetricView(label: "Invested",
                            value: vm.totalCost.map { Money.format($0, currency: "EUR") } ?? "—")
                 if vm.totalPositions > 0 {
@@ -189,21 +194,24 @@ private struct AccountMetricRow: View {
 
     private var gain: Decimal? { period == .all ? row.pnlEur : row.periodGainEur }
     private var gainPct: Decimal? { period == .all ? row.pnlPct : row.periodGainPct }
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
+        AdaptiveStack(alignment: .firstTextBaseline, spacing: Theme.Space.xs) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.name).lineLimit(1)
+                Text(row.name).axLineLimit(1)
                 HStack(spacing: 4) {
                     if row.isLive {
+                        // heroAccent is tuned for the dark panel; on a light row it washes out.
                         Image(systemName: "bolt.fill").font(.caption2)
-                            .foregroundStyle(Theme.heroAccent)
+                            .foregroundStyle(Color.brand)
+                            .accessibilityLabel("Live price")
                     }
                     Text(subtitle).font(.caption).foregroundStyle(.secondary)
                 }
             }
             Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 2) {
+            VStack(alignment: typeSize.isAccessibilitySize ? .leading : .trailing, spacing: 2) {
                 if let v = row.valueEur {
                     MoneyText(amount: v)
                 } else {
@@ -266,28 +274,25 @@ private struct PortfolioChart: View {
     // Label real data points, never interpolated ones: with only a couple of valuations
     // an automatic axis puts four ticks inside a single day and repeats the same label.
     // Also drops picks that render the same label as the one before: at month resolution
-    // several deposit days collapse to "May 26" and the axis reads as a stutter.
+    // several deposit days collapse to one month and the axis reads as a stutter.
     private var axisDates: [Date] {
-        let dates = series.map(\.date)
-        let picked: [Date]
-        if dates.count > 4 {
-            let step = (dates.count - 1) / 3
-            picked = stride(from: 0, to: dates.count, by: max(step, 1)).map { dates[$0] }
-        } else {
-            picked = dates
-        }
         var seen = Set<String>()
-        return picked.filter { seen.insert($0.formatted(axisFormat)).inserted }
+        return CoreLogic.ChartAxis.ticks(series.map(\.date), count: 4)
+            .filter { seen.insert($0.formatted(axisFormat)).inserted }
     }
 
-    // Days for a short window, months within a year, years beyond it.
+    // Days for a short window, months within a year, years beyond it. Within a single year
+    // the month stands alone: "Jul 26" read as the 26th of July, not July 2026.
     private var axisFormat: Date.FormatStyle {
         guard let first = series.first?.date, let last = series.last?.date else {
             return .dateTime.month(.abbreviated)
         }
         let days = last.timeIntervalSince(first) / 86_400
         if days > 720 { return .dateTime.year() }
-        if days > 60 { return .dateTime.month(.abbreviated).year(.twoDigits) }
+        if days > 60 {
+            let sameYear = Calendar.current.isDate(first, equalTo: last, toGranularity: .year)
+            return sameYear ? .dateTime.month(.abbreviated) : .dateTime.month(.abbreviated).year()
+        }
         return .dateTime.day().month(.abbreviated)
     }
 
@@ -323,6 +328,7 @@ private struct PortfolioChart: View {
             }
         }
         .chartLegend(hasCostBasis ? .visible : .hidden)
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .frame(height: 200)
         .padding(.vertical, 4)
     }

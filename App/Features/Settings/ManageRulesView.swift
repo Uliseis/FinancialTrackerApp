@@ -206,12 +206,11 @@ struct RuleEditView: View {
                         Text("Matches ^[\(previewCount) transaction](inflect: true).")
                     }
                 }
-                Section("Category") {
+                Section {
                     Picker("Category", selection: $edit.categoryId) {
                         Text("Choose…").tag(UUID?.none)
                         ForEach(categories) { Text($0.name).tag(UUID?.some($0.id)) }
                     }
-                    .labelsHidden()
                 }
             }
             .navigationTitle(edit.existing == nil ? "New Rule" : "Edit Rule")

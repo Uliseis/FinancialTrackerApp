@@ -136,5 +136,11 @@ final class TransactionsMutationsTests: XCTestCase {
         XCTAssertNil(T.parseAmount("0"))
         XCTAssertNil(T.parseAmount(""))
         XCTAssertNil(T.parseAmount("abc"))
+        // A separator can't be both grouping and the decimal point: "12,512,5" is 12,5 typed
+        // twice, and was read as 12512.5.
+        XCTAssertNil(T.parseAmount("12,512,5"))
+        XCTAssertNil(T.parseAmount("1.234.56"))
+        XCTAssertNil(T.parseAmount("1,234,56"))
+        XCTAssertNil(T.parseSignedAmount("-12,512,5"))
     }
 }

@@ -70,7 +70,9 @@ struct DashboardModel {
         }
         if inScope.isEmpty { return empty }
 
-        let balances = (try? CoreLogic.Accounts.computeEurBalances(inScope, in: ctx)) ?? [:]
+        // Valuation for investment groups, so an included investment account's row agrees
+        // with the hero's Invest figure and the Accounts/Investments tabs.
+        let balances = (try? CoreLogic.Accounts.displayBalancesEur(inScope, in: ctx)) ?? [:]
 
         struct Bucket { var name: String; var color: String?; var eur: Decimal; var count: Int
                         var kind: AccountGroupKind?; var sortOrder: Int }

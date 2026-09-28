@@ -17,6 +17,8 @@ struct AccountDetailView: View {
     @State private var adding: TransactionEdit?
     @State private var visibleLimit = pageSize
     @State private var nativeBalance: Decimal?
+    // Valuations are EUR, so a valued investment account's header is too.
+    @State private var balanceCurrency: String?
     @State private var importing = false
     @State private var importSummary: CoreLogic.StatementImport.Summary?
     @State private var saveError: String?
@@ -56,7 +58,8 @@ struct AccountDetailView: View {
     var body: some View {
         List {
             Section {
-                AccountDetailHeader(account: account, balance: nativeBalance)
+                AccountDetailHeader(account: account, balance: nativeBalance,
+                                    currency: balanceCurrency ?? account.currency)
                     .instrumentPanelRow()
             }
             if !recurring.isEmpty, search.isEmpty {
@@ -220,7 +223,14 @@ struct AccountDetailView: View {
 
     private func reloadBalance() {
         guard accountIsLive else { return }
-        nativeBalance = CoreLogic.Accounts.computeNativeBalances([account], in: ctx)[account.id]
+        if account.group?.kind == .investment,
+           let valued = (try? CoreLogic.Accounts.displayBalancesEur([account], in: ctx))?[account.id] {
+            nativeBalance = valued
+            balanceCurrency = "EUR"
+        } else {
+            nativeBalance = CoreLogic.Accounts.computeNativeBalances([account], in: ctx)[account.id]
+            balanceCurrency = nil
+        }
     }
 }
 
@@ -298,29 +308,29 @@ private struct AccountDetailHeader: View {
     // `account.balance` here showed 0,00 on every manual/anchored account, because that
     // column only holds a bank-reported figure.
     let balance: Decimal?
+    let currency: String
+
+    // One string, so it wraps between words at large sizes rather than per-fragment.
+    private var meta: String {
+        var parts = [account.type.label]
+        if account.alias != nil { parts.append(account.name) }
+        if account.excluded { parts.append("excluded") }
+        if account.archived { parts.append("archived") }
+        return parts.joined(separator: " · ")
+    }
 
     var body: some View {
         InstrumentPanel {
             VStack(alignment: .leading, spacing: Theme.Space.xs) {
                 PanelLabel(text: account.institution)
-                Text(balance.map { Money.format($0, currency: account.currency) } ?? "—")
+                Text(balance.map { Money.format($0, currency: currency) } ?? "—")
                     .font(.readout(.largeTitle, weight: .bold))
-                    .foregroundStyle((balance ?? 0) < 0 ? Theme.heroAccent : .white)
+                    .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
-                HStack(spacing: Theme.Space.s) {
-                    Text(account.type.label)
-                    if account.alias != nil {
-                        Text("· \(account.name)").lineLimit(1)
-                    }
-                    if account.excluded {
-                        Text("· excluded")
-                    }
-                    if account.archived {
-                        Text("· archived")
-                    }
-                }
-                .font(.caption)
+                Text(meta)
+                    .axLineLimit(1)
+                    .font(.caption)
                 .foregroundStyle(.white.opacity(0.6))
             }
         }

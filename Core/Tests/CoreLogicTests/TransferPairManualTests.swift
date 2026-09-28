@@ -104,6 +104,23 @@ final class TransferPairManualTests: XCTestCase {
         }
     }
 
+    // The Pair With picker lists only what pairManual would accept; it used to offer
+    // near-miss amounts that failed with an error on tap.
+    func testCanPairManualMirrorsPairManualRules() throws {
+        let f = try twoAccounts()
+        let debit = S.makeTx(f.ctx, account: f.a, amount: -9.16, amountEur: -9.16, direction: .debit)
+        let exact = S.makeTx(f.ctx, account: f.b, amount: 9.16, amountEur: 9.16, direction: .credit)
+        let nearMiss = S.makeTx(f.ctx, account: f.b, amount: 9, amountEur: 9, direction: .credit)
+        let sameSide = S.makeTx(f.ctx, account: f.b, amount: -9.16, amountEur: -9.16, direction: .debit)
+        XCTAssertTrue(T.canPairManual(debit, exact))
+        XCTAssertFalse(T.canPairManual(debit, nearMiss))
+        XCTAssertFalse(T.canPairManual(debit, sameSide))
+        XCTAssertFalse(T.canPairManual(debit, debit))
+        f.b.archived = true
+        XCTAssertFalse(T.canPairManual(debit, exact))
+        XCTAssertFalse(debit.isTransfer, "checking must not pair")
+    }
+
     func testUnpairClearsWholeGroup() throws {
         let f = try twoAccounts()
         let debit = S.makeTx(f.ctx, account: f.a, amount: -100, amountEur: -100, direction: .debit)

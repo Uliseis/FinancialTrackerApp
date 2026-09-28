@@ -6,9 +6,11 @@ import Foundation
 // (initial tab), UITEST_DISABLE_AUTH=1 (skip Face ID gate), UITEST_SHOW_LOCK=1.
 // Pass via simctl as SIMCTL_CHILD_UITEST_PRESENT=<name>.
 //
-// Names — Accounts tab: account-new, account-edit, anchor. Transactions tab:
-// categorize, tx-detail, tx-detail-transfer, pair-partner, shared-create.
-// Settings tab (pushes): connections, eb-setup, connect-bank, transfers, spaces, space-edit, groups, group-edit,
+// Names — Accounts tab: account-new, account-edit, anchor, interest. Transactions tab:
+// categorize, tx-detail, tx-detail-transfer, tx-new, tx-edit, pair-partner, shared-create,
+// match-income. Investments tab: valuation.
+// Settings tab (pushes): connections, eb-setup, connect-bank, transfers, trading212, automations,
+// spaces, space-edit, groups, group-edit,
 // connection-detail, categories, category-edit, rules, rule-edit, routes, route-edit, shared,
 // shared-detail, budgets, budget-edit (the *-edit variants also auto-open the
 // editor sheet inside the pushed screen).

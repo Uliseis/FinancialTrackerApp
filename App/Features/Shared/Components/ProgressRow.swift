@@ -10,8 +10,8 @@ struct ProgressRow<Leading: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                leading
+            AdaptiveStack {
+                HStack { leading }
                 Spacer(minLength: 8)
                 Text(value)
                     .font(.body.monospacedDigit())

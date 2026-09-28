@@ -335,6 +335,31 @@ extension CoreLogic {
         public static func pairManual(
             _ first: Transaction, _ second: Transaction, in ctx: ModelContext
         ) throws -> TransferGroup {
+            let (debit, credit) = try validateManualPair(first, second)
+
+            let group: TransferGroup
+            if let existing = first.transferGroup ?? second.transferGroup {
+                group = existing
+            } else {
+                group = TransferGroup()
+                ctx.insert(group)
+            }
+            for tx in [debit, credit] {
+                tx.isTransfer = true
+                tx.transferGroup = group
+            }
+            try ctx.saveTouchingChanges()
+            return group
+        }
+
+        // Would pairManual accept this pair? Lets a picker offer only valid partners.
+        public static func canPairManual(_ first: Transaction, _ second: Transaction) -> Bool {
+            (try? validateManualPair(first, second)) != nil
+        }
+
+        private static func validateManualPair(
+            _ first: Transaction, _ second: Transaction
+        ) throws -> (debit: Transaction, credit: Transaction) {
             guard first.id != second.id else { throw PairError.sameTransaction }
             let pair = [first, second]
             guard let debit = pair.first(where: { $0.direction == .debit }),
@@ -359,20 +384,7 @@ extension CoreLogic {
             guard abs(abs(debitEur) - abs(creditEur)) <= eurTolerance else {
                 throw PairError.amountsDiffer
             }
-
-            let group: TransferGroup
-            if let existing = first.transferGroup ?? second.transferGroup {
-                group = existing
-            } else {
-                group = TransferGroup()
-                ctx.insert(group)
-            }
-            for tx in [debit, credit] {
-                tx.isTransfer = true
-                tx.transferGroup = group
-            }
-            try ctx.saveTouchingChanges()
-            return group
+            return (debit, credit)
         }
 
         // Undo a transfer: delete routed mirrors from the source side; otherwise clear the

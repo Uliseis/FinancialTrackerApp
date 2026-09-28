@@ -8,7 +8,8 @@ struct IconBadge: View {
     var size: CGFloat = 30
     @ScaledMetric(relativeTo: .body) private var scale: CGFloat = 1
 
-    private var dimension: CGFloat { size * scale }
+    // Capped: uncapped, an AX5 badge is ~2.7× and eats a third of the row's width.
+    private var dimension: CGFloat { size * min(scale, 1.4) }
 
     var body: some View {
         Image(systemName: systemName)
