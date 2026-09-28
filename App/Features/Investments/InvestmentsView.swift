@@ -159,7 +159,7 @@ private struct SummaryCard: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            HStack(alignment: .top, spacing: Theme.Space.m) {
+            AdaptiveStack(alignment: .top, spacing: Theme.Space.m) {
                 MetricView(label: "Invested",
                            value: vm.totalCost.map { Money.format($0, currency: "EUR") } ?? "—")
                 if vm.totalPositions > 0 {
@@ -189,11 +189,12 @@ private struct AccountMetricRow: View {
 
     private var gain: Decimal? { period == .all ? row.pnlEur : row.periodGainEur }
     private var gainPct: Decimal? { period == .all ? row.pnlPct : row.periodGainPct }
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
+        AdaptiveStack(alignment: .firstTextBaseline, spacing: Theme.Space.xs) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.name).lineLimit(1)
+                Text(row.name).axLineLimit(1)
                 HStack(spacing: 4) {
                     if row.isLive {
                         Image(systemName: "bolt.fill").font(.caption2)
@@ -203,7 +204,7 @@ private struct AccountMetricRow: View {
                 }
             }
             Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 2) {
+            VStack(alignment: typeSize.isAccessibilitySize ? .leading : .trailing, spacing: 2) {
                 if let v = row.valueEur {
                     MoneyText(amount: v)
                 } else {
@@ -323,6 +324,7 @@ private struct PortfolioChart: View {
             }
         }
         .chartLegend(hasCostBasis ? .visible : .hidden)
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .frame(height: 200)
         .padding(.vertical, 4)
     }

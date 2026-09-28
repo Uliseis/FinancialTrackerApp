@@ -8,6 +8,7 @@ struct TagChip: View {
     var body: some View {
         Text(text)
             .font(.caption.weight(.medium))
+            .fixedSize()
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .foregroundStyle(tint ?? Color.secondary)

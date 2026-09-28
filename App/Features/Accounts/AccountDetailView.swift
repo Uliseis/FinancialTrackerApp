@@ -299,6 +299,15 @@ private struct AccountDetailHeader: View {
     // column only holds a bank-reported figure.
     let balance: Decimal?
 
+    // One string, so it wraps between words at large sizes rather than per-fragment.
+    private var meta: String {
+        var parts = [account.type.label]
+        if account.alias != nil { parts.append(account.name) }
+        if account.excluded { parts.append("excluded") }
+        if account.archived { parts.append("archived") }
+        return parts.joined(separator: " · ")
+    }
+
     var body: some View {
         InstrumentPanel {
             VStack(alignment: .leading, spacing: Theme.Space.xs) {
@@ -308,19 +317,9 @@ private struct AccountDetailHeader: View {
                     .foregroundStyle((balance ?? 0) < 0 ? Theme.heroAccent : .white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
-                HStack(spacing: Theme.Space.s) {
-                    Text(account.type.label)
-                    if account.alias != nil {
-                        Text("· \(account.name)").lineLimit(1)
-                    }
-                    if account.excluded {
-                        Text("· excluded")
-                    }
-                    if account.archived {
-                        Text("· archived")
-                    }
-                }
-                .font(.caption)
+                Text(meta)
+                    .axLineLimit(1)
+                    .font(.caption)
                 .foregroundStyle(.white.opacity(0.6))
             }
         }

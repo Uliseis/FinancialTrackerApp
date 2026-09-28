@@ -181,23 +181,25 @@ private struct AccountRow: View {
     var body: some View {
         HStack(spacing: Theme.Space.m) {
             AccountTypeChip(type: account.type, tint: tint)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(account.displayName)
-                    .font(.body)
-                    .lineLimit(1)
-                Text(account.institution)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: Theme.Space.s)
-            if let eur {
-                MoneyText(amount: eur)
-            } else {
-                Text("—")
-                    .font(.body.monospacedDigit())
-                    .fontDesign(.rounded)
-                    .foregroundStyle(.secondary)
+            AdaptiveStack(spacing: Theme.Space.xs) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(account.displayName)
+                        .font(.body)
+                        .axLineLimit(1)
+                    Text(account.institution)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .axLineLimit(1)
+                }
+                Spacer(minLength: Theme.Space.s)
+                if let eur {
+                    MoneyText(amount: eur)
+                } else {
+                    Text("—")
+                        .font(.body.monospacedDigit())
+                        .fontDesign(.rounded)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .opacity(account.excluded ? 0.55 : 1)

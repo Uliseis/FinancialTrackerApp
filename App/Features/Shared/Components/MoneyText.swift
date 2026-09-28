@@ -13,5 +13,6 @@ struct MoneyText: View {
             .fontDesign(.rounded)
             .foregroundStyle(signed ? Theme.amountColor(amount) : Color.primary)
             .lineLimit(1)
+            .minimumScaleFactor(0.6)
     }
 }
