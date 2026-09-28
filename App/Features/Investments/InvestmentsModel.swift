@@ -14,6 +14,8 @@ struct InvestmentsModel {
     var rows: [Row]
     var series: [CoreLogic.Investments.PortfolioSeriesPoint]
     var periodGain: PeriodGain?
+    // Where the recorded history begins; lifetime profit includes whatever was made before it.
+    var firstReadingAt: Date?
 
     struct PeriodGain {
         let from: Date
@@ -39,7 +41,8 @@ struct InvestmentsModel {
 
     static let empty = InvestmentsModel(
         totalValue: 0, totalCost: nil, totalPnl: nil, totalPnlPct: nil,
-        totalCash: 0, totalPositions: 0, lastUpdated: nil, rows: [], series: [], periodGain: nil
+        totalCash: 0, totalPositions: 0, lastUpdated: nil, rows: [], series: [], periodGain: nil,
+        firstReadingAt: nil
     )
 
     @MainActor
@@ -131,7 +134,8 @@ struct InvestmentsModel {
             lastUpdated: lastUpdated,
             rows: rows,
             series: series,
-            periodGain: periodGain
+            periodGain: periodGain,
+            firstReadingAt: valuations.map(\.asOf).min()
         )
     }
 }
