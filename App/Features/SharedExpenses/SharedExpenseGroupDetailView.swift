@@ -76,6 +76,12 @@ struct SharedExpenseGroupDetailView: View {
             Section {
                 Button("Delete Match", role: .destructive) { confirmingDelete = true }
                     .frame(maxWidth: .infinity, alignment: .center)
+                    .confirmationDialog("Delete this match?", isPresented: $confirmingDelete,
+                                        titleVisibility: .visible) {
+                        Button("Delete", role: .destructive) { deleteGroup() }
+                    } message: {
+                        Text("The transactions stay; only the grouping is removed.")
+                    }
             }
         }
         .navigationTitle(title)
@@ -94,12 +100,6 @@ struct SharedExpenseGroupDetailView: View {
             TextField("Label", text: $newLabel)
             Button("Cancel", role: .cancel) {}
             Button("Save") { rename() }
-        }
-        .confirmationDialog("Delete this match?", isPresented: $confirmingDelete,
-                            titleVisibility: .visible) {
-            Button("Delete", role: .destructive) { deleteGroup() }
-        } message: {
-            Text("The transactions stay; only the grouping is removed.")
         }
     }
 

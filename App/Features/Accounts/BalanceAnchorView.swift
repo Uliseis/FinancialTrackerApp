@@ -46,6 +46,12 @@ struct BalanceAnchorView: View {
                     Section {
                         Button("Clear Anchor", role: .destructive) { confirmingClear = true }
                             .frame(maxWidth: .infinity, alignment: .center)
+                            .confirmationDialog("Clear the balance anchor?", isPresented: $confirmingClear,
+                                                titleVisibility: .visible) {
+                                Button("Clear Anchor", role: .destructive) { clear() }
+                            } message: {
+                                Text("The balance reverts to opening balance plus all transactions.")
+                            }
                     }
                 }
             }
@@ -58,12 +64,6 @@ struct BalanceAnchorView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }.disabled(amount == nil)
                 }
-            }
-            .confirmationDialog("Clear the balance anchor?", isPresented: $confirmingClear,
-                                titleVisibility: .visible) {
-                Button("Clear Anchor", role: .destructive) { clear() }
-            } message: {
-                Text("The balance reverts to opening balance plus all transactions.")
             }
             .saveErrorAlert($saveError)
             .task { shownNow = CoreLogic.Accounts.computeNativeBalances([account], in: ctx)[account.id] }

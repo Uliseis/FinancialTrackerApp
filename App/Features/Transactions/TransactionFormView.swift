@@ -94,6 +94,14 @@ struct TransactionFormView: View {
                             edit.confirmingDelete = true
                         }
                         .frame(maxWidth: .infinity, alignment: .center)
+                        // On the button, so the confirmation popover points at it.
+                        .confirmationDialog("Delete this transaction?",
+                                            isPresented: $edit.confirmingDelete,
+                                            titleVisibility: .visible) {
+                            Button("Delete", role: .destructive) { deleteTx() }
+                        } message: {
+                            Text("This can’t be undone.")
+                        }
                     } footer: {
                         Text(edit.blocksDelete
                              ? "This is part of a transfer. Remove the transfer first."
@@ -110,13 +118,6 @@ struct TransactionFormView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }.disabled(!isValid)
                 }
-            }
-            .confirmationDialog("Delete this transaction?",
-                                isPresented: $edit.confirmingDelete,
-                                titleVisibility: .visible) {
-                Button("Delete", role: .destructive) { deleteTx() }
-            } message: {
-                Text("This can’t be undone.")
             }
             .task { if edit.accountId == nil { edit.accountId = selectableAccounts.first?.id } }
             .saveErrorAlert($saveError)
