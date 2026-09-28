@@ -849,6 +849,31 @@ final class InvestmentsTests: XCTestCase {
         XCTAssertEqual(all.count, 2)
     }
 
+    // The Accounts tab showed an investment account's cash ledger while the Investments tab
+    // showed its valuation. Both now read the valuation.
+    func testDisplayBalanceUsesValuationForInvestmentAccounts() throws {
+        let ctx = try S.makeContext()
+        let invest = makeGroup(ctx, name: "Investments", kind: .investment)
+        let cashGroup = makeGroup(ctx, name: "Cash", kind: .cash)
+        let broker = S.makeAccount(ctx, name: "Broker")
+        broker.group = invest
+        let bank = S.makeAccount(ctx, name: "Bank")
+        bank.group = cashGroup
+        let unvalued = S.makeAccount(ctx, name: "New broker")
+        unvalued.group = invest
+        _ = S.makeTx(ctx, account: broker, amount: 500, amountEur: 500, direction: .credit)
+        _ = S.makeTx(ctx, account: bank, amount: 80, amountEur: 80, direction: .credit)
+        _ = S.makeTx(ctx, account: unvalued, amount: 40, amountEur: 40, direction: .credit,
+                     bookedAt: day(2026, 1, 1))
+        _ = makeValuation(ctx, account: broker, asOf: .now, marketValueEur: 900)
+        try ctx.save()
+
+        let shown = try CoreLogic.Accounts.displayBalancesEur([broker, bank, unvalued], in: ctx)
+        XCTAssertEqual(shown[broker.id], 900)
+        XCTAssertEqual(shown[bank.id], 80)
+        XCTAssertEqual(shown[unvalued.id], 40, "no valuation yet: fall back to the ledger")
+    }
+
     // A failed live refresh leaves yesterday's reading; a deposit since must still count or
     // it shows as a loss of exactly the deposit.
     func testStaleLiveReadingStillAddsLaterDeposits() throws {

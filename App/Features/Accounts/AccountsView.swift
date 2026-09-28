@@ -119,7 +119,7 @@ struct AccountsView: View {
     }
 
     private func reload() {
-        eurBalances = (try? CoreLogic.Accounts.computeEurBalances(accounts, in: ctx)) ?? [:]
+        eurBalances = (try? CoreLogic.Accounts.displayBalancesEur(accounts, in: ctx)) ?? [:]
         rebuild()
     }
 
