@@ -126,11 +126,20 @@ private struct SummaryCard: View {
 
     // History only reaches back to the first valuation, so a window that starts earlier is
     // measured from that reading and says so rather than pretending to cover the full span.
+    // "All" and the periods measure different things, and read as contradictory without it:
+    // All is lifetime profit (so it includes gains made before the app's first reading), a
+    // period is only the market move inside the window.
     private var gainCaption: String {
-        guard period != .all, let pg = vm.periodGain else { return "All-time, against what you paid in" }
+        guard period != .all, let pg = vm.periodGain else {
+            guard let first = vm.firstReadingAt else { return "All-time profit on what you paid in" }
+            let since = Self.unbroken(first)
+            return "All-time profit on what you paid in, including gains before \(since)"
+        }
         let clamped = CoreLogic.Investments.periodStartDate(period).map { pg.from > $0 } ?? false
-        let since = pg.from.formatted(.dateTime.day().month(.abbreviated).year())
-        var text = clamped ? "Since \(since), first reading" : "\(period.longLabel), market change"
+        let since = Self.unbroken(pg.from)
+        var text = clamped
+            ? "Market change since your first reading, \(since)"
+            : "\(period.longLabel), market change"
         if pg.netContributionsEur != 0 {
             text += " · excl. \(Money.format(pg.netContributionsEur, currency: "EUR")) paid in"
         }
@@ -177,6 +186,12 @@ private struct SummaryCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
+    }
+
+    // Non-breaking, so a wrapped caption never splits "14 / May 2026".
+    private static func unbroken(_ date: Date) -> String {
+        date.formatted(.dateTime.day().month(.abbreviated).year())
+            .replacingOccurrences(of: " ", with: "\u{00A0}")
     }
 
     private var pnlText: String {

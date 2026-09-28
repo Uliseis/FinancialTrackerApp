@@ -4,32 +4,33 @@ import CoreModel
 import CoreLogic
 
 struct TransactionsView: View {
-    @Query(sort: [SortDescriptor(\CoreModel.Transaction.bookedAt, order: .reverse),
-                  SortDescriptor(\CoreModel.Transaction.createdAt, order: .reverse)])
-    private var allTx: [CoreModel.Transaction]
-
     @Query(sort: [SortDescriptor(\AccountSpace.sortOrder),
                   SortDescriptor(\AccountSpace.createdAt)])
     private var spaces: [AccountSpace]
+    @Query private var accounts: [Account]
+    @Query(sort: [SortDescriptor(\CoreModel.Category.name)])
+    private var categories: [CoreModel.Category]
 
     @AppStorage(SpaceSelection.key) private var currentSpaceId = ""
     @Environment(\.modelContext) private var ctx
     @State private var search = ""
+    @State private var searchTask: Task<Void, Never>?
     @State private var showTransfers = false
     @State private var showExcluded = false
-    @State private var rows: [CoreModel.Transaction] = []
-    @State private var filteredTotalEur: Decimal = 0
-    // The full filtered set can be thousands of rows; render it a page at a time and grow
-    // the window as the user scrolls (see the footer's onAppear). `rows` stays complete so
-    // the running total and counts still reflect every match.
-    @State private var visibleLimit = pageSize
-    private static let pageSize = 100
-    @State private var categorizing: CoreModel.Transaction?
-    @State private var adding: TransactionEdit?
     // nil = no filter; .some(nil) = uncategorized only.
     @State private var categoryFilter: UUID??
-    @Query(sort: [SortDescriptor(\CoreModel.Category.name)])
-    private var categories: [CoreModel.Category]
+
+    // Only the loaded pages live here; the store does the filtering, sorting and totals.
+    @State private var rows: [CoreModel.Transaction] = []
+    @State private var sections: [MonthSection] = []
+    @State private var matchCount = 0
+    @State private var searchTotalEur: Decimal = 0
+    // Per-month net over every match, filled in as a month first appears.
+    @State private var monthNets: [Date: Decimal] = [:]
+    private static let pageSize = 100
+
+    @State private var categorizing: CoreModel.Transaction?
+    @State private var adding: TransactionEdit?
     @State private var path: [CoreModel.Transaction] = []
     #if DEBUG
     @State private var debugPartnerTx: CoreModel.Transaction?
@@ -37,23 +38,68 @@ struct TransactionsView: View {
     @State private var debugIncomeTx: CoreModel.Transaction?
     #endif
 
-    // Web parity: current space only, hide mirror legs (routedFromTx != nil) and
-    // transfers (unless toggled). Cached in @State so filtering runs only when an
-    // input or the store changes — not on every body render.
-    private func recompute() {
+    private var hasMore: Bool { rows.count < matchCount }
+
+    // Web parity: current space only, excluded accounts only when asked, no mirror legs,
+    // transfers only when toggled.
+    private var filter: CoreLogic.TransactionFeed.Filter {
         let scope = SpaceScope.resolve(rawCurrentId: currentSpaceId, spaces: spaces)
-        rows = allTx.filter { tx in
-            guard scope.includes(tx.account) else { return false }
-            guard tx.routedFromTx == nil else { return false }
-            if !showExcluded && (tx.account?.excluded ?? false) { return false }
-            if !showTransfers && tx.isTransfer { return false }
-            if let wanted = categoryFilter, tx.category?.id != wanted { return false }
-            return matches(tx)
+        let ids = accounts
+            .filter { scope.includes($0) && (showExcluded || !$0.excluded) }
+            .map(\.id)
+        let category: CoreLogic.TransactionFeed.CategoryFilter = switch categoryFilter {
+        case .none: .all
+        case .some(.none): .uncategorized
+        case .some(.some(let id)): .category(id)
         }
-        // Net EUR of the current matches — shown only while searching (see body).
-        filteredTotalEur = rows.reduce(Decimal(0)) { $0 + ($1.amountEur ?? 0) }
-        // Filter inputs changed → scroll back to the first page.
-        visibleLimit = Self.pageSize
+        return .init(accountIds: ids, includeTransfers: showTransfers, category: category, search: search)
+    }
+
+    // A filter change starts from the top; a store change re-reads what's already loaded so
+    // the list doesn't jump.
+    private func reload(keepingLoaded: Bool) {
+        let f = filter
+        let count = keepingLoaded ? max(rows.count, Self.pageSize) : Self.pageSize
+        rows = (try? CoreLogic.TransactionFeed.page(f, offset: 0, limit: count, in: ctx)) ?? []
+        matchCount = (try? CoreLogic.TransactionFeed.count(f, in: ctx)) ?? rows.count
+        searchTotalEur = search.isEmpty ? 0
+            : rows.count == matchCount ? rows.reduce(Decimal(0)) { $0 + ($1.amountEur ?? 0) }
+            : ((try? CoreLogic.TransactionFeed.netEur(f, in: ctx)) ?? 0)
+        monthNets = [:]
+        rebuildSections()
+    }
+
+    private func loadMore() {
+        let next = (try? CoreLogic.TransactionFeed.page(
+            filter, offset: rows.count, limit: Self.pageSize, in: ctx)) ?? []
+        guard !next.isEmpty else { return }
+        rows += next
+        rebuildSections()
+    }
+
+    private func rebuildSections() {
+        var order: [Date] = []
+        var buckets: [Date: [CoreModel.Transaction]] = [:]
+        for tx in rows {
+            let key = CoreLogic.TransactionFeed.monthStart(tx.bookedAt)
+            if buckets[key] == nil { order.append(key) }
+            buckets[key, default: []].append(tx)
+        }
+        if hasMore {
+            let f = filter
+            for key in order where monthNets[key] == nil {
+                monthNets[key] = (try? CoreLogic.TransactionFeed.monthNetEur(f, month: key, in: ctx)) ?? 0
+            }
+        } else {
+            // Every match is loaded, so the rows themselves are the whole month.
+            monthNets = buckets.mapValues { $0.reduce(Decimal(0)) { $0 + ($1.amountEur ?? 0) } }
+        }
+        sections = order.map { key in
+            MonthSection(id: key,
+                         title: key.formatted(.dateTime.month(.wide).year()),
+                         net: monthNets[key] ?? 0,
+                         rows: buckets[key] ?? [])
+        }
     }
 
     private var categoryFilterMenu: some View {
@@ -84,8 +130,7 @@ struct TransactionsView: View {
         }
     }
 
-    // Month buckets over the currently-paged window, newest first. Each header carries the
-    // month's net so the list reads as a statement rather than an undifferentiated feed.
+    // A header's net covers the whole month, not just the rows loaded so far.
     struct MonthSection: Identifiable {
         let id: Date
         let title: String
@@ -93,37 +138,10 @@ struct TransactionsView: View {
         let rows: [CoreModel.Transaction]
     }
 
-    private var monthSections: [MonthSection] {
-        var cal = Calendar(identifier: .iso8601)
-        cal.timeZone = .current
-        var order: [Date] = []
-        var buckets: [Date: [CoreModel.Transaction]] = [:]
-        for tx in rows.prefix(visibleLimit) {
-            let key = cal.date(from: cal.dateComponents([.year, .month], from: tx.bookedAt))
-                ?? tx.bookedAt
-            if buckets[key] == nil { order.append(key) }
-            buckets[key, default: []].append(tx)
-        }
-        return order.map { key in
-            let rows = buckets[key] ?? []
-            return MonthSection(
-                id: key,
-                title: key.formatted(.dateTime.month(.wide).year()),
-                net: rows.reduce(Decimal(0)) { $0 + ($1.amountEur ?? 0) },
-                rows: rows)
-        }
-    }
-
-    private func matches(_ tx: CoreModel.Transaction) -> Bool {
-        guard !search.isEmpty else { return true }
-        return (tx.transactionDescription?.localizedStandardContains(search) ?? false)
-            || (tx.counterparty?.localizedStandardContains(search) ?? false)
-    }
-
     var body: some View {
         NavigationStack(path: $path) {
             List {
-                ForEach(monthSections) { month in
+                ForEach(sections) { month in
                     Section {
                         ForEach(month.rows) { tx in
                             NavigationLink(value: tx) {
@@ -142,25 +160,22 @@ struct TransactionsView: View {
                         MonthHeader(title: month.title, net: month.net)
                     }
                 }
-                if visibleLimit < rows.count {
+                if hasMore {
                     HStack {
                         Spacer()
                         ProgressView()
-                        Text("\(visibleLimit) of \(rows.count)")
+                        Text("\(rows.count) of \(matchCount)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()
                     }
                     .listRowSeparator(.hidden)
-                    .onAppear {
-                        visibleLimit = min(visibleLimit + Self.pageSize, rows.count)
-                    }
+                    .onAppear { loadMore() }
                 }
             }
             .navigationDestination(for: CoreModel.Transaction.self) { TransactionDetailView(tx: $0) }
             .task(id: PendingNavigation.shared.transactionId) {
                 guard let id = PendingNavigation.shared.transactionId else { return }
-                // Fetch directly: the @Query may not have delivered yet on first appearance.
                 if let tx = (try? ctx.fetch(FetchDescriptor<CoreModel.Transaction>(
                     predicate: #Predicate { $0.id == id })))?.first {
                     path = [tx]
@@ -169,8 +184,8 @@ struct TransactionsView: View {
             }
             .scrollEdgeEffectStyle(.soft, for: .all)
             .safeAreaInset(edge: .bottom) {
-                if !search.isEmpty && !rows.isEmpty {
-                    RunningTotalPill(count: rows.count, total: filteredTotalEur)
+                if !search.isEmpty && matchCount > 0 {
+                    RunningTotalPill(count: matchCount, total: searchTotalEur)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
@@ -233,40 +248,59 @@ struct TransactionsView: View {
             #if DEBUG
             if let q = UITestHooks.search, !q.isEmpty { search = q }
             #endif
-            recompute()
+            reload(keepingLoaded: false)
             #if DEBUG
-            switch UITestHooks.presentSheet {
-            case "categorize": categorizing = rows.first
-            case "tx-detail":
-                if let t = rows.first(where: { !$0.isTransfer && $0.routedFromTx == nil }) { path = [t] }
-            case "tx-detail-transfer":
-                if let t = allTx.first(where: { $0.isTransfer && $0.routedFromTx == nil }) { path = [t] }
-            case "pair-partner":
-                debugPartnerTx = rows.first(where: { !$0.isTransfer && $0.routedFromTx == nil })
-            case "shared-create":
-                debugSharedTx = allTx.first(where: {
-                    $0.direction == .debit && !$0.isTransfer && $0.routedFromTx == nil
-                        && $0.sharedExpenseGroup == nil && $0.amountEur != nil
-                })
-            case "match-income":
-                debugIncomeTx = allTx.first(where: {
-                    $0.direction == .credit && !$0.isTransfer && $0.routedFromTx == nil
-                        && $0.sharedExpenseGroup == nil && $0.amountEur != nil
-                })
-            case "tx-new": adding = TransactionEdit()
-            case "tx-edit":
-                if let t = rows.first(where: { !$0.isTransfer }) { adding = TransactionEdit(t) }
-            default: break
-            }
+            applyHook()
             #endif
         }
-        .onChange(of: categoryFilter) { recompute() }
-        .onChange(of: search) { recompute() }
-        .onChange(of: showTransfers) { recompute() }
-        .onChange(of: showExcluded) { recompute() }
-        .onChange(of: currentSpaceId) { recompute() }
-        .reloadOnModelChange { recompute() }
+        // Debounced: each keystroke used to refilter every row on the spot.
+        .onChange(of: search) {
+            searchTask?.cancel()
+            searchTask = Task {
+                try? await Task.sleep(for: .milliseconds(200))
+                guard !Task.isCancelled else { return }
+                reload(keepingLoaded: false)
+            }
+        }
+        .onChange(of: categoryFilter) { reload(keepingLoaded: false) }
+        .onChange(of: showTransfers) { reload(keepingLoaded: false) }
+        .onChange(of: showExcluded) { reload(keepingLoaded: false) }
+        .onChange(of: currentSpaceId) { reload(keepingLoaded: false) }
+        .reloadOnModelChange { reload(keepingLoaded: true) }
     }
+
+    #if DEBUG
+    private func applyHook() {
+        func firstAny(_ match: (CoreModel.Transaction) -> Bool) -> CoreModel.Transaction? {
+            let all = (try? ctx.fetch(FetchDescriptor<CoreModel.Transaction>(
+                sortBy: CoreLogic.TransactionFeed.sort))) ?? []
+            return all.first(where: match)
+        }
+        switch UITestHooks.presentSheet {
+        case "categorize": categorizing = rows.first
+        case "tx-detail":
+            if let t = rows.first(where: { !$0.isTransfer && $0.routedFromTx == nil }) { path = [t] }
+        case "tx-detail-transfer":
+            if let t = firstAny({ $0.isTransfer && $0.routedFromTx == nil }) { path = [t] }
+        case "pair-partner":
+            debugPartnerTx = rows.first(where: { !$0.isTransfer && $0.routedFromTx == nil })
+        case "shared-create":
+            debugSharedTx = firstAny {
+                $0.direction == .debit && !$0.isTransfer && $0.routedFromTx == nil
+                    && $0.sharedExpenseGroup == nil && $0.amountEur != nil
+            }
+        case "match-income":
+            debugIncomeTx = firstAny {
+                $0.direction == .credit && !$0.isTransfer && $0.routedFromTx == nil
+                    && $0.sharedExpenseGroup == nil && $0.amountEur != nil
+            }
+        case "tx-new": adding = TransactionEdit()
+        case "tx-edit":
+            if let t = rows.first(where: { !$0.isTransfer }) { adding = TransactionEdit(t) }
+        default: break
+        }
+    }
+    #endif
 }
 
 // Serif month heading with the month's net — the one editorial moment on this screen.
