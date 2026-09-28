@@ -238,8 +238,9 @@ private struct ThisMonthCard: View {
 
     private var spendLabel: String {
         guard current.income > 0 else { return "no income logged yet" }
-        let pct = Int((spendFraction * 100).rounded())
-        return overspent ? "\(pct)% — over income" : "\(pct)% of income spent"
+        // The bar is clamped at full; the label isn't, or 150× income reads as "100%".
+        let pct = Int(((current.expense / current.income).doubleValue * 100).rounded())
+        return overspent ? "\(pct.formatted())% — over income" : "\(pct)% of income spent"
     }
 
     var body: some View {
