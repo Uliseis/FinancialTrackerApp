@@ -109,7 +109,7 @@ struct AccountFormView: View {
             .task { if edit.spaceId == nil { edit.spaceId = defaultSpaceId } }
             .saveErrorAlert($saveError)
             .onAppear { openingText = Money.plainAmountText(edit.openingBalance) }
-            .onChange(of: openingText) { edit.openingBalance = CoreLogic.Transactions.parseAmount(openingText) ?? 0 }
+            .onChange(of: openingText) { edit.openingBalance = CoreLogic.Transactions.parseSignedAmount(openingText) ?? 0 }
         }
     }
 
