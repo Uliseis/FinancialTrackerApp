@@ -25,6 +25,9 @@ struct TransactionsView: View {
     @State private var sections: [MonthSection] = []
     @State private var matchCount = 0
     @State private var searchTotalEur: Decimal = 0
+    // The search the loaded figures answer. The field runs ahead of it during the debounce,
+    // when matchCount is still the previous (often unfiltered) result.
+    @State private var loadedSearch = ""
     // Per-month net over every match, filled in as a month first appears.
     @State private var monthNets: [Date: Decimal] = [:]
     private static let pageSize = 100
@@ -39,6 +42,7 @@ struct TransactionsView: View {
     #endif
 
     private var hasMore: Bool { rows.count < matchCount }
+    private var showsSearchPill: Bool { !search.isEmpty && !loadedSearch.isEmpty && matchCount > 0 }
 
     // Web parity: current space only, excluded accounts only when asked, no mirror legs,
     // transfers only when toggled.
@@ -62,7 +66,8 @@ struct TransactionsView: View {
         let count = keepingLoaded ? max(rows.count, Self.pageSize) : Self.pageSize
         rows = (try? CoreLogic.TransactionFeed.page(f, offset: 0, limit: count, in: ctx)) ?? []
         matchCount = (try? CoreLogic.TransactionFeed.count(f, in: ctx)) ?? rows.count
-        searchTotalEur = search.isEmpty ? 0
+        loadedSearch = f.search.trimmingCharacters(in: .whitespaces)
+        searchTotalEur = loadedSearch.isEmpty ? 0
             : rows.count == matchCount ? rows.reduce(Decimal(0)) { $0 + ($1.amountEur ?? 0) }
             : ((try? CoreLogic.TransactionFeed.netEur(f, in: ctx)) ?? 0)
         monthNets = [:]
@@ -184,12 +189,12 @@ struct TransactionsView: View {
             }
             .scrollEdgeEffectStyle(.soft, for: .all)
             .safeAreaInset(edge: .bottom) {
-                if !search.isEmpty && matchCount > 0 {
+                if showsSearchPill {
                     RunningTotalPill(count: matchCount, total: searchTotalEur)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
-            .animation(.snappy, value: search.isEmpty)
+            .animation(.snappy, value: showsSearchPill)
             .navigationTitle("Transactions")
             .searchable(text: $search, prompt: "Description or counterparty")
             .toolbar {

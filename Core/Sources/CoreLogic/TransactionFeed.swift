@@ -31,9 +31,11 @@ extension CoreLogic {
             }
         }
 
+        // id last: rows can share bookedAt and createdAt, and offset paging needs a total order.
         public static let sort = [
             SortDescriptor(\Transaction.bookedAt, order: .reverse),
             SortDescriptor(\Transaction.createdAt, order: .reverse),
+            SortDescriptor(\Transaction.id, order: .reverse),
         ]
 
         // Mirror legs never list: they are the other half of a routed transfer.

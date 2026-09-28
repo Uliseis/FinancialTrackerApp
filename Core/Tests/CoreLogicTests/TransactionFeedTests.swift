@@ -110,4 +110,25 @@ final class TransactionFeedTests: XCTestCase {
         XCTAssertEqual(try F.count(F.Filter(accountIds: []), in: f.ctx), 0)
         XCTAssertEqual(try F.netEur(F.Filter(accountIds: []), in: f.ctx), 0)
     }
+
+    // Rows sharing bookedAt and createdAt need a unique last key, or offset paging relies on
+    // the store happening to return ties in the same order every time.
+    func testTiesBreakOnIdSoPagesAreDeterministic() throws {
+        let f = try fixture()
+        let when = day(2026, 6, 15)
+        for i in 0..<20 {
+            let tx = S.makeTx(f.ctx, account: f.a, amount: -1, direction: .debit,
+                              bookedAt: when, description: "tie \(i)")
+            tx.createdAt = when
+        }
+        try f.ctx.save()
+        let filter = F.Filter(accountIds: [f.a.id])
+        var paged: [UUID] = []
+        while case let page = try F.page(filter, offset: paged.count, limit: 7, in: f.ctx), !page.isEmpty {
+            paged += page.map(\.id)
+        }
+        XCTAssertEqual(paged.count, 20)
+        XCTAssertEqual(paged, paged.sorted(by: >))
+    }
 }
+
