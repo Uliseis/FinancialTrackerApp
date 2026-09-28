@@ -43,6 +43,7 @@ struct BudgetsView: View {
                     } actions: {
                         Button("Add Budget") { editing = BudgetEdit() }
                             .buttonStyle(.glassProminent)
+                            .tint(Theme.prominentFill)
                     }
                 }
             }

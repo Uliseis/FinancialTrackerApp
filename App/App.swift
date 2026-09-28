@@ -241,6 +241,7 @@ struct LockScreen: View {
                 Spacer()
                 Button("Unlock", systemImage: "faceid", action: onUnlock)
                     .buttonStyle(.glassProminent)
+                    .tint(Theme.prominentFill)
                     .controlSize(.large)
             }
             .padding(Theme.Space.l)
