@@ -435,6 +435,64 @@ extension CoreLogic {
             return out
         }
 
+        public struct PeriodReturn: Equatable, Sendable {
+            // The day the change is measured from: the period start, or the first reading when
+            // history begins inside the period.
+            public let from: Date
+            public let startValueEur: Decimal
+            public let endValueEur: Decimal
+            public let netContributionsEur: Decimal
+            public let gainEur: Decimal
+            public let gainPct: Decimal?
+        }
+
+        // Market change over a window: value now, less value at the window's start, less the
+        // money paid in during it. Payouts are return, so they count toward the gain. The
+        // percentage is a simple Dietz return, weighting mid-window deposits by half.
+        public static func computePeriodReturns(
+            bases: [AccountBasis],
+            valuations: [PortfolioValuation],
+            legs: [ContributionLeg],
+            metrics: [UUID: AccountMetrics],
+            periodStart: Date
+        ) -> [UUID: PeriodReturn] {
+            var out: [UUID: PeriodReturn] = [:]
+            for basis in bases {
+                let accId = basis.accountId
+                guard let endValue = metrics[accId]?.valueEur else { continue }
+                let accValuations = valuations.filter { $0.account?.id == accId }
+                let accLegs = legs.filter { $0.accountId == accId }
+                let series = computePortfolioSeries(
+                    bases: [basis], valuations: accValuations, legs: accLegs)
+                guard let first = series.first else { continue }
+                let baseline = series.last { $0.date < periodStart } ?? first
+                let clamped = baseline.date >= periodStart
+                let windowStart = dayStart(baseline.date).addingTimeInterval(86_400)
+
+                var contributions: Decimal = 0
+                var payouts: Decimal = 0
+                for leg in accLegs where leg.bookedAt >= windowStart {
+                    if leg.isPayout { payouts += -leg.netEur } else { contributions += leg.netEur }
+                }
+                let startValue = baseline.marketValueEur
+                let gain = endValue - startValue - contributions + payouts
+                out[accId] = PeriodReturn(
+                    from: clamped ? baseline.date : periodStart,
+                    startValueEur: startValue,
+                    endValueEur: endValue,
+                    netContributionsEur: contributions,
+                    gainEur: gain,
+                    gainPct: dietz(gain: gain, start: startValue, contributions: contributions)
+                )
+            }
+            return out
+        }
+
+        public static func dietz(gain: Decimal, start: Decimal, contributions: Decimal) -> Decimal? {
+            let denominator = start + contributions / 2
+            return denominator > Decimal(string: "0.000001")! ? gain / denominator : nil
+        }
+
         // MARK: - Helpers
 
 
